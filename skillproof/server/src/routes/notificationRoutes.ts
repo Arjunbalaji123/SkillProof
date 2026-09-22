@@ -15,3 +15,4 @@ router.put('/read-all', markAllAsRead);
 router.put('/:id/read', markAsRead);
 
 export default router;
+

@@ -17,15 +17,42 @@ model User {
   updated_at    DateTime @updatedAt
 
   profile               Profile?
+  sessions              Session[]
+  reset_tokens          PasswordResetToken[]
   assessment_attempts   AssessmentAttempt[]
   verification_requests VerificationRequest[] @relation("UserVerificationRequests")
   reviewed_requests     VerificationRequest[] @relation("ReviewerVerificationRequests")
   bookmarks_created     RecruiterBookmark[]   @relation("RecruiterBookmarks")
   bookmarks_received    RecruiterBookmark[]   @relation("DeveloperBookmarks")
+  recruiter_notes       RecruiterNote[]       @relation("RecruiterNotes")
+  recruiter_collections CandidateCollection[]  @relation("RecruiterCollections")
   notifications         Notification[]
   reports_submitted     Report[]              @relation("Reporter")
   reports_received      Report[]              @relation("ReportedUser")
   audit_logs            AuditLog[]
+}
+
+model Session {
+  id                 String    @id @default(uuid())
+  user_id            String
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  refresh_token_hash String    @unique
+  device_info        String?
+  ip_address         String?
+  expires_at         DateTime
+  revoked_at         DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token_hash String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
 }
 
 model Profile {
@@ -46,11 +73,11 @@ model Profile {
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 
-  user_skills   UserSkill[]
-  projects      Project[]
-  education     Education[]
+  user_skills    UserSkill[]
+  projects       Project[]
+  education      Education[]
   certifications Certification[]
-  achievements  Achievement[]
+  achievements   Achievement[]
 }
 
 model Skill {
@@ -73,6 +100,7 @@ model UserSkill {
   skill               Skill     @relation(fields: [skill_id], references: [id], onDelete: Cascade)
   proficiency_level   String    @default("INTERMEDIATE") // BEGINNER, INTERMEDIATE, ADVANCED, EXPERT
   verification_status String    @default("UNVERIFIED")   // UNVERIFIED, PENDING, VERIFIED, REJECTED
+  verification_code   String?   @unique                  // Unique code for public verification
   verified_at         DateTime?
   verified_by         String?
   verification_method String?   // ASSESSMENT, CERTIFICATION, PROJECT, DOCUMENT
@@ -126,18 +154,18 @@ model Education {
 }
 
 model Certification {
-  id            String   @id @default(uuid())
-  profile_id    String
-  profile       Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
-  title         String
-  issuer        String
-  issue_date    String
-  expiry_date   String?
-  credential_id String?
+  id             String   @id @default(uuid())
+  profile_id     String
+  profile        Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  title          String
+  issuer         String
+  issue_date     String
+  expiry_date    String?
+  credential_id  String?
   credential_url String?
-  document_url  String?
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  document_url   String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 }
 
 model Achievement {
@@ -170,15 +198,15 @@ model Assessment {
 }
 
 model AssessmentQuestion {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   assessment_id String
   assessment    Assessment @relation(fields: [assessment_id], references: [id], onDelete: Cascade)
   question_text String
   code_snippet  String?
   explanation   String?
-  points        Int      @default(1)
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  points        Int        @default(1)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
 
   options AssessmentOption[]
   answers AssessmentAnswer[]
@@ -207,7 +235,7 @@ model AssessmentAttempt {
   correct_answers Int        @default(0)
   score           Float      @default(0.0)
   percentage      Float      @default(0.0)
-  status          String     @default("IN_PROGRESS") // IN_PROGRESS, PASSED, FAILED
+  status          String     @default("IN_PROGRESS") // IN_PROGRESS, PASSED, FAILED, EXPIRED
   created_at      DateTime   @default(now())
   updated_at      DateTime   @updatedAt
 
@@ -265,6 +293,40 @@ model RecruiterBookmark {
   @@unique([recruiter_id, developer_id])
 }
 
+model RecruiterNote {
+  id           String   @id @default(uuid())
+  recruiter_id String
+  recruiter    User     @relation("RecruiterNotes", fields: [recruiter_id], references: [id], onDelete: Cascade)
+  developer_id String
+  note         String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([recruiter_id, developer_id])
+}
+
+model CandidateCollection {
+  id           String   @id @default(uuid())
+  recruiter_id String
+  recruiter    User     @relation("RecruiterCollections", fields: [recruiter_id], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  items CollectionItem[]
+}
+
+model CollectionItem {
+  id            String              @id @default(uuid())
+  collection_id String
+  collection    CandidateCollection @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+  developer_id  String
+  created_at    DateTime            @default(now())
+
+  @@unique([collection_id, developer_id])
+}
+
 model Notification {
   id         String   @id @default(uuid())
   user_id    String
@@ -301,4 +363,3 @@ model AuditLog {
   metadata    String?
   timestamp   DateTime @default(now())
 }
-

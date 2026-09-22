@@ -47,3 +47,4 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
       );
   }
 };
+

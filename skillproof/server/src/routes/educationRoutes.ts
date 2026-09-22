@@ -15,3 +15,4 @@ router.put('/:id', requireAuth, updateEducation);
 router.delete('/:id', requireAuth, deleteEducation);
 
 export default router;
+

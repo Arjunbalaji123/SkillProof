@@ -15,3 +15,4 @@ router.post('/', requireAuth, upload.single('proof'), createVerificationRequest)
 router.put('/:id', requireAuth, requireAdmin, reviewVerificationRequest);
 
 export default router;
+
