@@ -5,6 +5,7 @@ import { sendSuccess, sendError } from '../utils/response.js';
 import { educationSchema } from '../validators/index.js';
 import { calculateProfileCompletion } from '../utils/completion.js';
 import { logAudit } from '../utils/audit.js';
+import { verifyResourceOwnership } from '../middleware/ownership.js';
 
 export const getEducation = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -59,8 +60,8 @@ export const updateEducation = async (req: AuthRequest, res: Response, next: Nex
     const id = req.params.id as string;
     const validated = educationSchema.parse(req.body);
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
+    const ownership = await verifyResourceOwnership('education', id, userId, res);
+    if (!ownership) return;
 
     const updated = await prisma.education.update({
       where: { id },
@@ -86,11 +87,11 @@ export const deleteEducation = async (req: AuthRequest, res: Response, next: Nex
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
+    const ownership = await verifyResourceOwnership('education', id, userId, res);
+    if (!ownership) return;
 
     await prisma.education.delete({ where: { id } });
-    await calculateProfileCompletion(profile.id);
+    await calculateProfileCompletion(ownership.profileId);
     await logAudit(userId, 'EDUCATION_DELETED', 'EDUCATION', id);
 
     return sendSuccess(res, 'Education entry deleted successfully');

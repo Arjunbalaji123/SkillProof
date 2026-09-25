@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendError } from '../utils/response.js';
+import { AppError } from '../errors/AppError.js';
 
 export const errorHandler = (
   err: any,
@@ -7,7 +8,9 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  console.error('API Error Stack:', err);
+  if (err instanceof AppError) {
+    return sendError(res, err.message, err.statusCode, err.errors);
+  }
 
   if (err.name === 'ZodError') {
     const formattedErrors = err.errors.map((e: any) => ({
@@ -21,8 +24,9 @@ export const errorHandler = (
     return sendError(res, err.message, 400);
   }
 
+  // Hide internal error details and stack trace in production responses
   const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  const message = statusCode === 500 ? 'Internal Server Error' : (err.message || 'An error occurred');
 
   return sendError(res, message, statusCode);
 };

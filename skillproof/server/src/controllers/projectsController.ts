@@ -5,6 +5,7 @@ import { sendSuccess, sendError } from '../utils/response.js';
 import { projectSchema } from '../validators/index.js';
 import { calculateProfileCompletion } from '../utils/completion.js';
 import { logAudit } from '../utils/audit.js';
+import { verifyResourceOwnership } from '../middleware/ownership.js';
 
 export const getProjects = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -86,14 +87,8 @@ export const updateProject = async (req: AuthRequest, res: Response, next: NextF
     const projectId = req.params.id as string;
     const validated = projectSchema.parse(req.body);
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
-
-    const existing = await prisma.project.findFirst({
-      where: { id: projectId, profile_id: profile.id },
-    });
-
-    if (!existing) return sendError(res, 'Project not found', 404);
+    const ownership = await verifyResourceOwnership('project', projectId, userId, res);
+    if (!ownership) return;
 
     await prisma.projectTechnology.deleteMany({ where: { project_id: projectId } });
 
@@ -125,17 +120,11 @@ export const deleteProject = async (req: AuthRequest, res: Response, next: NextF
     const userId = req.user!.userId;
     const projectId = req.params.id as string;
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
-
-    const existing = await prisma.project.findFirst({
-      where: { id: projectId, profile_id: profile.id },
-    });
-
-    if (!existing) return sendError(res, 'Project not found', 404);
+    const ownership = await verifyResourceOwnership('project', projectId, userId, res);
+    if (!ownership) return;
 
     await prisma.project.delete({ where: { id: projectId } });
-    await calculateProfileCompletion(profile.id);
+    await calculateProfileCompletion(ownership.profileId);
     await logAudit(userId, 'PROJECT_DELETED', 'PROJECT', projectId);
 
     return sendSuccess(res, 'Project deleted successfully');
@@ -151,10 +140,10 @@ export const uploadProjectImage = async (req: AuthRequest, res: Response, next: 
 
     if (!req.file) return sendError(res, 'No image file uploaded', 400);
 
-    const imageUrl = `/uploads/${req.file.filename}`;
+    const ownership = await verifyResourceOwnership('project', projectId, userId, res);
+    if (!ownership) return;
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
+    const imageUrl = `/uploads/${req.file.filename}`;
 
     const updated = await prisma.project.update({
       where: { id: projectId },

@@ -43,6 +43,8 @@ model Session {
   revoked_at         DateTime?
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
+
+  @@index([user_id])
 }
 
 model PasswordResetToken {
@@ -53,6 +55,8 @@ model PasswordResetToken {
   expires_at DateTime
   used_at    DateTime?
   created_at DateTime  @default(now())
+
+  @@index([user_id])
 }
 
 model Profile {
@@ -128,6 +132,8 @@ model Project {
   updated_at  DateTime @updatedAt
 
   technologies ProjectTechnology[]
+
+  @@index([profile_id])
 }
 
 model ProjectTechnology {
@@ -136,6 +142,8 @@ model ProjectTechnology {
   project         Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
   technology_name String
   created_at      DateTime @default(now())
+
+  @@index([project_id])
 }
 
 model Education {
@@ -151,6 +159,8 @@ model Education {
   description    String?
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
+
+  @@index([profile_id])
 }
 
 model Certification {
@@ -166,6 +176,8 @@ model Certification {
   document_url   String?
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
+
+  @@index([profile_id])
 }
 
 model Achievement {
@@ -179,6 +191,8 @@ model Achievement {
   url         String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
+
+  @@index([profile_id])
 }
 
 model Assessment {
@@ -195,6 +209,8 @@ model Assessment {
 
   questions AssessmentQuestion[]
   attempts  AssessmentAttempt[]
+
+  @@index([skill_id])
 }
 
 model AssessmentQuestion {
@@ -210,6 +226,8 @@ model AssessmentQuestion {
 
   options AssessmentOption[]
   answers AssessmentAnswer[]
+
+  @@index([assessment_id])
 }
 
 model AssessmentOption {
@@ -221,6 +239,8 @@ model AssessmentOption {
   created_at  DateTime           @default(now())
 
   answers AssessmentAnswer[]
+
+  @@index([question_id])
 }
 
 model AssessmentAttempt {
@@ -240,6 +260,9 @@ model AssessmentAttempt {
   updated_at      DateTime   @updatedAt
 
   answers AssessmentAnswer[]
+
+  @@index([user_id])
+  @@index([assessment_id])
 }
 
 model AssessmentAnswer {
@@ -252,6 +275,9 @@ model AssessmentAnswer {
   selected_option    AssessmentOption   @relation(fields: [selected_option_id], references: [id], onDelete: Cascade)
   is_correct         Boolean            @default(false)
   created_at         DateTime           @default(now())
+
+  @@index([attempt_id])
+  @@index([question_id])
 }
 
 model VerificationRequest {
@@ -269,6 +295,9 @@ model VerificationRequest {
   updated_at       DateTime  @updatedAt
 
   documents VerificationDocument[]
+
+  @@index([user_id])
+  @@index([user_skill_id])
 }
 
 model VerificationDocument {
@@ -280,6 +309,8 @@ model VerificationDocument {
   file_type               String
   file_size               Int
   uploaded_at             DateTime            @default(now())
+
+  @@index([verification_request_id])
 }
 
 model RecruiterBookmark {
@@ -337,6 +368,8 @@ model Notification {
   is_read    Boolean  @default(false)
   metadata   String?
   created_at DateTime @default(now())
+
+  @@index([user_id])
 }
 
 model Report {
@@ -362,4 +395,6 @@ model AuditLog {
   entity_id   String?
   metadata    String?
   timestamp   DateTime @default(now())
+
+  @@index([user_id])
 }
