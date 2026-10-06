@@ -15,6 +15,7 @@ import { AssessmentPlayerPage } from '../pages/AssessmentPlayerPage';
 import { VerificationsPage } from '../pages/VerificationsPage';
 import { PublicPortfolioPage } from '../pages/PublicPortfolioPage';
 import { BookmarksPage } from '../pages/BookmarksPage';
+import { NotFoundPage, UnauthorizedPage, ForbiddenPage, InternalServerErrorPage } from '../pages/ErrorPages';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -104,8 +105,13 @@ export const AppRoutes: React.FC = () => {
         }
       />
 
+      {/* Error Pages */}
+      <Route path="/401" element={<UnauthorizedPage />} />
+      <Route path="/403" element={<ForbiddenPage />} />
+      <Route path="/500" element={<InternalServerErrorPage />} />
+
       {/* Catch-all Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 };

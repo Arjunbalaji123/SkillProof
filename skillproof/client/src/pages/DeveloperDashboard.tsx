@@ -62,17 +62,18 @@ export const DeveloperDashboard: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/20 p-6 sm:p-8 shadow-2xl">
+      <div className="relative overflow-hidden rounded-3xl bg-slate-900 border border-slate-800/80 p-6 sm:p-8 shadow-2xl">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold">
-              <Sparkles size={14} />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-semibold">
+              <Sparkles size={14} className="text-cyan-400" />
               <span>Verified Developer Portal</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Welcome back, {profile?.name || user?.email}! 👋
             </h1>
-            <p className="text-slate-400 text-sm max-w-xl">
+            <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
               {profile?.headline || 'Manage your technical skills, take timed assessments, and showcase your verified proof to top recruiters.'}
             </p>
           </div>
@@ -90,7 +91,7 @@ export const DeveloperDashboard: React.FC = () => {
             )}
             <Link
               to="/profile"
-              className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-200 font-semibold text-xs transition flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center gap-2"
             >
               <User size={14} />
               Edit Profile
@@ -100,7 +101,7 @@ export const DeveloperDashboard: React.FC = () => {
       </div>
 
       {/* Dynamic Profile Completion Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-xl">
         <ProgressBar percentage={profile?.profile_completion || 0} />
         {profile && profile.profile_completion < 100 && (
           <p className="text-xs text-slate-400 mt-3">
@@ -111,7 +112,7 @@ export const DeveloperDashboard: React.FC = () => {
 
       {/* Metric Cards Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-1">
+        <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 space-y-1 shadow-xl">
           <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
             <span>Verified Skills</span>
             <CheckCircle2 size={18} className="text-emerald-400" />
@@ -120,7 +121,7 @@ export const DeveloperDashboard: React.FC = () => {
           <p className="text-[11px] text-slate-400">Out of {profile?.user_skills?.length || 0} total skills</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-1">
+        <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 space-y-1 shadow-xl">
           <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
             <span>Projects Built</span>
             <FolderGit2 size={18} className="text-indigo-400" />
@@ -129,7 +130,7 @@ export const DeveloperDashboard: React.FC = () => {
           <p className="text-[11px] text-slate-400">Active portfolio entries</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-1">
+        <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 space-y-1 shadow-xl">
           <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
             <span>Certificates</span>
             <Award size={18} className="text-amber-400" />
@@ -138,10 +139,10 @@ export const DeveloperDashboard: React.FC = () => {
           <p className="text-[11px] text-slate-400">Verified credentials</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-1">
+        <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 space-y-1 shadow-xl">
           <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
             <span>Assessment Avg Score</span>
-            <Sparkles size={18} className="text-purple-400" />
+            <Sparkles size={18} className="text-cyan-400" />
           </div>
           <p className="text-2xl font-extrabold text-white">{avgScore}%</p>
           <p className="text-[11px] text-slate-400">{passedAttempts.length} passed quizzes</p>
@@ -152,7 +153,7 @@ export const DeveloperDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Skills & Verification Tracker */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <CheckCircle2 size={18} className="text-indigo-400" />
@@ -171,10 +172,10 @@ export const DeveloperDashboard: React.FC = () => {
                 {profile.user_skills.map((us) => (
                   <div
                     key={us.id}
-                    className="p-3.5 bg-slate-950 border border-slate-800/80 rounded-xl flex items-center justify-between"
+                    className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between"
                   >
                     <div>
-                      <p className="text-sm font-bold text-white">{us.skill.name}</p>
+                      <p className="text-sm font-bold text-slate-100">{us.skill.name}</p>
                       <span className="text-[11px] text-slate-400 font-medium">
                         {us.proficiency_level}
                       </span>
@@ -184,7 +185,7 @@ export const DeveloperDashboard: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="p-8 text-center bg-slate-950/50 rounded-xl border border-dashed border-slate-800">
+              <div className="p-8 text-center bg-slate-950 rounded-xl border border-dashed border-slate-800">
                 <p className="text-sm text-slate-400 mb-3">No skills added to your profile yet.</p>
                 <Link
                   to="/skills"
@@ -197,7 +198,7 @@ export const DeveloperDashboard: React.FC = () => {
           </div>
 
           {/* Featured Projects Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <FolderGit2 size={18} className="text-indigo-400" />
@@ -216,7 +217,7 @@ export const DeveloperDashboard: React.FC = () => {
                 {profile.projects.slice(0, 3).map((proj) => (
                   <div key={proj.id} className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                     <div className="flex justify-between items-start">
-                      <h3 className="text-sm font-bold text-white">{proj.title}</h3>
+                      <h3 className="text-sm font-bold text-slate-100">{proj.title}</h3>
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
                         {proj.status}
                       </span>
@@ -224,7 +225,7 @@ export const DeveloperDashboard: React.FC = () => {
                     <p className="text-xs text-slate-400 line-clamp-2">{proj.description}</p>
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {proj.technologies?.map((t) => (
-                        <span key={t.id} className="text-[10px] bg-indigo-950/50 text-indigo-300 px-2 py-0.5 rounded font-mono">
+                        <span key={t.id} className="text-[10px] bg-indigo-500/10 text-indigo-300 px-2 py-0.5 rounded font-mono border border-indigo-500/20">
                           {t.technology_name}
                         </span>
                       ))}
@@ -233,7 +234,7 @@ export const DeveloperDashboard: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="p-8 text-center bg-slate-950/50 rounded-xl border border-dashed border-slate-800">
+              <div className="p-8 text-center bg-slate-950 rounded-xl border border-dashed border-slate-800">
                 <p className="text-sm text-slate-400 mb-3">No projects added yet.</p>
                 <Link
                   to="/projects"
@@ -248,12 +249,12 @@ export const DeveloperDashboard: React.FC = () => {
 
         {/* Right Column: Quick Assessment Hub & Recent Quiz History */}
         <div className="space-y-6">
-          <div className="bg-gradient-to-br from-indigo-950/60 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 space-y-4 shadow-xl">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Award size={18} className="text-indigo-400" />
+              <Award size={18} className="text-amber-400" />
               Earn Verified Badges
             </h2>
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-slate-400 leading-relaxed">
               Take 15-minute timed technical assessments. Pass with &gt;= 70% score to automatically earn a Verified Skill badge on your portfolio!
             </p>
             <Link
@@ -265,7 +266,7 @@ export const DeveloperDashboard: React.FC = () => {
           </div>
 
           {/* Assessment History */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 space-y-4 shadow-xl">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <FileText size={16} className="text-slate-400" />
               Recent Assessment Results
@@ -274,7 +275,7 @@ export const DeveloperDashboard: React.FC = () => {
             {attempts.length > 0 ? (
               <div className="space-y-2.5">
                 {attempts.slice(0, 4).map((att) => (
-                  <div key={att.id} className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl flex items-center justify-between text-xs">
+                  <div key={att.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
                     <div>
                       <p className="font-bold text-slate-200">{att.assessment?.title || 'Assessment'}</p>
                       <span className="text-[10px] text-slate-500">{new Date(att.created_at).toLocaleDateString()}</span>
@@ -283,7 +284,7 @@ export const DeveloperDashboard: React.FC = () => {
                       <span className={`font-mono font-bold ${att.status === 'PASSED' ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {att.percentage}%
                       </span>
-                      <span className={`block text-[10px] font-semibold uppercase ${att.status === 'PASSED' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      <span className={`block text-[10px] font-semibold uppercase ${att.status === 'PASSED' ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {att.status}
                       </span>
                     </div>
@@ -299,4 +300,3 @@ export const DeveloperDashboard: React.FC = () => {
     </div>
   );
 };
-

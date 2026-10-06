@@ -2,6 +2,8 @@ import { prisma } from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import { signToken, verifyToken } from '../utils/jwt.js';
 import { calculateProfileCompletion } from '../utils/completion.js';
+import { AppError } from '../errors/AppError.js';
+import { verifyResourceOwnership } from '../middleware/ownership.js';
 
 async function runBackendTests() {
   console.log('🧪 Starting SKILLPROOF Backend Integration Tests...');
@@ -72,6 +74,53 @@ async function runBackendTests() {
       where: { recruiter_id: recruiter?.id, developer_id: developer?.id },
     });
     assert(bookmark !== null, 'Recruiter bookmark relationship retrieved');
+
+    // 7. AppError Central Error Handling Test
+    const testAppErr = AppError.forbidden('Forbidden access');
+    assert(testAppErr.statusCode === 403 && testAppErr.isOperational === true, 'AppError 403 status code and operational flag verification');
+
+    const testNotFoundErr = AppError.notFound('Not found');
+    assert(testNotFoundErr.statusCode === 404, 'AppError 404 helper method verification');
+
+    // 8. Resource Ownership Check Test
+    if (developer?.id) {
+      const mockRes: any = {
+        status: function (code: number) { this.statusCode = code; return this; },
+        json: function (data: any) { this.responseData = data; return this; },
+      };
+      
+      // Test ownership check on non-existent project returns 404
+      const nonExistentResult = await verifyResourceOwnership('project', 'non-existent-id', developer.id, mockRes);
+      assert(nonExistentResult === null && mockRes.statusCode === 404, 'Ownership check on non-existent resource returns 404');
+    }
+
+    // 9. Database Health Check Verification Test
+    const dbPing = await prisma.$queryRaw`SELECT 1`;
+    assert(Array.isArray(dbPing) && dbPing.length > 0, 'Database health check query raw ping (SELECT 1) verification');
+
+    // 10. Admin Self-Registration Block Verification
+    const { registerSchema, userSkillSchema, updateProfileSchema } = await import('../validators/index.js');
+    const adminRegResult = registerSchema.safeParse({ name: 'Hacker', email: 'hacker@dev.com', password: 'password123', role: 'ADMIN' });
+    assert(!adminRegResult.success, 'Register schema rejects direct ADMIN role submission');
+
+    // 11. Email Normalization Verification
+    const emailNormResult = registerSchema.parse({ name: 'Norm User', email: '  UserEmail@Domain.COM  ', password: 'password123' });
+    assert(emailNormResult.email === 'useremail@domain.com', 'Register schema normalizes email to lowercase trimmed string');
+
+    // 12. Stored XSS / Safe URL Schema Verification
+    const xssUrlResult = updateProfileSchema.safeParse({ github_url: 'javascript:alert(1)' });
+    assert(!xssUrlResult.success, 'Update profile schema rejects malicious javascript: URL protocol');
+
+    // 13. Skill Proficiency Enum Validation
+    const invalidSkillLevel = userSkillSchema.safeParse({ proficiency_level: 'SUPER_EXPERT' });
+    assert(!invalidSkillLevel.success, 'User skill schema rejects invalid proficiency enum value');
+
+    // 14. Dynamic Verification Quiz Generation Test
+    const { getOrCreateSkillAssessment } = await import('../controllers/assessmentsController.js');
+    if (reactSkill?.id) {
+      const dynamicAssessment = await getOrCreateSkillAssessment(reactSkill.id);
+      assert(dynamicAssessment !== null && dynamicAssessment.questions.length > 0, 'Dynamic assessment question pool generated for skill');
+    }
 
     console.log('\n==========================================');
     console.log(`📊 TEST RESULTS: ${testPassed} Passed, ${testFailed} Failed`);

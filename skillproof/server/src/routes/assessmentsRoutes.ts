@@ -3,6 +3,7 @@ import {
   getAssessments,
   getAssessmentById,
   startAssessment,
+  startAssessmentForSkill,
   submitAssessment,
   getUserAssessmentResults,
 } from '../controllers/assessmentsController.js';
@@ -12,6 +13,7 @@ const router = Router();
 
 router.get('/', requireAuth, getAssessments);
 router.get('/results', requireAuth, getUserAssessmentResults);
+router.post('/skill/:skillId/start', requireAuth, startAssessmentForSkill);
 router.get('/:id', requireAuth, getAssessmentById);
 router.post('/:id/start', requireAuth, startAssessment);
 router.post('/:id/submit', requireAuth, submitAssessment);

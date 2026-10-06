@@ -11,6 +11,10 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
   try {
     const validated = registerSchema.parse(req.body);
 
+    if ((req.body.role as string)?.toUpperCase() === 'ADMIN') {
+      return sendError(res, 'Direct admin registration is prohibited', 403);
+    }
+
     const existingUser = await prisma.user.findUnique({
       where: { email: validated.email },
     });

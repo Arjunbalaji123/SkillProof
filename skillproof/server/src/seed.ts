@@ -4,6 +4,11 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && process.env.FORCE_SEED !== 'true') {
+    console.error('❌ Refusing to run database seed script in PRODUCTION environment! Pass FORCE_SEED=true to override.');
+    process.exit(1);
+  }
+
   console.log('🌱 Starting SKILLPROOF database seeding...');
 
   // Clean existing tables

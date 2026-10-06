@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   Award,
   FolderGit2,
-  BookOpen,
   LayoutDashboard,
   ShieldAlert,
   ExternalLink,
@@ -33,136 +32,152 @@ export const Navbar: React.FC = () => {
   };
 
   const isActive = (path: string) => location.pathname === path;
+  const isHomePage = location.pathname === '/';
 
   return (
-    <nav className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
+    <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#E2E8F0] shadow-sm transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo */}
           <div className="flex items-center gap-3">
             <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-emerald-400 p-0.5 shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-200">
-                <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                  <ShieldCheck className="w-5 h-5 text-indigo-400" />
-                </div>
+              <div className="w-9 h-9 rounded-xl bg-[#2563EB] flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
+                <ShieldCheck className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent">
-                  SKILL<span className="text-indigo-400">PROOF</span>
+                <span className="font-extrabold text-lg tracking-tight text-[#0F172A]">
+                  SKILL<span className="text-[#2563EB]">PROOF</span>
                 </span>
-                <span className="text-[10px] tracking-wider text-slate-400 uppercase font-semibold -mt-1">
-                  Verified Portfolios
+                <span className="text-[10px] tracking-wider text-[#64748B] uppercase font-semibold -mt-1">
+                  Verification Engine
                 </span>
               </div>
             </Link>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center gap-1">
-            {isAuthenticated ? (
-              <>
-                {/* DEVELOPER NAV */}
-                {isDeveloper && (
-                  <>
-                    <Link
-                      to="/dashboard"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/dashboard') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <LayoutDashboard size={16} />
-                      Dashboard
-                    </Link>
-                    <Link
-                      to="/skills"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/skills') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <CheckCircle2 size={16} />
-                      Skills
-                    </Link>
-                    <Link
-                      to="/projects"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/projects') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <FolderGit2 size={16} />
-                      Projects
-                    </Link>
-                    <Link
-                      to="/assessments"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/assessments') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <Award size={16} />
-                      Assessments
-                    </Link>
-                    <Link
-                      to="/verifications"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/verifications') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <FileCheck size={16} />
-                      Verifications
-                    </Link>
-                  </>
-                )}
+          {/* Navigation Items */}
+          {isHomePage ? (
+            /* PUBLIC HOMEPAGE NAVIGATION (SINGLE NAVBAR RULE) */
+            <div className="hidden md:flex items-center gap-8 text-xs font-semibold text-[#475569]">
+              <Link to="/recruiters/developers" className="hover:text-[#2563EB] transition">
+                Developers
+              </Link>
+              <Link to="/assessments" className="hover:text-[#2563EB] transition">
+                Assessments
+              </Link>
+              <Link to="/developer/arjun" className="hover:text-[#2563EB] transition">
+                Trust Passport
+              </Link>
+              <Link to="/recruiters/developers" className="hover:text-[#2563EB] transition">
+                For Recruiters
+              </Link>
+            </div>
+          ) : (
+            /* AUTHENTICATED APPLICATION NAVIGATION */
+            <div className="hidden md:flex items-center gap-1">
+              {isAuthenticated ? (
+                <>
+                  {/* DEVELOPER NAV */}
+                  {isDeveloper && (
+                    <>
+                      <Link
+                        to="/dashboard"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/dashboard') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <LayoutDashboard size={15} />
+                        Dashboard
+                      </Link>
+                      <Link
+                        to="/skills"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/skills') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <CheckCircle2 size={15} />
+                        Skills
+                      </Link>
+                      <Link
+                        to="/projects"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/projects') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <FolderGit2 size={15} />
+                        Projects
+                      </Link>
+                      <Link
+                        to="/assessments"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/assessments') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Award size={15} />
+                        Assessments
+                      </Link>
+                      <Link
+                        to="/verifications"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/verifications') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <FileCheck size={15} />
+                        Verifications
+                      </Link>
+                    </>
+                  )}
 
-                {/* RECRUITER NAV */}
-                {isRecruiter && (
-                  <>
-                    <Link
-                      to="/recruiters/developers"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/recruiters/developers') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <Search size={16} />
-                      Find Developers
-                    </Link>
-                    <Link
-                      to="/recruiters/bookmarks"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/recruiters/bookmarks') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <Bookmark size={16} />
-                      Saved Developers
-                    </Link>
-                  </>
-                )}
+                  {/* RECRUITER NAV */}
+                  {isRecruiter && (
+                    <>
+                      <Link
+                        to="/recruiters/developers"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/recruiters/developers') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Search size={15} />
+                        Find Developers
+                      </Link>
+                      <Link
+                        to="/recruiters/bookmarks"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/recruiters/bookmarks') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Bookmark size={15} />
+                        Saved Developers
+                      </Link>
+                    </>
+                  )}
 
-                {/* ADMIN NAV */}
-                {isAdmin && (
-                  <>
-                    <Link
-                      to="/admin"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/admin') ? 'bg-purple-600/10 text-purple-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <ShieldAlert size={16} />
-                      Admin Control Center
-                    </Link>
-                  </>
-                )}
-              </>
-            ) : (
-              <>
+                  {/* ADMIN NAV */}
+                  {isAdmin && (
+                    <>
+                      <Link
+                        to="/admin"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/admin') ? 'bg-purple-50 text-purple-700' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <ShieldAlert size={15} />
+                        Admin Control Center
+                      </Link>
+                    </>
+                  )}
+                </>
+              ) : (
                 <Link
                   to="/recruiters/developers"
-                  className="px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-850 transition flex items-center gap-1.5"
+                  className="px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 transition flex items-center gap-1.5"
                 >
-                  <Search size={16} />
+                  <Search size={15} />
                   Browse Talent
                 </Link>
-              </>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Right Action Menu */}
           <div className="hidden md:flex items-center gap-3">
@@ -171,7 +186,7 @@ export const Navbar: React.FC = () => {
                 <NotificationBell />
 
                 {/* Role Badge */}
-                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-slate-700 bg-slate-900 text-slate-300 uppercase tracking-wider">
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] uppercase tracking-wider">
                   {user?.role}
                 </span>
 
@@ -179,21 +194,21 @@ export const Navbar: React.FC = () => {
                 <div className="relative">
                   <button
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-850 border border-slate-800 transition"
+                    className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 border border-[#E2E8F0] transition"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs border border-blue-200">
                       {user?.profile?.name ? user.profile.name.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-sm font-medium text-slate-200 max-w-[120px] truncate">
+                    <span className="text-xs font-semibold text-[#0F172A] max-w-[120px] truncate">
                       {user?.profile?.name || user?.email}
                     </span>
                   </button>
 
                   {isUserMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-56 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl py-1 z-50 divide-y divide-slate-800">
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-[#E2E8F0] shadow-xl py-1 z-50 divide-y divide-[#E2E8F0]">
                       <div className="px-4 py-3">
-                        <p className="text-sm font-bold text-slate-100 truncate">{user?.profile?.name}</p>
-                        <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                        <p className="text-xs font-bold text-[#0F172A] truncate">{user?.profile?.name}</p>
+                        <p className="text-[11px] text-[#64748B] truncate">{user?.email}</p>
                       </div>
 
                       <div className="py-1">
@@ -201,7 +216,7 @@ export const Navbar: React.FC = () => {
                           <Link
                             to={`/developer/${user.profile.username}`}
                             onClick={() => setIsUserMenuOpen(false)}
-                            className="px-4 py-2 text-xs font-medium text-indigo-400 hover:bg-indigo-950/30 flex items-center gap-2"
+                            className="px-4 py-2 text-xs font-semibold text-[#2563EB] hover:bg-blue-50 flex items-center gap-2"
                           >
                             <ExternalLink size={14} />
                             View Public Portfolio
@@ -210,7 +225,7 @@ export const Navbar: React.FC = () => {
                         <Link
                           to="/profile"
                           onClick={() => setIsUserMenuOpen(false)}
-                          className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-2"
+                          className="px-4 py-2 text-xs font-semibold text-[#475569] hover:bg-slate-100 flex items-center gap-2"
                         >
                           <UserIcon size={14} />
                           Manage Profile
@@ -220,7 +235,7 @@ export const Navbar: React.FC = () => {
                       <div className="py-1">
                         <button
                           onClick={handleLogout}
-                          className="w-full text-left px-4 py-2 text-xs font-medium text-rose-400 hover:bg-rose-950/30 flex items-center gap-2"
+                          className="w-full text-left px-4 py-2 text-xs font-semibold text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
                         >
                           <LogOut size={14} />
                           Sign Out
@@ -234,13 +249,13 @@ export const Navbar: React.FC = () => {
               <div className="flex items-center gap-3">
                 <Link
                   to="/login"
-                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-slate-850 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#0F172A] hover:bg-slate-100 transition"
                 >
-                  Log In
+                  Sign In
                 </Link>
                 <Link
                   to="/register"
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-md shadow-blue-500/20 transition"
                 >
                   Get Started
                 </Link>
@@ -253,9 +268,9 @@ export const Navbar: React.FC = () => {
             {isAuthenticated && <NotificationBell />}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+              className="p-2 text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 rounded-lg"
             >
-              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
           </div>
         </div>
@@ -263,7 +278,7 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-b border-slate-800 bg-slate-950 p-4 space-y-3">
+        <div className="md:hidden border-b border-[#E2E8F0] bg-white p-4 space-y-3 shadow-lg">
           {isAuthenticated ? (
             <>
               {isDeveloper && (
@@ -271,28 +286,28 @@ export const Navbar: React.FC = () => {
                   <Link
                     to="/dashboard"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Dashboard
                   </Link>
                   <Link
                     to="/skills"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Skills
                   </Link>
                   <Link
                     to="/projects"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Projects
                   </Link>
                   <Link
                     to="/assessments"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Assessments
                   </Link>
@@ -300,7 +315,7 @@ export const Navbar: React.FC = () => {
                     <Link
                       to={`/developer/${user.profile.username}`}
                       onClick={() => setIsMobileMenuOpen(false)}
-                      className="block px-3 py-2 rounded-lg text-sm text-indigo-400 font-semibold"
+                      className="block px-3 py-2 rounded-lg text-xs text-[#2563EB] font-semibold"
                     >
                       Public Portfolio
                     </Link>
@@ -313,14 +328,14 @@ export const Navbar: React.FC = () => {
                   <Link
                     to="/recruiters/developers"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Find Developers
                   </Link>
                   <Link
                     to="/recruiters/bookmarks"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Saved Developers
                   </Link>
@@ -331,17 +346,17 @@ export const Navbar: React.FC = () => {
                 <Link
                   to="/admin"
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-3 py-2 rounded-lg text-sm text-purple-400 font-semibold"
+                  className="block px-3 py-2 rounded-lg text-xs text-purple-700 font-semibold"
                 >
                   Admin Control Center
                 </Link>
               )}
 
-              <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
-                <span className="text-xs text-slate-400">{user?.email}</span>
+              <div className="pt-2 border-t border-[#E2E8F0] flex justify-between items-center">
+                <span className="text-xs text-[#64748B]">{user?.email}</span>
                 <button
                   onClick={handleLogout}
-                  className="text-xs text-rose-400 font-semibold flex items-center gap-1"
+                  className="text-xs text-[#DC2626] font-semibold flex items-center gap-1"
                 >
                   <LogOut size={14} /> Sign Out
                 </button>
@@ -352,14 +367,14 @@ export const Navbar: React.FC = () => {
               <Link
                 to="/login"
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block text-center w-full py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-sm font-semibold text-slate-200"
+                className="block text-center w-full py-2.5 rounded-xl bg-slate-100 border border-[#E2E8F0] text-xs font-semibold text-[#0F172A]"
               >
-                Log In
+                Sign In
               </Link>
               <Link
                 to="/register"
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block text-center w-full py-2.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white"
+                className="block text-center w-full py-2.5 rounded-xl bg-[#2563EB] text-xs font-bold text-white"
               >
                 Get Started
               </Link>
@@ -370,4 +385,3 @@ export const Navbar: React.FC = () => {
     </nav>
   );
 };
-

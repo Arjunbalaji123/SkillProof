@@ -235,16 +235,37 @@ export const SkillsManagerPage: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <VerifiedBadge status={us.verification_status} size="md" />
 
-                  {us.verification_status !== 'VERIFIED' && us.verification_status !== 'PENDING' && (
-                    <button
-                      onClick={() => {
-                        setTargetUserSkill(us);
-                        setIsVerifModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-bold text-xs transition flex items-center gap-1.5"
-                    >
-                      <FileCheck size={14} /> Request Verification
-                    </button>
+                  {us.verification_status !== 'VERIFIED' && (
+                    <>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await api.post(`/assessments/skill/${us.skill_id}/start`);
+                            if (res.data.success) {
+                              const { assessment, attemptId } = res.data.data;
+                              window.location.href = `/assessments/${assessment.id}?attemptId=${attemptId}`;
+                            }
+                          } catch (err: any) {
+                            alert(err.response?.data?.message || 'Failed to start quiz');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition flex items-center gap-1.5"
+                      >
+                        <Sparkles size={14} /> Take Instant Quiz
+                      </button>
+
+                      {us.verification_status !== 'PENDING' && (
+                        <button
+                          onClick={() => {
+                            setTargetUserSkill(us);
+                            setIsVerifModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-bold text-xs transition flex items-center gap-1.5"
+                        >
+                          <FileCheck size={14} /> Upload Proof
+                        </button>
+                      )}
+                    </>
                   )}
 
                   <button

@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'skillproof_super_secret_jwt_key_2026_prod_quality';
+const getJwtSecret = (): string => {
+  return process.env.JWT_SECRET || 'skillproof_super_secret_jwt_key_2026_prod_quality';
+};
+
 const JWT_EXPIRES_IN = '7d';
 
 export interface JwtPayload {
@@ -11,10 +14,11 @@ export interface JwtPayload {
 }
 
 export const signToken = (payload: JwtPayload): string => {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: JWT_EXPIRES_IN });
 };
 
 export const verifyToken = (token: string): JwtPayload => {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, getJwtSecret()) as JwtPayload;
 };
+
 

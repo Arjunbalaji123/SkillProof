@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import { PageSkeleton } from '../components/LoadingSkeleton';
-import { FileCheck, Clock, FileDown, AlertCircle } from 'lucide-react';
+import { FileCheck, Clock, FileDown, Play, Sparkles } from 'lucide-react';
 import { VerificationRequest } from '../types';
 
 export const VerificationsPage: React.FC = () => {
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [startingSkillId, setStartingSkillId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchVerifications = async () => {
@@ -25,6 +28,22 @@ export const VerificationsPage: React.FC = () => {
     fetchVerifications();
   }, []);
 
+  const handleStartVerificationQuiz = async (skillId: string) => {
+    setStartingSkillId(skillId);
+    try {
+      const res = await api.post(`/assessments/skill/${skillId}/start`);
+      if (res.data.success) {
+        const { assessment, attemptId } = res.data.data;
+        navigate(`/assessments/${assessment.id}?attemptId=${attemptId}`);
+      }
+    } catch (err: any) {
+      console.error('Failed to start verification quiz:', err);
+      alert(err.response?.data?.message || 'Failed to start quiz');
+    } finally {
+      setStartingSkillId(null);
+    }
+  };
+
   if (isLoading) return <PageSkeleton />;
 
   return (
@@ -35,7 +54,7 @@ export const VerificationsPage: React.FC = () => {
           My Skill Verification Requests
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Track submitted proof documents, assessment auto-verifications, and admin approval statuses.
+          Track submitted proof documents, admin approval statuses, or take an automated verification test to verify immediately.
         </p>
       </div>
 
@@ -53,7 +72,7 @@ export const VerificationsPage: React.FC = () => {
                 <th className="p-4">Submitted Date</th>
                 <th className="p-4">Attached Document</th>
                 <th className="p-4">Status</th>
-                <th className="p-4">Rejection Notes</th>
+                <th className="p-4">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -64,37 +83,54 @@ export const VerificationsPage: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                requests.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-850 transition">
-                    <td className="p-4 font-bold text-white">
-                      {r.user_skill?.skill?.name || 'Skill'}
-                    </td>
-                    <td className="p-4 font-mono">{r.method}</td>
-                    <td className="p-4 text-slate-400">
-                      {new Date(r.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="p-4">
-                      {r.documents && r.documents.length > 0 ? (
-                        <a
-                          href={r.documents[0].file_path}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-indigo-400 hover:underline font-mono"
-                        >
-                          <FileDown size={14} /> {r.documents[0].file_name}
-                        </a>
-                      ) : (
-                        <span className="text-slate-500 italic">None</span>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <VerifiedBadge status={r.status} size="sm" />
-                    </td>
-                    <td className="p-4 text-rose-400">
-                      {r.rejection_reason || <span className="text-slate-500 italic">-</span>}
-                    </td>
-                  </tr>
-                ))
+                requests.map((r) => {
+                  const skillId = r.user_skill?.skill_id;
+                  const isPending = r.status === 'PENDING';
+
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-850 transition">
+                      <td className="p-4 font-bold text-white">
+                        {r.user_skill?.skill?.name || 'Skill'}
+                      </td>
+                      <td className="p-4 font-mono">{r.method}</td>
+                      <td className="p-4 text-slate-400">
+                        {new Date(r.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="p-4">
+                        {r.documents && r.documents.length > 0 ? (
+                          <a
+                            href={r.documents[0].file_path}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-indigo-400 hover:underline font-mono"
+                          >
+                            <FileDown size={14} /> {r.documents[0].file_name}
+                          </a>
+                        ) : (
+                          <span className="text-slate-500 italic">None</span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <VerifiedBadge status={r.status} size="sm" />
+                      </td>
+                      <td className="p-4">
+                        {isPending && skillId ? (
+                          <button
+                            onClick={() => handleStartVerificationQuiz(skillId)}
+                            disabled={startingSkillId === skillId}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition inline-flex items-center gap-1.5"
+                          >
+                            <Play size={12} /> Take Verification Test
+                          </button>
+                        ) : (
+                          <span className="text-slate-500 text-[11px] italic">
+                            {r.rejection_reason || '-'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -103,4 +139,3 @@ export const VerificationsPage: React.FC = () => {
     </div>
   );
 };
-

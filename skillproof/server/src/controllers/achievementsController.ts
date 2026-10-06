@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 import { achievementSchema } from '../validators/index.js';
 import { logAudit } from '../utils/audit.js';
+import { verifyResourceOwnership } from '../middleware/ownership.js';
 
 export const getAchievements = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -55,8 +56,8 @@ export const updateAchievement = async (req: AuthRequest, res: Response, next: N
     const id = req.params.id as string;
     const validated = achievementSchema.parse(req.body);
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
+    const ownership = await verifyResourceOwnership('achievement', id, userId, res);
+    if (!ownership) return;
 
     const updated = await prisma.achievement.update({
       where: { id },
@@ -80,8 +81,8 @@ export const deleteAchievement = async (req: AuthRequest, res: Response, next: N
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
+    const ownership = await verifyResourceOwnership('achievement', id, userId, res);
+    if (!ownership) return;
 
     await prisma.achievement.delete({ where: { id } });
     await logAudit(userId, 'ACHIEVEMENT_DELETED', 'ACHIEVEMENT', id);
