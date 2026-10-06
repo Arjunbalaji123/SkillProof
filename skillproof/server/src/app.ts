@@ -1,17 +1,27 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import dotenv from 'dotenv';
 import apiRoutes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 import { prisma } from './config/db.js';
-
-dotenv.config();
+import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR || '../uploads');
+
+// Security Headers Middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 // Request Logging & Security Middleware
 app.use(requestLogger);
@@ -22,8 +32,13 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static file uploads safely
-app.use('/uploads', express.static(uploadDir, {
+// Serve static file uploads safely (excluding raw access to sensitive proof PDFs)
+app.use('/uploads', (req, res, next) => {
+  if (req.path.startsWith('/proof_')) {
+    return res.status(403).json({ success: false, message: 'Access denied. Use protected document endpoint.' });
+  }
+  next();
+}, express.static(uploadDir, {
   dotfiles: 'ignore',
   index: false,
 }));
@@ -49,8 +64,10 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// API Routes
-app.use('/api', apiRoutes);
+// Apply Rate Limiters & API Routes
+app.use('/api/auth/login', authRateLimiter);
+app.use('/api/auth/register', authRateLimiter);
+app.use('/api', apiRateLimiter, apiRoutes);
 
 // Error Handler
 app.use(errorHandler);

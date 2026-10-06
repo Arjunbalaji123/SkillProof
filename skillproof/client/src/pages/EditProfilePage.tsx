@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Profile } from '../types';
-import { User, MapPin, Globe, Github, Linkedin, Upload, Save, CheckCircle2 } from 'lucide-react';
+import { Profile, Education, Certification, Achievement } from '../types';
+import { User, MapPin, Globe, Github, Linkedin, Upload, Save, CheckCircle2, Award, GraduationCap, Trophy, Plus, Trash2 } from 'lucide-react';
 
 export const EditProfilePage: React.FC = () => {
   const { refreshUser } = useAuth();
@@ -19,30 +19,58 @@ export const EditProfilePage: React.FC = () => {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
+  const [educationList, setEducationList] = useState<Education[]>([]);
+  const [certificationsList, setCertificationsList] = useState<Certification[]>([]);
+  const [achievementsList, setAchievementsList] = useState<Achievement[]>([]);
+
+  // Education form state
+  const [eduInstitution, setEduInstitution] = useState('');
+  const [eduDegree, setEduDegree] = useState('');
+  const [eduField, setEduField] = useState('');
+  const [eduStartDate, setEduStartDate] = useState('');
+  const [eduEndDate, setEduEndDate] = useState('');
+
+  // Certification form state
+  const [certTitle, setCertTitle] = useState('');
+  const [certIssuer, setCertIssuer] = useState('');
+  const [certIssueDate, setCertIssueDate] = useState('');
+  const [certUrl, setCertUrl] = useState('');
+
+  // Achievement form state
+  const [achTitle, setAchTitle] = useState('');
+  const [achDesc, setAchDesc] = useState('');
+  const [achDate, setAchDate] = useState('');
+
   const [message, setMessage] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const res = await api.get('/profile');
-        if (res.data.success) {
-          const p: Profile = res.data.data;
-          setProfile(p);
-          setName(p.name || '');
-          setHeadline(p.headline || '');
-          setBio(p.bio || '');
-          setLocation(p.location || '');
-          setGithubUrl(p.github_url || '');
-          setLinkedinUrl(p.linkedin_url || '');
-          setPortfolioUrl(p.portfolio_url || '');
-          setYearsExperience(p.years_experience || 0);
-          if (p.profile_image) setAvatarPreview(p.profile_image);
-        }
-      } catch (err) {
-        console.error('Failed to load profile:', err);
+  const fetchProfile = async () => {
+    try {
+      const res = await api.get('/profile');
+      if (res.data.success) {
+        const p: Profile = res.data.data;
+        setProfile(p);
+        setName(p.name || '');
+        setHeadline(p.headline || '');
+        setBio(p.bio || '');
+        setLocation(p.location || '');
+        setGithubUrl(p.github_url || '');
+        setLinkedinUrl(p.linkedin_url || '');
+        setPortfolioUrl(p.portfolio_url || '');
+        setYearsExperience(p.years_experience || 0);
+        if (p.profile_image) setAvatarPreview(p.profile_image);
+        if (p.education) setEducationList(p.education);
+        if (p.certifications) setCertificationsList(p.certifications);
+        if (p.achievements) setAchievementsList(p.achievements);
       }
-    };
+    } catch (err) {
+      console.error('Failed to load profile:', err);
+    }
+  };
+
+  useEffect(() => {
     fetchProfile();
   }, []);
 
@@ -57,10 +85,11 @@ export const EditProfilePage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
+    setErrorMsg(null);
+    setFieldErrors({});
     setIsLoading(true);
 
     try {
-      // 1. Upload avatar if selected
       if (avatarFile) {
         const formData = new FormData();
         formData.append('avatar', avatarFile);
@@ -69,7 +98,6 @@ export const EditProfilePage: React.FC = () => {
         });
       }
 
-      // 2. Update text fields
       const res = await api.put('/profile', {
         name,
         headline,
@@ -87,9 +115,107 @@ export const EditProfilePage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Profile update failed:', err);
-      setMessage(err.response?.data?.message || 'Failed to update profile');
+      const errData = err.response?.data;
+      setErrorMsg(errData?.message || 'Failed to update profile');
+      if (errData?.errors && Array.isArray(errData.errors)) {
+        const mapped: Record<string, string> = {};
+        errData.errors.forEach((e: any) => {
+          if (e.path && e.path[0]) mapped[e.path[0]] = e.message;
+        });
+        setFieldErrors(mapped);
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleAddEducation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.post('/education', {
+        institution: eduInstitution,
+        degree: eduDegree,
+        field_of_study: eduField,
+        start_date: eduStartDate,
+        end_date: eduEndDate || undefined,
+      });
+      if (res.data.success) {
+        setEduInstitution('');
+        setEduDegree('');
+        setEduField('');
+        setEduStartDate('');
+        setEduEndDate('');
+        fetchProfile();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to add education');
+    }
+  };
+
+  const handleDeleteEducation = async (id: string) => {
+    try {
+      await api.delete(`/education/${id}`);
+      fetchProfile();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to delete education');
+    }
+  };
+
+  const handleAddCertification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.post('/certifications', {
+        title: certTitle,
+        issuer: certIssuer,
+        issue_date: certIssueDate,
+        credential_url: certUrl || undefined,
+      });
+      if (res.data.success) {
+        setCertTitle('');
+        setCertIssuer('');
+        setCertIssueDate('');
+        setCertUrl('');
+        fetchProfile();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to add certification');
+    }
+  };
+
+  const handleDeleteCertification = async (id: string) => {
+    try {
+      await api.delete(`/certifications/${id}`);
+      fetchProfile();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to delete certification');
+    }
+  };
+
+  const handleAddAchievement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.post('/achievements', {
+        title: achTitle,
+        description: achDesc,
+        date: achDate || undefined,
+      });
+      if (res.data.success) {
+        setAchTitle('');
+        setAchDesc('');
+        setAchDate('');
+        fetchProfile();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to add achievement');
+    }
+  };
+
+  const handleDeleteAchievement = async (id: string) => {
+    try {
+      await api.delete(`/achievements/${id}`);
+      fetchProfile();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to delete achievement');
     }
   };
 
@@ -101,7 +227,7 @@ export const EditProfilePage: React.FC = () => {
           Edit Developer Profile
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Keep your headline, bio, and social links up to date to increase recruiter visibility.
+          Keep your headline, bio, education, certifications, and achievements up to date.
         </p>
       </div>
 
@@ -109,6 +235,12 @@ export const EditProfilePage: React.FC = () => {
         <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-2">
           <CheckCircle2 size={16} />
           <span>{message}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+          {errorMsg}
         </div>
       )}
 
@@ -143,6 +275,7 @@ export const EditProfilePage: React.FC = () => {
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
             />
+            {fieldErrors.name && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.name}</p>}
           </div>
 
           <div>
@@ -155,6 +288,7 @@ export const EditProfilePage: React.FC = () => {
               onChange={(e) => setYearsExperience(Number(e.target.value))}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
             />
+            {fieldErrors.years_experience && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.years_experience}</p>}
           </div>
         </div>
 
@@ -167,6 +301,7 @@ export const EditProfilePage: React.FC = () => {
             placeholder="e.g. Senior Full-Stack Engineer | React, Node.js & Cloud"
             className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
           />
+          {fieldErrors.headline && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.headline}</p>}
         </div>
 
         <div>
@@ -178,6 +313,7 @@ export const EditProfilePage: React.FC = () => {
             placeholder="Describe your technical background, domain expertise, and engineering goals..."
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
           />
+          {fieldErrors.bio && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.bio}</p>}
         </div>
 
         <div>
@@ -192,6 +328,7 @@ export const EditProfilePage: React.FC = () => {
               className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
             />
           </div>
+          {fieldErrors.location && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.location}</p>}
         </div>
 
         {/* Social URLs */}
@@ -211,6 +348,7 @@ export const EditProfilePage: React.FC = () => {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
+              {fieldErrors.github_url && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.github_url}</p>}
             </div>
 
             <div>
@@ -225,6 +363,7 @@ export const EditProfilePage: React.FC = () => {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
+              {fieldErrors.linkedin_url && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.linkedin_url}</p>}
             </div>
 
             <div>
@@ -239,6 +378,7 @@ export const EditProfilePage: React.FC = () => {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
+              {fieldErrors.portfolio_url && <p className="text-red-400 text-[11px] mt-1">{fieldErrors.portfolio_url}</p>}
             </div>
           </div>
         </div>
@@ -253,7 +393,223 @@ export const EditProfilePage: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Education Management Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+        <h2 className="text-base font-bold text-white flex items-center gap-2">
+          <GraduationCap className="text-indigo-400" size={20} />
+          Education Records
+        </h2>
+
+        {educationList.length > 0 && (
+          <div className="space-y-3">
+            {educationList.map((edu) => (
+              <div key={edu.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-200">{edu.degree} in {edu.field_of_study}</h4>
+                  <p className="text-[11px] text-slate-400">{edu.institution} ({edu.start_date} - {edu.end_date || 'Present'})</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteEducation(edu.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+                  title="Delete Education"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={handleAddEducation} className="space-y-3 pt-3 border-t border-slate-800">
+          <h3 className="text-xs font-bold text-slate-300">Add New Education</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <input
+              type="text"
+              placeholder="Institution (e.g. Stanford University)"
+              required
+              value={eduInstitution}
+              onChange={(e) => setEduInstitution(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+            <input
+              type="text"
+              placeholder="Degree (e.g. B.S.)"
+              required
+              value={eduDegree}
+              onChange={(e) => setEduDegree(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+            <input
+              type="text"
+              placeholder="Field of Study (e.g. Computer Science)"
+              required
+              value={eduField}
+              onChange={(e) => setEduField(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              placeholder="Start Date (e.g. 2020-09-01)"
+              required
+              value={eduStartDate}
+              onChange={(e) => setEduStartDate(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+            <input
+              type="text"
+              placeholder="End Date (e.g. 2024-05-30 or leave empty)"
+              value={eduEndDate}
+              onChange={(e) => setEduEndDate(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 font-bold text-xs flex items-center gap-1 transition"
+          >
+            <Plus size={14} /> Add Education
+          </button>
+        </form>
+      </div>
+
+      {/* Certifications Management Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+        <h2 className="text-base font-bold text-white flex items-center gap-2">
+          <Award className="text-emerald-400" size={20} />
+          Certifications
+        </h2>
+
+        {certificationsList.length > 0 && (
+          <div className="space-y-3">
+            {certificationsList.map((cert) => (
+              <div key={cert.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-200">{cert.title}</h4>
+                  <p className="text-[11px] text-slate-400">{cert.issuer} ({cert.issue_date})</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteCertification(cert.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+                  title="Delete Certification"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={handleAddCertification} className="space-y-3 pt-3 border-t border-slate-800">
+          <h3 className="text-xs font-bold text-slate-300">Add New Certification</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              placeholder="Certification Title (e.g. AWS Certified Solutions Architect)"
+              required
+              value={certTitle}
+              onChange={(e) => setCertTitle(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+            <input
+              type="text"
+              placeholder="Issuer (e.g. Amazon Web Services)"
+              required
+              value={certIssuer}
+              onChange={(e) => setCertIssuer(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              placeholder="Issue Date (e.g. 2023-09-15)"
+              required
+              value={certIssueDate}
+              onChange={(e) => setCertIssueDate(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+            <input
+              type="url"
+              placeholder="Credential URL (http:// or https://)"
+              value={certUrl}
+              onChange={(e) => setCertUrl(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs flex items-center gap-1 transition"
+          >
+            <Plus size={14} /> Add Certification
+          </button>
+        </form>
+      </div>
+
+      {/* Achievements Management Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+        <h2 className="text-base font-bold text-white flex items-center gap-2">
+          <Trophy className="text-amber-400" size={20} />
+          Achievements & Awards
+        </h2>
+
+        {achievementsList.length > 0 && (
+          <div className="space-y-3">
+            {achievementsList.map((ach) => (
+              <div key={ach.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-200">{ach.title}</h4>
+                  <p className="text-[11px] text-slate-400">{ach.description}</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteAchievement(ach.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+                  title="Delete Achievement"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={handleAddAchievement} className="space-y-3 pt-3 border-t border-slate-800">
+          <h3 className="text-xs font-bold text-slate-300">Add New Achievement</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              placeholder="Achievement Title (e.g. 1st Place National Hackathon)"
+              required
+              value={achTitle}
+              onChange={(e) => setAchTitle(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+            <input
+              type="text"
+              placeholder="Date (e.g. 2024-03-20)"
+              value={achDate}
+              onChange={(e) => setAchDate(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+            />
+          </div>
+          <textarea
+            placeholder="Description of the award or achievement..."
+            required
+            rows={2}
+            value={achDesc}
+            onChange={(e) => setAchDesc(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold text-xs flex items-center gap-1 transition"
+          >
+            <Plus size={14} /> Add Achievement
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
-

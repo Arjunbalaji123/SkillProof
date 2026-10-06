@@ -90,23 +90,24 @@ export const updateProject = async (req: AuthRequest, res: Response, next: NextF
     const ownership = await verifyResourceOwnership('project', projectId, userId, res);
     if (!ownership) return;
 
-    await prisma.projectTechnology.deleteMany({ where: { project_id: projectId } });
-
-    const updated = await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        title: validated.title,
-        description: validated.description,
-        github_url: validated.github_url || null,
-        live_url: validated.live_url || null,
-        start_date: validated.start_date || null,
-        end_date: validated.end_date || null,
-        status: validated.status,
-        technologies: {
-          create: validated.technologies.map((tech) => ({ technology_name: tech })),
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.projectTechnology.deleteMany({ where: { project_id: projectId } });
+      return tx.project.update({
+        where: { id: projectId },
+        data: {
+          title: validated.title,
+          description: validated.description,
+          github_url: validated.github_url || null,
+          live_url: validated.live_url || null,
+          start_date: validated.start_date || null,
+          end_date: validated.end_date || null,
+          status: validated.status,
+          technologies: {
+            create: validated.technologies.map((tech) => ({ technology_name: tech })),
+          },
         },
-      },
-      include: { technologies: true },
+        include: { technologies: true },
+      });
     });
 
     return sendSuccess(res, 'Project updated successfully', updated);

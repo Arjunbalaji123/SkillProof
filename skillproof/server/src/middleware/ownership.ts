@@ -9,6 +9,12 @@ export async function verifyResourceOwnership(
   userId: string,
   res: Response
 ): Promise<{ profileId: string; resource: any } | null> {
+  const isUuid = resourceId && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(resourceId);
+  if (!isUuid) {
+    sendError(res, `${model.charAt(0).toUpperCase() + model.slice(1)} not found`, 404);
+    return null;
+  }
+
   const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
   if (!profile) {
     sendError(res, 'Profile not found', 404);

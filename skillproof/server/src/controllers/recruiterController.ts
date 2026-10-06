@@ -62,7 +62,7 @@ export const searchDevelopers = async (req: AuthRequest, res: Response, next: Ne
     const profiles = await prisma.profile.findMany({
       where: profileWhere,
       include: {
-        user: { select: { id: true, email: true, created_at: true } },
+        user: { select: { id: true, created_at: true } },
         user_skills: {
           include: { skill: true },
         },

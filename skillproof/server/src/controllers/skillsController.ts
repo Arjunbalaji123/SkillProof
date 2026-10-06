@@ -87,10 +87,13 @@ export const addUserSkill = async (req: AuthRequest, res: Response, next: NextFu
     let skillId = validated.skill_id;
 
     if (!skillId && validated.skill_name) {
-      let skill = await prisma.skill.findUnique({ where: { name: validated.skill_name } });
+      const normalizedName = validated.skill_name.trim();
+      let skill = await prisma.skill.findFirst({
+        where: { name: { equals: normalizedName } },
+      });
       if (!skill) {
         skill = await prisma.skill.create({
-          data: { name: validated.skill_name, category: 'General' },
+          data: { name: normalizedName, category: 'General' },
         });
       }
       skillId = skill.id;
@@ -133,6 +136,11 @@ export const updateUserSkill = async (req: AuthRequest, res: Response, next: Nex
     const userSkillId = req.params.id as string;
     const { proficiency_level } = req.body;
 
+    const validLevels = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
+    if (!proficiency_level || !validLevels.includes(String(proficiency_level).toUpperCase())) {
+      return sendError(res, 'Invalid proficiency level. Allowed values: BEGINNER, INTERMEDIATE, ADVANCED, EXPERT', 400);
+    }
+
     const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
     if (!profile) return sendError(res, 'Profile not found', 404);
 
@@ -144,7 +152,7 @@ export const updateUserSkill = async (req: AuthRequest, res: Response, next: Nex
 
     const updated = await prisma.userSkill.update({
       where: { id: userSkillId },
-      data: { proficiency_level: String(proficiency_level) },
+      data: { proficiency_level: String(proficiency_level).toUpperCase() as any },
       include: { skill: true },
     });
 

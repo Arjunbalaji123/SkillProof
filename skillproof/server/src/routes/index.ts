@@ -11,6 +11,7 @@ import verificationRoutes from './verificationRoutes.js';
 import recruiterRoutes from './recruiterRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
+import reportsRoutes from './reportsRoutes.js';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.use('/verifications', verificationRoutes);
 router.use('/recruiters', recruiterRoutes);
 router.use('/admin', adminRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/reports', reportsRoutes);
 
 export default router;
 

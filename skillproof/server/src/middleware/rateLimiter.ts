@@ -1,35 +1,50 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError } from '../errors/AppError.js';
+import { sendError } from '../utils/response.js';
 
-interface RateLimitRecord {
-  count: number;
-  resetTime: number;
+interface RateLimitStore {
+  [ip: string]: { count: number; resetTime: number };
 }
 
-const rateLimitMap = new Map<string, RateLimitRecord>();
+interface RateLimitOptions {
+  windowMs?: number;
+  max?: number;
+  message?: string;
+}
 
-export function createRateLimiter(options: { windowMs: number; max: number; message?: string }) {
-  const { windowMs, max, message = 'Too many requests, please try again later.' } = options;
+export const createRateLimiter = (optionsOrMax: number | RateLimitOptions, windowMsArg?: number) => {
+  let maxRequests = 100;
+  let windowMs = 15 * 60 * 1000;
+  let customMsg = 'Too many requests, please try again later';
+
+  if (typeof optionsOrMax === 'number') {
+    maxRequests = optionsOrMax;
+    windowMs = windowMsArg || 15 * 60 * 1000;
+  } else if (optionsOrMax && typeof optionsOrMax === 'object') {
+    maxRequests = optionsOrMax.max || 100;
+    windowMs = optionsOrMax.windowMs || 15 * 60 * 1000;
+    if (optionsOrMax.message) customMsg = optionsOrMax.message;
+  }
+
+  const store: RateLimitStore = {};
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const key = `${req.baseUrl}${req.path}:${ip}`;
+    const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
     const now = Date.now();
 
-    const record = rateLimitMap.get(key);
-
-    if (!record || now > record.resetTime) {
-      rateLimitMap.set(key, { count: 1, resetTime: now + windowMs });
+    if (!store[ip] || now > store[ip].resetTime) {
+      store[ip] = { count: 1, resetTime: now + windowMs };
       return next();
     }
 
-    if (record.count >= max) {
-      res.setHeader('Retry-After', Math.ceil((record.resetTime - now) / 1000));
-      return next(AppError.tooManyRequests(message));
+    store[ip].count += 1;
+
+    if (store[ip].count > maxRequests) {
+      return sendError(res, customMsg, 429);
     }
 
-    record.count++;
-    return next();
+    next();
   };
-}
+};
 
+export const authRateLimiter = createRateLimiter(20, 15 * 60 * 1000); // 20 requests per 15 mins
+export const apiRateLimiter = createRateLimiter(300, 15 * 60 * 1000);  // 300 requests per 15 mins

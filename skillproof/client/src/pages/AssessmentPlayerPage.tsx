@@ -21,6 +21,12 @@ export const AssessmentPlayerPage: React.FC = () => {
   // Result state
   const [resultData, setResultData] = useState<any | null>(null);
 
+  const selectedAnswersRef = React.useRef(selectedAnswers);
+  selectedAnswersRef.current = selectedAnswers;
+
+  const isSubmittingRef = React.useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
+
   useEffect(() => {
     const fetchAssessment = async () => {
       try {
@@ -39,33 +45,16 @@ export const AssessmentPlayerPage: React.FC = () => {
     if (id) fetchAssessment();
   }, [id]);
 
-  // Countdown timer effect
-  useEffect(() => {
-    if (!assessment || resultData) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleSubmitQuiz();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [assessment, resultData]);
-
   const handleSelectOption = (questionId: string, optionId: string) => {
     setSelectedAnswers((prev) => ({ ...prev, [questionId]: optionId }));
   };
 
   const handleSubmitQuiz = async () => {
-    if (isSubmitting || !attemptId || !assessment) return;
+    if (isSubmittingRef.current || !attemptId || !assessment) return;
     setIsSubmitting(true);
 
     try {
-      const answersArray = Object.entries(selectedAnswers).map(([questionId, selectedOptionId]) => ({
+      const answersArray = Object.entries(selectedAnswersRef.current).map(([questionId, selectedOptionId]) => ({
         questionId,
         selectedOptionId,
       }));
@@ -85,6 +74,23 @@ export const AssessmentPlayerPage: React.FC = () => {
       setIsSubmitting(false);
     }
   };
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (!assessment || resultData) return;
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleSubmitQuiz();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [assessment, resultData]);
 
   if (isLoading || !assessment) return <PageSkeleton />;
 

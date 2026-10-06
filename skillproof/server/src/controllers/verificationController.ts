@@ -1,4 +1,6 @@
 import { Response, NextFunction } from 'express';
+import path from 'path';
+import fs from 'fs';
 import { prisma } from '../config/db.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { sendSuccess, sendError } from '../utils/response.js';
@@ -167,4 +169,40 @@ export const reviewVerificationRequest = async (req: AuthRequest, res: Response,
     next(err);
   }
 };
+
+export const getVerificationDocument = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const docId = req.params.id as string;
+    const userId = req.user!.userId;
+    const role = req.user!.role;
+
+    const doc = await prisma.verificationDocument.findUnique({
+      where: { id: docId },
+      include: {
+        verification_request: true,
+      },
+    });
+
+    if (!doc) {
+      return sendError(res, 'Verification document not found', 404);
+    }
+
+    if (role !== 'ADMIN' && doc.verification_request.user_id !== userId) {
+      return sendError(res, 'Forbidden: You do not have permission to view this proof document', 403);
+    }
+
+    const filename = path.basename(doc.file_path);
+    const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR || '../uploads');
+    const fullPath = path.join(uploadDir, filename);
+
+    if (!fs.existsSync(fullPath)) {
+      return sendError(res, 'Document file not found on server storage', 404);
+    }
+
+    return res.sendFile(fullPath);
+  } catch (err) {
+    next(err);
+  }
+};
+
 

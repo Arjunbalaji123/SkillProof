@@ -110,7 +110,7 @@ export const getPublicProfile = async (req: AuthRequest, res: Response, next: Ne
     const profile = await prisma.profile.findUnique({
       where: { username },
       include: {
-        user: { select: { id: true, email: true, role: true, created_at: true } },
+        user: { select: { id: true, role: true, created_at: true } },
         user_skills: {
           include: { skill: true },
           orderBy: { created_at: 'desc' },
