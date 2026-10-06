@@ -1,0 +1,400 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  role          String   @default("DEVELOPER") // DEVELOPER, RECRUITER, ADMIN
+  status        String   @default("ACTIVE")    // ACTIVE, SUSPENDED
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  profile               Profile?
+  sessions              Session[]
+  reset_tokens          PasswordResetToken[]
+  assessment_attempts   AssessmentAttempt[]
+  verification_requests VerificationRequest[] @relation("UserVerificationRequests")
+  reviewed_requests     VerificationRequest[] @relation("ReviewerVerificationRequests")
+  bookmarks_created     RecruiterBookmark[]   @relation("RecruiterBookmarks")
+  bookmarks_received    RecruiterBookmark[]   @relation("DeveloperBookmarks")
+  recruiter_notes       RecruiterNote[]       @relation("RecruiterNotes")
+  recruiter_collections CandidateCollection[]  @relation("RecruiterCollections")
+  notifications         Notification[]
+  reports_submitted     Report[]              @relation("Reporter")
+  reports_received      Report[]              @relation("ReportedUser")
+  audit_logs            AuditLog[]
+}
+
+model Session {
+  id                 String    @id @default(uuid())
+  user_id            String
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  refresh_token_hash String    @unique
+  device_info        String?
+  ip_address         String?
+  expires_at         DateTime
+  revoked_at         DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  @@index([user_id])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token_hash String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  @@index([user_id])
+}
+
+model Profile {
+  id                 String   @id @default(uuid())
+  user_id            String   @unique
+  user               User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name               String
+  username           String   @unique
+  headline           String?
+  bio                String?
+  location           String?
+  profile_image      String?
+  github_url         String?
+  linkedin_url       String?
+  portfolio_url      String?
+  years_experience   Int      @default(0)
+  profile_completion Int      @default(0)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  user_skills    UserSkill[]
+  projects       Project[]
+  education      Education[]
+  certifications Certification[]
+  achievements   Achievement[]
+}
+
+model Skill {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  category    String   // Frontend, Backend, Database, DevOps, Languages, Tools
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user_skills UserSkill[]
+  assessments Assessment[]
+}
+
+model UserSkill {
+  id                  String    @id @default(uuid())
+  profile_id          String
+  profile             Profile   @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  skill_id            String
+  skill               Skill     @relation(fields: [skill_id], references: [id], onDelete: Cascade)
+  proficiency_level   String    @default("INTERMEDIATE") // BEGINNER, INTERMEDIATE, ADVANCED, EXPERT
+  verification_status String    @default("UNVERIFIED")   // UNVERIFIED, PENDING, VERIFIED, REJECTED
+  verification_code   String?   @unique                  // Unique code for public verification
+  verified_at         DateTime?
+  verified_by         String?
+  verification_method String?   // ASSESSMENT, CERTIFICATION, PROJECT, DOCUMENT
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  verification_requests VerificationRequest[]
+
+  @@unique([profile_id, skill_id])
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  profile_id  String
+  profile     Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  title       String
+  description String
+  image       String?
+  github_url  String?
+  live_url    String?
+  start_date  String?
+  end_date    String?
+  status      String   @default("COMPLETED") // COMPLETED, IN_PROGRESS, PLANNED
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  technologies ProjectTechnology[]
+
+  @@index([profile_id])
+}
+
+model ProjectTechnology {
+  id              String   @id @default(uuid())
+  project_id      String
+  project         Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  technology_name String
+  created_at      DateTime @default(now())
+
+  @@index([project_id])
+}
+
+model Education {
+  id             String   @id @default(uuid())
+  profile_id     String
+  profile        Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  institution    String
+  degree         String
+  field_of_study String
+  start_date     String
+  end_date       String?
+  grade          String?
+  description    String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([profile_id])
+}
+
+model Certification {
+  id             String   @id @default(uuid())
+  profile_id     String
+  profile        Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  title          String
+  issuer         String
+  issue_date     String
+  expiry_date    String?
+  credential_id  String?
+  credential_url String?
+  document_url   String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([profile_id])
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  profile_id  String
+  profile     Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  title       String
+  description String
+  date        String?
+  issuer      String?
+  url         String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([profile_id])
+}
+
+model Assessment {
+  id                 String   @id @default(uuid())
+  skill_id           String
+  skill              Skill    @relation(fields: [skill_id], references: [id], onDelete: Cascade)
+  title              String
+  description        String
+  time_limit_minutes Int      @default(15)
+  passing_percentage Int      @default(70)
+  total_questions    Int      @default(10)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  questions AssessmentQuestion[]
+  attempts  AssessmentAttempt[]
+
+  @@index([skill_id])
+}
+
+model AssessmentQuestion {
+  id            String     @id @default(uuid())
+  assessment_id String
+  assessment    Assessment @relation(fields: [assessment_id], references: [id], onDelete: Cascade)
+  question_text String
+  code_snippet  String?
+  explanation   String?
+  points        Int        @default(1)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  options AssessmentOption[]
+  answers AssessmentAnswer[]
+
+  @@index([assessment_id])
+}
+
+model AssessmentOption {
+  id          String             @id @default(uuid())
+  question_id String
+  question    AssessmentQuestion @relation(fields: [question_id], references: [id], onDelete: Cascade)
+  option_text String
+  is_correct  Boolean            @default(false)
+  created_at  DateTime           @default(now())
+
+  answers AssessmentAnswer[]
+
+  @@index([question_id])
+}
+
+model AssessmentAttempt {
+  id              String     @id @default(uuid())
+  user_id         String
+  user            User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  assessment_id   String
+  assessment      Assessment @relation(fields: [assessment_id], references: [id], onDelete: Cascade)
+  start_time      DateTime   @default(now())
+  end_time        DateTime?
+  total_questions Int        @default(0)
+  correct_answers Int        @default(0)
+  score           Float      @default(0.0)
+  percentage      Float      @default(0.0)
+  status          String     @default("IN_PROGRESS") // IN_PROGRESS, PASSED, FAILED, EXPIRED
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  answers AssessmentAnswer[]
+
+  @@index([user_id])
+  @@index([assessment_id])
+}
+
+model AssessmentAnswer {
+  id                 String             @id @default(uuid())
+  attempt_id         String
+  attempt            AssessmentAttempt  @relation(fields: [attempt_id], references: [id], onDelete: Cascade)
+  question_id        String
+  question           AssessmentQuestion @relation(fields: [question_id], references: [id], onDelete: Cascade)
+  selected_option_id String
+  selected_option    AssessmentOption   @relation(fields: [selected_option_id], references: [id], onDelete: Cascade)
+  is_correct         Boolean            @default(false)
+  created_at         DateTime           @default(now())
+
+  @@index([attempt_id])
+  @@index([question_id])
+}
+
+model VerificationRequest {
+  id               String    @id @default(uuid())
+  user_id          String
+  user             User      @relation("UserVerificationRequests", fields: [user_id], references: [id], onDelete: Cascade)
+  user_skill_id    String
+  user_skill       UserSkill @relation(fields: [user_skill_id], references: [id], onDelete: Cascade)
+  method           String    // ASSESSMENT, CERTIFICATION, PROJECT, DOCUMENT
+  status           String    @default("PENDING") // PENDING, VERIFIED, REJECTED
+  reviewer_id      String?
+  reviewer         User?     @relation("ReviewerVerificationRequests", fields: [reviewer_id], references: [id], onDelete: SetNull)
+  rejection_reason String?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  documents VerificationDocument[]
+
+  @@index([user_id])
+  @@index([user_skill_id])
+}
+
+model VerificationDocument {
+  id                      String              @id @default(uuid())
+  verification_request_id String
+  verification_request    VerificationRequest @relation(fields: [verification_request_id], references: [id], onDelete: Cascade)
+  file_path               String
+  file_name               String
+  file_type               String
+  file_size               Int
+  uploaded_at             DateTime            @default(now())
+
+  @@index([verification_request_id])
+}
+
+model RecruiterBookmark {
+  id           String   @id @default(uuid())
+  recruiter_id String
+  recruiter    User     @relation("RecruiterBookmarks", fields: [recruiter_id], references: [id], onDelete: Cascade)
+  developer_id String
+  developer    User     @relation("DeveloperBookmarks", fields: [developer_id], references: [id], onDelete: Cascade)
+  created_at   DateTime @default(now())
+
+  @@unique([recruiter_id, developer_id])
+}
+
+model RecruiterNote {
+  id           String   @id @default(uuid())
+  recruiter_id String
+  recruiter    User     @relation("RecruiterNotes", fields: [recruiter_id], references: [id], onDelete: Cascade)
+  developer_id String
+  note         String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([recruiter_id, developer_id])
+}
+
+model CandidateCollection {
+  id           String   @id @default(uuid())
+  recruiter_id String
+  recruiter    User     @relation("RecruiterCollections", fields: [recruiter_id], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  items CollectionItem[]
+}
+
+model CollectionItem {
+  id            String              @id @default(uuid())
+  collection_id String
+  collection    CandidateCollection @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+  developer_id  String
+  created_at    DateTime            @default(now())
+
+  @@unique([collection_id, developer_id])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title      String
+  message    String
+  type       String   @default("INFO") // INFO, SUCCESS, WARNING, DANGER
+  is_read    Boolean  @default(false)
+  metadata   String?
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+}
+
+model Report {
+  id               String   @id @default(uuid())
+  reporter_id      String
+  reporter         User     @relation("Reporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  reported_user_id String
+  reported_user    User     @relation("ReportedUser", fields: [reported_user_id], references: [id], onDelete: Cascade)
+  content_type     String   // PROFILE, PROJECT, CERTIFICATE, COMMENT
+  content_id       String?
+  reason           String
+  status           String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  user_id     String?
+  user        User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  action      String
+  entity_type String
+  entity_id   String?
+  metadata    String?
+  timestamp   DateTime @default(now())
+
+  @@index([user_id])
+}
