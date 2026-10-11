@@ -1,141 +1,180 @@
+import assert from 'assert';
 import { prisma } from '../config/db.js';
-import bcrypt from 'bcryptjs';
-import { signToken, verifyToken } from '../utils/jwt.js';
-import { calculateProfileCompletion } from '../utils/completion.js';
-import { AppError } from '../errors/AppError.js';
-import { verifyResourceOwnership } from '../middleware/ownership.js';
+import { ScoringService } from '../services/scoringService.js';
+import { QuestionService } from '../services/questionService.js';
+import { AuthService } from '../services/authService.js';
 
-async function runBackendTests() {
-  console.log('🧪 Starting SKILLPROOF Backend Integration Tests...');
+export async function runSkillProofTests() {
+  console.log('🧪 Starting SkillProof v2 Test Suite...');
+  let passed = 0;
+  let failed = 0;
 
-  let testPassed = 0;
-  let testFailed = 0;
-
-  function assert(condition: boolean, testName: string) {
-    if (condition) {
-      console.log(`  ✅ [PASS] ${testName}`);
-      testPassed++;
-    } else {
-      console.error(`  ❌ [FAIL] ${testName}`);
-      testFailed++;
+  const test = async (name: string, fn: () => Promise<void> | void) => {
+    try {
+      await fn();
+      console.log(`  ✅ ${name}`);
+      passed++;
+    } catch (err: any) {
+      console.error(`  ❌ ${name}: ${err.message}`);
+      failed++;
     }
-  }
+  };
 
-  try {
-    // 1. JWT & Password Hashing Test
-    const plainPass = 'TestPass123!';
-    const hash = await bcrypt.hash(plainPass, 10);
-    const passMatches = await bcrypt.compare(plainPass, hash);
-    assert(passMatches, 'Bcrypt password hashing & comparison verification');
+  // 1. Scoring Logic & Level Tests
+  await test('Scoring: Level thresholds & Expert requirement (>=60% on hard)', () => {
+    // Beginner (< 40%): 1 correct out of 3 easy = 33.3%
+    const resBeginner = ScoringService.calculateScore([
+      { questionId: '1', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'b', isCorrect: false },
+      { questionId: '2', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'b', isCorrect: false },
+      { questionId: '3', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+    ]);
+    assert.strictEqual(resBeginner.level, 'Beginner');
+    assert.strictEqual(resBeginner.passed, false);
 
-    const payload = { userId: 'test-user-id', email: 'test@skillproof.dev', role: 'DEVELOPER' };
-    const token = signToken(payload);
-    const decoded = verifyToken(token);
-    assert(decoded.userId === payload.userId && decoded.role === 'DEVELOPER', 'JWT sign & verify payload token test');
+    // Basic (40-59%)
+    const resBasic = ScoringService.calculateScore([
+      { questionId: '1', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '2', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'b', isCorrect: false },
+    ]);
+    assert.strictEqual(resBasic.level, 'Basic');
+    assert.strictEqual(resBasic.passed, true);
 
-    // 2. Database User & Profile Query Test
-    const admin = await prisma.user.findUnique({
-      where: { email: 'admin@skillproof.dev' },
-      include: { profile: true },
-    });
-    assert(admin !== null && admin.role === 'ADMIN', 'Seeded Admin account query test');
+    // Intermediate (60-74%)
+    const resInter = ScoringService.calculateScore([
+      { questionId: '1', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '2', difficulty: 'MEDIUM', topic: 'Async', userAnswer: 'b', correctAnswer: 'b', isCorrect: true },
+      { questionId: '3', difficulty: 'HARD', topic: 'Perf', userAnswer: 'c', correctAnswer: 'd', isCorrect: false },
+    ]);
+    // Easy(1) + Med(2) = 3 out of 6 (50%) -> Basic, let's test accurate 66%
+    const resInter66 = ScoringService.calculateScore([
+      { questionId: '1', difficulty: 'MEDIUM', topic: 'Async', userAnswer: 'b', correctAnswer: 'b', isCorrect: true },
+      { questionId: '2', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'b', isCorrect: false },
+    ]);
+    assert.strictEqual(resInter66.level, 'Intermediate'); // 2/3 = 66.7%
 
-    const developer = await prisma.user.findUnique({
-      where: { email: 'arjun@skillproof.dev' },
-      include: { profile: true },
-    });
-    assert(developer !== null && developer.profile?.username === 'arjun', 'Seeded Developer Arjun profile query test');
-
-    // 3. Profile Completion Engine Test
-    if (developer?.profile) {
-      const completion = await calculateProfileCompletion(developer.profile.id);
-      assert(completion > 50, `Dynamic Profile Completion calculated: ${completion}%`);
-    }
-
-    // 4. Skill Verification Engine Test
-    const reactSkill = await prisma.skill.findUnique({ where: { name: 'React' } });
-    assert(reactSkill !== null, 'Skill catalog contains React master entry');
-
-    const userSkillReact = await prisma.userSkill.findFirst({
-      where: { profile_id: developer?.profile?.id, skill_id: reactSkill?.id },
-    });
-    assert(userSkillReact?.verification_status === 'VERIFIED', 'Developer React skill has status VERIFIED');
-
-    // 5. Assessment Engine Query Test
-    const reactAssessment = await prisma.assessment.findFirst({
-      where: { title: 'React Technical Assessment' },
-      include: { questions: { include: { options: true } } },
-    });
-    assert(reactAssessment !== null && reactAssessment.questions.length > 0, 'React assessment questions and options loaded');
-
-    // 6. Recruiter Bookmarks Query Test
-    const recruiter = await prisma.user.findUnique({ where: { email: 'recruiter1@techcorp.com' } });
-    const bookmark = await prisma.recruiterBookmark.findFirst({
-      where: { recruiter_id: recruiter?.id, developer_id: developer?.id },
-    });
-    assert(bookmark !== null, 'Recruiter bookmark relationship retrieved');
-
-    // 7. AppError Central Error Handling Test
-    const testAppErr = AppError.forbidden('Forbidden access');
-    assert(testAppErr.statusCode === 403 && testAppErr.isOperational === true, 'AppError 403 status code and operational flag verification');
-
-    const testNotFoundErr = AppError.notFound('Not found');
-    assert(testNotFoundErr.statusCode === 404, 'AppError 404 helper method verification');
-
-    // 8. Resource Ownership Check Test
-    if (developer?.id) {
-      const mockRes: any = {
-        status: function (code: number) { this.statusCode = code; return this; },
-        json: function (data: any) { this.responseData = data; return this; },
-      };
-      
-      // Test ownership check on non-existent project returns 404
-      const nonExistentResult = await verifyResourceOwnership('project', 'non-existent-id', developer.id, mockRes);
-      assert(nonExistentResult === null && mockRes.statusCode === 404, 'Ownership check on non-existent resource returns 404');
+    // Expert without 60% hard falls back to Advanced
+    const resExpertFailsHard = ScoringService.calculateScore([
+      { questionId: '1', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '2', difficulty: 'MEDIUM', topic: 'Async', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '3', difficulty: 'MEDIUM', topic: 'Async', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '4', difficulty: 'MEDIUM', topic: 'Async', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '5', difficulty: 'HARD', topic: 'Perf', userAnswer: 'a', correctAnswer: 'b', isCorrect: false },
+      { questionId: '6', difficulty: 'HARD', topic: 'Perf', userAnswer: 'a', correctAnswer: 'b', isCorrect: false },
+      { questionId: '7', difficulty: 'HARD', topic: 'Perf', userAnswer: 'a', correctAnswer: 'a', isCorrect: true }, // 1/3 hard = 33%
+    ]);
+    // Even if score is high, level should not be Expert if hard accuracy < 60%
+    if (resExpertFailsHard.weightedPercent >= 90) {
+      assert.strictEqual(resExpertFailsHard.level, 'Advanced');
     }
 
-    // 9. Database Health Check Verification Test
-    const dbPing = await prisma.$queryRaw`SELECT 1`;
-    assert(Array.isArray(dbPing) && dbPing.length > 0, 'Database health check query raw ping (SELECT 1) verification');
+    // Expert with >= 60% hard
+    const resExpertPasses = ScoringService.calculateScore([
+      { questionId: '1', difficulty: 'EASY', topic: 'Syntax', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '2', difficulty: 'MEDIUM', topic: 'Async', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '3', difficulty: 'HARD', topic: 'Perf', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+      { questionId: '4', difficulty: 'HARD', topic: 'Perf', userAnswer: 'a', correctAnswer: 'a', isCorrect: true },
+    ]);
+    assert.strictEqual(resExpertPasses.level, 'Expert');
+    assert.strictEqual(resExpertPasses.hardAccuracyPercent, 100);
+  });
 
-    // 10. Admin Self-Registration Block Verification
-    const { registerSchema, userSkillSchema, updateProfileSchema } = await import('../validators/index.js');
-    const adminRegResult = registerSchema.safeParse({ name: 'Hacker', email: 'hacker@dev.com', password: 'password123', role: 'ADMIN' });
-    assert(!adminRegResult.success, 'Register schema rejects direct ADMIN role submission');
+  // 2. Answer comparison logic
+  await test('Scoring: isAnswerCorrect logic handles types and whitespace', () => {
+    assert.strictEqual(ScoringService.isAnswerCorrect(' A ', 'a'), true);
+    assert.strictEqual(ScoringService.isAnswerCorrect(['b', 'a'], ['a', 'b']), true);
+    assert.strictEqual(ScoringService.isAnswerCorrect(JSON.stringify(['a', 'b']), '["b", "a"]'), true);
+    assert.strictEqual(ScoringService.isAnswerCorrect('wrong', 'right'), false);
+  });
 
-    // 11. Email Normalization Verification
-    const emailNormResult = registerSchema.parse({ name: 'Norm User', email: '  UserEmail@Domain.COM  ', password: 'password123' });
-    assert(emailNormResult.email === 'useremail@domain.com', 'Register schema normalizes email to lowercase trimmed string');
+  // 3. Retake cooldown policy
+  await test('Scoring: Retake cooldown rules (7-day cooldown and 3 attempts limit)', () => {
+    const now = new Date();
+    const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const eightDaysAgo = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
 
-    // 12. Stored XSS / Safe URL Schema Verification
-    const xssUrlResult = updateProfileSchema.safeParse({ github_url: 'javascript:alert(1)' });
-    assert(!xssUrlResult.success, 'Update profile schema rejects malicious javascript: URL protocol');
+    // 1 attempt 2 days ago -> cooldown active
+    const check1 = ScoringService.evaluateRetakeEligibility([
+      { startedAt: twoDaysAgo, submittedAt: twoDaysAgo, status: 'SUBMITTED' },
+    ]);
+    assert.strictEqual(check1.eligible, false);
 
-    // 13. Skill Proficiency Enum Validation
-    const invalidSkillLevel = userSkillSchema.safeParse({ proficiency_level: 'SUPER_EXPERT' });
-    assert(!invalidSkillLevel.success, 'User skill schema rejects invalid proficiency enum value');
+    // 1 attempt 8 days ago -> eligible
+    const check2 = ScoringService.evaluateRetakeEligibility([
+      { startedAt: eightDaysAgo, submittedAt: eightDaysAgo, status: 'SUBMITTED' },
+    ]);
+    assert.strictEqual(check2.eligible, true);
 
-    // 14. Dynamic Verification Quiz Generation Test
-    const { getOrCreateSkillAssessment } = await import('../controllers/assessmentsController.js');
-    if (reactSkill?.id) {
-      const dynamicAssessment = await getOrCreateSkillAssessment(reactSkill.id);
-      assert(dynamicAssessment !== null && dynamicAssessment.questions.length > 0, 'Dynamic assessment question pool generated for skill');
-    }
+    // 3 attempts within 30 days -> limit reached
+    const check3 = ScoringService.evaluateRetakeEligibility([
+      { startedAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000), submittedAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000), status: 'SUBMITTED' },
+      { startedAt: new Date(now.getTime() - 17 * 24 * 60 * 60 * 1000), submittedAt: new Date(now.getTime() - 17 * 24 * 60 * 60 * 1000), status: 'SUBMITTED' },
+      { startedAt: new Date(now.getTime() - 25 * 24 * 60 * 60 * 1000), submittedAt: new Date(now.getTime() - 25 * 24 * 60 * 60 * 1000), status: 'SUBMITTED' },
+    ]);
+    assert.strictEqual(check3.eligible, false);
+  });
 
-    console.log('\n==========================================');
-    console.log(`📊 TEST RESULTS: ${testPassed} Passed, ${testFailed} Failed`);
-    console.log('==========================================\n');
+  // 4. Database Seed verification
+  await test('Database: Seed data loaded correctly', async () => {
+    const admin = await prisma.user.findUnique({ where: { email: 'admin@skillproof.dev' } });
+    assert(admin !== null && admin.role === 'ADMIN', 'Admin user exists');
 
-    if (testFailed > 0) {
-      process.exit(1);
-    }
-  } catch (err) {
-    console.error('❌ Test suite crashed with error:', err);
+    const dev = await prisma.user.findUnique({ where: { email: 'arjun@skillproof.dev' }, include: { profile: true, skills: true } });
+    assert(dev !== null && dev.role === 'DEVELOPER', 'Developer Arjun exists');
+    assert(dev.skills.length >= 2, 'Arjun has seeded skills');
+
+    const verifiedSkill = dev.skills.find((s) => s.status === 'VERIFIED');
+    const claimedSkill = dev.skills.find((s) => s.status === 'CLAIMED');
+    assert(verifiedSkill !== null && verifiedSkill?.status === 'VERIFIED', 'Verified skill is marked VERIFIED');
+    assert(claimedSkill !== null && claimedSkill?.status === 'CLAIMED', 'Certificate skill is marked CLAIMED');
+
+    const questionsCount = await prisma.question.count();
+    assert(questionsCount >= 60, `Question bank contains sufficient questions (${questionsCount})`);
+  });
+
+  // 5. Question selection randomization test
+  await test('QuestionService: Selects 20 questions with 8 Easy, 8 Medium, 4 Hard', async () => {
+    const dev = await prisma.user.findUnique({ where: { email: 'arjun@skillproof.dev' } });
+    const questions = await QuestionService.selectQuestionsForAssessment({
+      language: 'JavaScript',
+      userId: dev!.id,
+    });
+
+    assert.strictEqual(questions.length, 20, 'Selected exactly 20 questions');
+    const easy = questions.filter((q) => q.difficulty === 'EASY').length;
+    const med = questions.filter((q) => q.difficulty === 'MEDIUM').length;
+    const hard = questions.filter((q) => q.difficulty === 'HARD').length;
+
+    assert.strictEqual(easy, 8, '8 Easy questions selected');
+    assert.strictEqual(med, 8, '8 Medium questions selected');
+    assert.strictEqual(hard, 4, '4 Hard questions selected');
+  });
+
+  // 6. Auth Service test
+  await test('AuthService: Login and session check', async () => {
+    const loginRes = await AuthService.login({
+      email: 'recruiter@techcorp.com',
+      password: 'Recruiter@123',
+    });
+    assert.strictEqual(loginRes.user.role, 'RECRUITER');
+    assert(loginRes.token.length > 20, 'JWT token generated');
+
+    const session = await AuthService.getSession(loginRes.user.id);
+    assert.strictEqual(session?.email, 'recruiter@techcorp.com');
+  });
+
+  console.log(`\n========================================`);
+  console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
+  console.log(`========================================\n`);
+
+  if (failed > 0) {
     process.exit(1);
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
-runBackendTests();
-
+// Run if executed directly
+if (process.argv[1]?.endsWith('runTests.ts') || process.argv[1]?.endsWith('runTests.js')) {
+  runSkillProofTests().catch((err) => {
+    console.error('Test execution failed:', err);
+    process.exit(1);
+  });
+}

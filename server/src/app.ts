@@ -4,6 +4,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import cookieParser from 'cookie-parser';
 import apiRoutes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
@@ -29,6 +30,7 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true,
 }));
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -48,6 +50,7 @@ app.get('/api/health', async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     res.json({
+      success: true,
       status: 'OK',
       database: 'connected',
       app: 'SKILLPROOF Backend Engine',
@@ -55,6 +58,7 @@ app.get('/api/health', async (req, res) => {
     });
   } catch (err: any) {
     res.status(503).json({
+      success: false,
       status: 'ERROR',
       database: 'disconnected',
       app: 'SKILLPROOF Backend Engine',
@@ -73,8 +77,8 @@ app.use('/api', apiRateLimiter, apiRoutes);
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 SKILLPROOF Server running at http://localhost:${PORT}`);
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 SKILLPROOF Server running at http://0.0.0.0:${PORT}`);
     console.log(`📁 Static Uploads directory: ${uploadDir}`);
   });
 }

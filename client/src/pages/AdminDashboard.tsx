@@ -1,346 +1,439 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { VerifiedBadge } from '../components/VerifiedBadge';
-import { Modal } from '../components/Modal';
 import { PageSkeleton } from '../components/LoadingSkeleton';
 import {
-  ShieldAlert,
   Users,
-  CheckCircle2,
-  Clock,
   Award,
-  FileCheck,
-  Ban,
-  UserCheck,
+  HelpCircle,
+  Flag,
   FileText,
-  FileDown,
+  Plus,
+  Trash2,
+  CheckCircle2,
   AlertTriangle,
-  History,
+  Upload,
+  Search,
 } from 'lucide-react';
-import { AdminDashboardData, VerificationRequest, User, AuditLog } from '../types';
 
 export const AdminDashboard: React.FC = () => {
-  const [data, setData] = useState<AdminDashboardData | null>(null);
-  const [verifications, setVerifications] = useState<VerificationRequest[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [activeTab, setActiveTab] = useState<'verifications' | 'users' | 'audit'>('verifications');
-  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'stats' | 'questions' | 'flags' | 'users' | 'claims' | 'audit'>('stats');
+  const [stats, setStats] = useState<any>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
+  const [flags, setFlags] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [claims, setClaims] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Review Modal State
-  const [selectedReq, setSelectedReq] = useState<VerificationRequest | null>(null);
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // New Question Form state
+  const [newQ, setNewQ] = useState({
+    language: 'JavaScript',
+    topic: 'ES6',
+    difficulty: 'MEDIUM',
+    type: 'MCQ',
+    prompt: '',
+    options: '["Option 1", "Option 2", "Option 3", "Option 4"]',
+    correctAnswer: 'Option 1',
+    explanation: '',
+  });
+  const [createMsg, setCreateMsg] = useState('');
 
-  const fetchAdminData = async () => {
+  const loadAllAdminData = async () => {
+    setLoading(true);
     try {
-      const [statsRes, verifRes, usersRes, auditRes] = await Promise.all([
-        api.get('/admin/dashboard'),
-        api.get('/admin/verifications'),
+      const [statsRes, questionsRes, flagsRes, usersRes, claimsRes, auditRes] = await Promise.all([
+        api.get('/admin/stats'),
+        api.get('/admin/questions'),
+        api.get('/admin/flags'),
         api.get('/admin/users'),
-        api.get('/admin/audit-logs'),
+        api.get('/skills/claims/unverified'),
+        api.get('/admin/audit'),
       ]);
 
-      if (statsRes.data.success) setData(statsRes.data.data);
-      if (verifRes.data.success) setVerifications(verifRes.data.data);
+      if (statsRes.data.success) setStats(statsRes.data.data);
+      if (questionsRes.data.success) setQuestions(questionsRes.data.data);
+      if (flagsRes.data.success) setFlags(flagsRes.data.data);
       if (usersRes.data.success) setUsers(usersRes.data.data);
+      if (claimsRes.data.success) setClaims(claimsRes.data.data);
       if (auditRes.data.success) setAuditLogs(auditRes.data.data);
     } catch (err) {
-      console.error('Failed to load admin dashboard data:', err);
+      console.error('Failed to load admin console data:', err);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAdminData();
+    loadAllAdminData();
   }, []);
 
-  const handleReview = async (requestId: string, status: 'VERIFIED' | 'REJECTED') => {
-    setIsSubmitting(true);
+  const handleCreateQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateMsg('');
     try {
-      const res = await api.put(`/admin/verifications/${requestId}`, {
-        status,
-        rejection_reason: status === 'REJECTED' ? rejectionReason : undefined,
-      });
-
-      if (res.data.success) {
-        setVerifications((prev) =>
-          prev.map((v) => (v.id === requestId ? { ...v, status } : v))
-        );
-        setSelectedReq(null);
-        setRejectionReason('');
-        fetchAdminData(); // Refresh stats
+      let parsedOptions;
+      try {
+        parsedOptions = JSON.parse(newQ.options);
+      } catch {
+        parsedOptions = newQ.options.split('\n').filter(Boolean);
       }
-    } catch (err) {
-      console.error('Failed to review verification:', err);
-    } finally {
-      setIsSubmitting(false);
+
+      await api.post('/admin/questions', {
+        ...newQ,
+        options: parsedOptions,
+      });
+      setCreateMsg('Question added successfully!');
+      setNewQ({
+        language: 'JavaScript',
+        topic: 'ES6',
+        difficulty: 'MEDIUM',
+        type: 'MCQ',
+        prompt: '',
+        options: '["Option 1", "Option 2", "Option 3", "Option 4"]',
+        correctAnswer: 'Option 1',
+        explanation: '',
+      });
+      const qRes = await api.get('/admin/questions');
+      if (qRes.data.success) setQuestions(qRes.data.data);
+    } catch (err: any) {
+      setCreateMsg(err.response?.data?.message || 'Failed to create question');
     }
   };
 
-  const handleUserStatusToggle = async (userId: string, currentStatus: string) => {
+  const handleResolveFlag = async (flagId: string, action: 'RESOLVE' | 'RETIRE_QUESTION') => {
+    try {
+      await api.post(`/admin/flags/${flagId}/resolve`, { action });
+      setFlags((prev) => prev.filter((f) => f.id !== flagId));
+      alert(`Flag processed: ${action}`);
+    } catch (err) {
+      alert('Failed to resolve flag');
+    }
+  };
+
+  const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
     try {
-      const res = await api.put(`/admin/users/${userId}/status`, { status: newStatus });
-      if (res.data.success) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === userId ? { ...u, status: newStatus as any } : u))
-        );
-      }
+      await api.patch(`/admin/users/${userId}/status`, { status: newStatus });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
+      );
     } catch (err) {
-      console.error('Failed to update user status:', err);
+      alert('Failed to change user status');
     }
   };
 
-  if (isLoading) return <PageSkeleton />;
-
-  const stats = data?.stats;
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Admin Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-            <ShieldAlert className="text-purple-400" />
-            Platform Admin Control Center
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Review skill verification proofs, manage user statuses, and audit platform security events.
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Admin Console</h1>
+        <p className="text-sm text-[#64748B] mt-1">
+          Manage question bank, curate flagged questions, inspect unverified certificate claims, and review audit logs.
+        </p>
       </div>
 
-      {/* Aggregate Statistics Cards Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
-            <span>Total Users</span>
-            <Users size={16} className="text-indigo-400" />
-          </div>
-          <p className="text-2xl font-extrabold text-white">{stats?.totalUsers || 0}</p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
-            <span>Developers</span>
-            <UserCheck size={16} className="text-emerald-400" />
-          </div>
-          <p className="text-2xl font-extrabold text-white">{stats?.totalDevelopers || 0}</p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
-            <span>Recruiters</span>
-            <Users size={16} className="text-amber-400" />
-          </div>
-          <p className="text-2xl font-extrabold text-white">{stats?.totalRecruiters || 0}</p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
-            <span>Verified Skills</span>
-            <CheckCircle2 size={16} className="text-emerald-400" />
-          </div>
-          <p className="text-2xl font-extrabold text-white">{stats?.verifiedSkillsCount || 0}</p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
-            <span>Pending Proofs</span>
-            <Clock size={16} className="text-amber-400" />
-          </div>
-          <p className="text-2xl font-extrabold text-white">{stats?.pendingVerificationsCount || 0}</p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold">
-            <span>Quizzes Passed</span>
-            <Award size={16} className="text-purple-400" />
-          </div>
-          <p className="text-2xl font-extrabold text-white">{stats?.assessmentsCompletedCount || 0}</p>
-        </div>
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2 border-b border-[#E2E8F0] pb-3">
+        {[
+          { id: 'stats', label: 'Overview Stats' },
+          { id: 'questions', label: `Question Bank (${questions.length})` },
+          { id: 'flags', label: `Flagged Queue (${flags.length})` },
+          { id: 'claims', label: `Certificate Claims (${claims.length})` },
+          { id: 'users', label: `Users (${users.length})` },
+          { id: 'audit', label: 'Audit Trail' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+              activeTab === tab.id
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-[#475569] hover:bg-slate-100 hover:text-[#0F172A]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Admin Tab Switcher */}
-      <div className="flex gap-2 border-b border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveTab('verifications')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === 'verifications'
-              ? 'bg-indigo-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-          }`}
-        >
-          <FileCheck size={16} />
-          Verification Requests ({verifications.filter((v) => v.status === 'PENDING').length} Pending)
-        </button>
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === 'users'
-              ? 'bg-indigo-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-          }`}
-        >
-          <Users size={16} />
-          User Management ({users.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('audit')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === 'audit'
-              ? 'bg-indigo-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-          }`}
-        >
-          <History size={16} />
-          Audit Log Stream
-        </button>
-      </div>
+      {/* TAB 1: OVERVIEW STATS */}
+      {activeTab === 'stats' && stats && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm">
+              <p className="text-xs font-semibold text-[#64748B] uppercase">Total Users</p>
+              <p className="text-2xl font-black text-[#0F172A] mt-1">{stats.users.total}</p>
+              <p className="text-[11px] text-[#64748B] mt-1">
+                {stats.users.developers} Devs • {stats.users.recruiters} Recruiters
+              </p>
+            </div>
 
-      {/* TAB 1: Verification Requests */}
-      {activeTab === 'verifications' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="p-4 px-6 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
-            <h2 className="font-bold text-white text-base">Skill Verification Approval Queue</h2>
+            <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm">
+              <p className="text-xs font-semibold text-[#64748B] uppercase">Question Bank</p>
+              <p className="text-2xl font-black text-[#0F172A] mt-1">{stats.questions.total}</p>
+              <p className="text-[11px] text-[#64748B] mt-1">
+                {stats.questions.active} Active • {stats.questions.flagged} Flagged
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm">
+              <p className="text-xs font-semibold text-[#64748B] uppercase">Skills Verified</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">{stats.assessments.verifiedSkills}</p>
+              <p className="text-[11px] text-[#64748B] mt-1">
+                vs {stats.assessments.claimedSkills} Unverified Claims
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm">
+              <p className="text-xs font-semibold text-[#64748B] uppercase">Assessments Run</p>
+              <p className="text-2xl font-black text-blue-600 mt-1">{stats.assessments.total}</p>
+              <p className="text-[11px] text-[#64748B] mt-1">Automated Server Benchmarks</p>
+            </div>
           </div>
-          <div className="overflow-x-auto">
+        </div>
+      )}
+
+      {/* TAB 2: QUESTION BANK */}
+      {activeTab === 'questions' && (
+        <div className="space-y-6">
+          {/* Create Question Form */}
+          <div className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+              <Plus size={18} className="text-blue-600" /> Add Question to Bank
+            </h3>
+
+            {createMsg && (
+              <p className={`text-xs font-bold ${createMsg.includes('success') ? 'text-emerald-600' : 'text-red-600'}`}>
+                {createMsg}
+              </p>
+            )}
+
+            <form onSubmit={handleCreateQuestion} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Language</label>
+                  <select
+                    value={newQ.language}
+                    onChange={(e) => setNewQ({ ...newQ, language: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs font-semibold"
+                  >
+                    <option value="JavaScript">JavaScript</option>
+                    <option value="Python">Python</option>
+                    <option value="Java">Java</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Topic</label>
+                  <input
+                    type="text"
+                    required
+                    value={newQ.topic}
+                    onChange={(e) => setNewQ({ ...newQ, topic: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Difficulty</label>
+                  <select
+                    value={newQ.difficulty}
+                    onChange={(e) => setNewQ({ ...newQ, difficulty: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs font-semibold"
+                  >
+                    <option value="EASY">EASY (1 pt)</option>
+                    <option value="MEDIUM">MEDIUM (2 pts)</option>
+                    <option value="HARD">HARD (3 pts)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Type</label>
+                  <select
+                    value={newQ.type}
+                    onChange={(e) => setNewQ({ ...newQ, type: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs font-semibold"
+                  >
+                    <option value="MCQ">MCQ</option>
+                    <option value="MULTI">MULTI</option>
+                    <option value="CODE_OUTPUT">CODE_OUTPUT</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Prompt</label>
+                <textarea
+                  rows={2}
+                  required
+                  value={newQ.prompt}
+                  onChange={(e) => setNewQ({ ...newQ, prompt: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-[#CBD5E1] text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Options (JSON array)</label>
+                  <input
+                    type="text"
+                    required
+                    value={newQ.options}
+                    onChange={(e) => setNewQ({ ...newQ, options: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Correct Answer</label>
+                  <input
+                    type="text"
+                    required
+                    value={newQ.correctAnswer}
+                    onChange={(e) => setNewQ({ ...newQ, correctAnswer: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#475569] mb-1 uppercase">Explanation</label>
+                <input
+                  type="text"
+                  value={newQ.explanation}
+                  onChange={(e) => setNewQ({ ...newQ, explanation: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-[#CBD5E1] text-xs"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
+                >
+                  Save Question
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Questions Table */}
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+              <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
                 <tr>
-                  <th className="p-4">Developer</th>
-                  <th className="p-4">Skill</th>
-                  <th className="p-4">Method</th>
-                  <th className="p-4">Proof Document</th>
-                  <th className="p-4">Submitted Date</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4 text-right">Actions</th>
+                  <th className="p-3">Language</th>
+                  <th className="p-3">Topic</th>
+                  <th className="p-3">Diff</th>
+                  <th className="p-3">Prompt</th>
+                  <th className="p-3">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {verifications.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-500">
-                      No verification requests submitted.
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {questions.slice(0, 50).map((q) => (
+                  <tr key={q.id} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-bold text-[#0F172A]">{q.language}</td>
+                    <td className="p-3 text-[#475569]">{q.topic}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-[#0F172A]">
+                        {q.difficulty}
+                      </span>
                     </td>
+                    <td className="p-3 max-w-xs truncate text-[#0F172A]">{q.prompt}</td>
+                    <td className="p-3 font-semibold text-[#64748B]">{q.status}</td>
                   </tr>
-                ) : (
-                  verifications.map((v) => (
-                    <tr key={v.id} className="hover:bg-slate-850 transition">
-                      <td className="p-4 font-bold text-white">
-                        {v.user?.profile?.name || v.user?.email}
-                      </td>
-                      <td className="p-4 font-semibold text-indigo-400">
-                        {v.user_skill?.skill?.name}
-                      </td>
-                      <td className="p-4 font-mono font-medium">{v.method}</td>
-                      <td className="p-4">
-                        {v.documents && v.documents.length > 0 ? (
-                          <a
-                            href={v.documents[0].file_path}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:underline"
-                          >
-                            <FileDown size={14} />
-                            {v.documents[0].file_name}
-                          </a>
-                        ) : (
-                          <span className="text-slate-500 italic">No document attached</span>
-                        )}
-                      </td>
-                      <td className="p-4 text-slate-400">
-                        {new Date(v.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="p-4">
-                        <VerifiedBadge status={v.status} size="sm" />
-                      </td>
-                      <td className="p-4 text-right">
-                        {v.status === 'PENDING' ? (
-                          <button
-                            onClick={() => setSelectedReq(v)}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition"
-                          >
-                            Review Request
-                          </button>
-                        ) : (
-                          <span className="text-slate-500 font-medium italic">Reviewed</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* TAB 2: User Management */}
-      {activeTab === 'users' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="p-4 px-6 border-b border-slate-800 bg-slate-950/50">
-            <h2 className="font-bold text-white text-base">Registered Users & Status Control</h2>
+      {/* TAB 3: FLAGGED QUESTION QUEUE */}
+      {activeTab === 'flags' && (
+        <div className="space-y-4">
+          <h3 className="text-base font-bold text-[#0F172A]">Flagged Questions Queue</h3>
+          {flags.length === 0 ? (
+            <div className="p-8 text-center bg-white rounded-2xl border border-[#E2E8F0] text-xs text-[#64748B]">
+              No flagged questions waiting for curator review.
+            </div>
+          ) : (
+            flags.map((flag) => (
+              <div key={flag.id} className="p-5 rounded-2xl bg-white border border-red-200 shadow-sm space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800">
+                      FLAGGED: {flag.question.language}
+                    </span>
+                    <h4 className="text-sm font-bold text-[#0F172A] mt-2">{flag.question.prompt}</h4>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleResolveFlag(flag.id, 'RESOLVE')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs"
+                    >
+                      Resolve & Keep Active
+                    </button>
+                    <button
+                      onClick={() => handleResolveFlag(flag.id, 'RETIRE_QUESTION')}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 text-white font-bold text-xs"
+                    >
+                      Retire Question
+                    </button>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#475569]">
+                  <p><strong>Reporter Reason:</strong> {flag.reason}</p>
+                  <p className="text-[11px] text-[#64748B] mt-1">Reported by: {flag.reporter?.name || flag.reporter?.email}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: CERTIFICATE CLAIMS */}
+      {activeTab === 'claims' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-base font-bold text-[#0F172A]">Certificate Claims (Marked Unverified)</h3>
+            <p className="text-xs text-[#64748B]">
+              In accordance with core principles, certificates are self-declared claims and do not grant verified status without passing randomized assessments.
+            </p>
           </div>
-          <div className="overflow-x-auto">
+
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+              <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
                 <tr>
-                  <th className="p-4">User</th>
-                  <th className="p-4">Email</th>
-                  <th className="p-4">Role</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Registered On</th>
-                  <th className="p-4 text-right">Account Actions</th>
+                  <th className="p-3">Developer</th>
+                  <th className="p-3">Skill / Language</th>
+                  <th className="p-3">Claimed Level</th>
+                  <th className="p-3">Certificate Link</th>
+                  <th className="p-3">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-850 transition">
-                    <td className="p-4 font-bold text-white">{u.profile?.name || 'User'}</td>
-                    <td className="p-4 font-mono text-slate-300">{u.email}</td>
-                    <td className="p-4">
-                      <span className="font-bold px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-200 border border-slate-700">
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <span
-                        className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
-                          u.status === 'ACTIVE'
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-                        }`}
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {claims.map((claim) => (
+                  <tr key={claim.id} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-bold text-[#0F172A]">{claim.user?.name}</td>
+                    <td className="p-3 font-semibold text-[#0F172A]">{claim.language}</td>
+                    <td className="p-3 text-[#475569]">{claim.claimedLevel}</td>
+                    <td className="p-3">
+                      <a
+                        href={claim.certificateUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 underline truncate max-w-xs block"
                       >
-                        {u.status}
+                        {claim.certificateUrl}
+                      </a>
+                    </td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                        {claim.status} (Unverified)
                       </span>
-                    </td>
-                    <td className="p-4 text-slate-400">
-                      {new Date(u.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="p-4 text-right">
-                      {u.role !== 'ADMIN' && (
-                        <button
-                          onClick={() => handleUserStatusToggle(u.id, u.status)}
-                          className={`px-3 py-1 rounded-lg font-bold text-xs transition inline-flex items-center gap-1 ${
-                            u.status === 'ACTIVE'
-                              ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20'
-                              : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
-                          }`}
-                        >
-                          {u.status === 'ACTIVE' ? (
-                            <>
-                              <Ban size={12} /> Suspend
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck size={12} /> Activate
-                            </>
-                          )}
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -350,106 +443,84 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: Audit Logs */}
-      {activeTab === 'audit' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl p-6 space-y-4">
-          <h2 className="font-bold text-white text-base flex items-center gap-2">
-            <History size={18} className="text-purple-400" />
-            Security & System Audit Log Stream
-          </h2>
-
-          <div className="space-y-2.5 font-mono text-xs">
-            {auditLogs.map((log) => (
-              <div key={log.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-start justify-between">
-                <div>
-                  <span className="text-purple-400 font-bold">[{log.action}]</span>{' '}
-                  <span className="text-slate-300">Target: {log.entity_type} {log.entity_id ? `(${log.entity_id.slice(0, 8)})` : ''}</span>
-                  {log.user?.email && (
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      By: {log.user.profile?.name || log.user.email} ({log.user.role})
-                    </p>
-                  )}
-                  {log.metadata && (
-                    <p className="text-[11px] text-slate-400 font-mono mt-0.5 line-clamp-1">
-                      Metadata: {log.metadata}
-                    </p>
-                  )}
-                </div>
-                <span className="text-[10px] text-slate-500 shrink-0">
-                  {new Date(log.timestamp).toLocaleString()}
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* TAB 5: USERS */}
+      {activeTab === 'users' && (
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+              <tr>
+                <th className="p-3">Name</th>
+                <th className="p-3">Email</th>
+                <th className="p-3">Role</th>
+                <th className="p-3">Status</th>
+                <th className="p-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-slate-50/50">
+                  <td className="p-3 font-bold text-[#0F172A]">{u.name}</td>
+                  <td className="p-3 text-[#64748B]">{u.email}</td>
+                  <td className="p-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-[#475569]">
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      u.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {u.status}
+                    </span>
+                  </td>
+                  <td className="p-3 text-right">
+                    <button
+                      onClick={() => handleToggleUserStatus(u.id, u.status)}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                    >
+                      {u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Verification Review Modal */}
-      <Modal
-        isOpen={Boolean(selectedReq)}
-        onClose={() => setSelectedReq(null)}
-        title="Review Skill Verification Request"
-      >
-        {selectedReq && (
-          <div className="space-y-4 text-xs">
-            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-              <p className="text-slate-300">
-                <strong className="text-white">Developer:</strong> {selectedReq.user?.profile?.name || selectedReq.user?.email}
-              </p>
-              <p className="text-slate-300">
-                <strong className="text-white">Target Skill:</strong> {selectedReq.user_skill?.skill?.name}
-              </p>
-              <p className="text-slate-300">
-                <strong className="text-white">Method:</strong> {selectedReq.method}
-              </p>
-              {selectedReq.documents && selectedReq.documents.length > 0 && (
-                <div>
-                  <strong className="text-white block mb-1">Uploaded Proof File:</strong>
-                  <a
-                    href={selectedReq.documents[0].file_path}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 p-2 bg-indigo-950/40 text-indigo-300 rounded-lg border border-indigo-500/30 hover:underline font-mono"
-                  >
-                    <FileDown size={14} /> {selectedReq.documents[0].file_name}
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">
-                Rejection Reason (Required if rejecting)
-              </label>
-              <textarea
-                rows={3}
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Explain why the proof was rejected..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                disabled={isSubmitting}
-                onClick={() => handleReview(selectedReq.id, 'VERIFIED')}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
-              >
-                Approve & Mark Verified ✓
-              </button>
-              <button
-                disabled={isSubmitting}
-                onClick={() => handleReview(selectedReq.id, 'REJECTED')}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition"
-              >
-                Reject Request ❌
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* TAB 6: AUDIT TRAIL */}
+      {activeTab === 'audit' && (
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+              <tr>
+                <th className="p-3">Timestamp</th>
+                <th className="p-3">Actor</th>
+                <th className="p-3">Action</th>
+                <th className="p-3">Entity</th>
+                <th className="p-3">Metadata</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {auditLogs.map((log) => (
+                <tr key={log.id} className="hover:bg-slate-50/50">
+                  <td className="p-3 text-[#64748B]">{new Date(log.createdAt).toLocaleString()}</td>
+                  <td className="p-3 font-bold text-[#0F172A]">{log.actor?.email || 'System'}</td>
+                  <td className="p-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-700">
+                      {log.action}
+                    </span>
+                  </td>
+                  <td className="p-3 text-[#475569]">{log.entity}</td>
+                  <td className="p-3 max-w-xs truncate text-[11px] font-mono text-[#64748B]">
+                    {log.metadata || '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
-

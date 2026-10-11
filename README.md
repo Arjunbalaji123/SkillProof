@@ -1,206 +1,131 @@
-# SKILLPROOF: Skill Verification & Developer Portfolio Platform
+# SKILLPROOF v2: Real-Skill Verification Platform
 
-> **"Can this developer actually prove the technical skills they claim?"**
+> **"A certificate or self-declared skill is only a CLAIM. A skill becomes VERIFIED only when proven through a randomized, server-graded technical assessment."**
 
-SKILLPROOF is a complete, production-grade database-backed full-stack web application built to eliminate resume inflation through verifiable technical skill evidence. It enables software engineers to validate technical capabilities via timed multiple-choice coding assessments, project code documentation, and verified certification badges. Recruiters can search, filter, evaluate proof evidence, and bookmark top talent.
+SKILLPROOF v2 replaces static certificates with rigorous, server-graded technical assessments. Recruiters discover candidates based solely on verified benchmark percentages and levels.
 
 ---
 
-## 🏗 System Architecture Diagram
+## 🏗 Architecture & Strict Layering
 
 ```mermaid
 flowchart TD
     subgraph Client["React 18 + TypeScript Client"]
-        UI["Tailwind CSS SaaS UI"]
-        Router["React Router v6"]
-        AuthCtx["AuthContext & Role Guard"]
-        Axios["Axios API Client + JWT Interceptor"]
+        AuthCtx["AuthContext (httpOnly Session)"]
+        Api["api.ts (Axios + withCredentials)"]
+        Routes["AppRoutes.tsx (Role-based Protected Routes)"]
+        Pages["Dev Dashboard | Skill Manager | Quiz Player | Recruiter Search | Admin Console"]
     end
 
-    subgraph Server["Express.js + Node.js Server"]
-        AuthMW["JWT Auth & RBAC Middleware"]
-        UploadMW["Multer File Validation"]
-        EvalEngine["Assessment Scoring & Auto-Verification Engine"]
-        AuditMW["Audit Log Streamer"]
-        Controllers["REST Controllers (Profile, Skills, Projects, Admin)"]
+    subgraph Server["Express.js + Node.js (TypeScript)"]
+        RoutesRegistry["routes/index.ts (Route Registry)"]
+        Controllers["Controllers (No Direct Prisma Access)"]
+        Services["Services (Business Logic & Audit Logging)"]
+        Audit["audit.ts (Immutable Audit Log Streamer)"]
+        Prisma["Prisma ORM Client (config/db.ts)"]
     end
 
     subgraph DB["Relational Database"]
-        Prisma["Prisma ORM Client"]
-        MariaDB["MariaDB / MySQL / SQLite Engine"]
+        SQLite["dev.db (SQLite Dev / Postgres Ready)"]
     end
 
-    Client -->|HTTPS REST / JSON| Server
-    Server -->|Prisma Client| DB
+    Client -->|withCredentials / Cookies| RoutesRegistry
+    RoutesRegistry --> Controllers
+    Controllers --> Services
+    Services --> Audit
+    Services --> Prisma
+    Audit --> Prisma
+    Prisma --> SQLite
 ```
+
+### Server Layering Rules Enforced:
+`routes -> controllers -> services -> Prisma`
+- **Controllers never touch Prisma directly.**
+- **Every service mutating data calls `audit.ts`.**
+- **Every controller responds via `response.ts` (`{ success, data, error }`).**
 
 ---
 
-## 🛠 Tech Stack
+## 🎯 Core Principles & Rules
 
-### Frontend:
-- **React 18** with **TypeScript**
-- **Vite** for fast HMR bundling
-- **React Router v6** for client-side protected routing
-- **Axios** with JWT bearer request interceptors
-- **Tailwind CSS** for modern SaaS dark theme UI styling
-- **Lucide React** icons
-
-### Backend:
-- **Node.js** & **Express.js** (TypeScript)
-- **JWT (JSON Web Tokens)** for stateless authentication
-- **Bcrypt** for salt-and-hash password security
-- **Multer** for file upload type/size sanitization
-- **Zod** for strict request schema validation
-
-### Database & ORM:
-- **Prisma ORM v5** (SQLite default out-of-the-box local execution, fully compatible with **MariaDB / MySQL 8.0**)
-- Raw SQL DDL schema provided in `database/schema/schema.sql`
-
----
-
-## 📁 Monorepo Project Structure
-
-```
-skillproof/
-├── client/                     # React Frontend Application
-│   ├── src/
-│   │   ├── components/        # Navbar, Footer, VerifiedBadge, ProgressBar, Modal, Skeletons
-│   │   ├── context/           # AuthContext (JWT & User state)
-│   │   ├── pages/             # Landing, Login, Register, Dashboards, Skills, Projects, Assessments, Admin, Portfolio
-│   │   ├── routes/            # AppRoutes & ProtectedRoute RBAC guards
-│   │   ├── services/          # Axios API client instance
-│   │   ├── types/             # TypeScript interfaces for API models
-│   │   └── utils/             # Formatters & completion helpers
-│   └── package.json
-│
-├── server/                     # Express REST API & Verification Engine
-│   ├── prisma/
-│   │   └── schema.prisma      # Prisma schema (18 models)
-│   ├── src/
-│   │   ├── config/            # Database singleton (db.ts)
-│   │   ├── controllers/       # Auth, Profile, Skills, Projects, Assessments, Verifications, Recruiter, Admin
-│   │   ├── middleware/        # JWT Auth, Role RBAC, Multer upload, ErrorHandler
-│   │   ├── routes/            # Express routers
-│   │   ├── seed.ts            # Realistic TypeScript Database Seeder
-│   │   ├── tests/             # Integration test suite (runTests.ts)
-│   │   ├── utils/             # JWT, Bcrypt, AuditLog, ProfileCompletion Math
-│   │   ├── validators/        # Zod request validators
-│   │   └── app.ts             # Express entrypoint
-│   └── package.json
-│
-├── database/                   # MariaDB / MySQL Schemas & Exports
-│   ├── schema/
-│   │   └── schema.sql         # Production MariaDB DDL schema export
-│   └── seed/
-│
-├── uploads/                    # Physical storage for avatars & proof documents
-├── README.md                   # Project Documentation
-└── package.json                # Monorepo workspace scripts
-```
+1. **Claims vs. Verification:**
+   - Any uploaded certificate or self-declared skill is labeled **"Claimed"** (Unverified).
+   - Skills become **"Verified"** only when passing a timed, server-graded 20-question randomized technical assessment (minimum weighted score: 40%).
+   - Verification status lasts for 12 months.
+2. **Assessment Randomization:**
+   - Exactly 20 questions drawn per assessment: **8 EASY, 8 MEDIUM, 4 HARD**.
+   - Topic spread across core language principles.
+   - Questions seen in user's previous 2 attempts on that language are excluded.
+3. **Strict Weighted Scoring:**
+   - `EASY`: 1 point
+   - `MEDIUM`: 2 points
+   - `HARD`: 3 points
+   - **Level Thresholds:**
+     - `0 - 39%`: Beginner
+     - `40 - 59%`: Basic (Pass threshold)
+     - `60 - 74%`: Intermediate
+     - `75 - 89%`: Advanced
+     - `90 - 100%`: Expert (Requires **≥60% accuracy on HARD questions**)
+4. **Anti-Abuse & Retake Policies:**
+   - **7-day cooldown** between retakes for the same language.
+   - **Maximum 3 attempts** per language within any rolling 30-day window.
+   - 30-minute server timer enforced with focus-loss blur tracking.
 
 ---
 
-## 🔑 Development Seed Demo Credentials
+## 🔑 Demo Seed Accounts
 
-> [!IMPORTANT]
-> Use these pre-seeded accounts to explore role-based capabilities immediately after running `npm run db:seed`.
-
-| Role | Email | Password | Access & Capabilities |
+| Role | Email | Password | Access Capabilities |
 | :--- | :--- | :--- | :--- |
-| **Admin** | `admin@skillproof.dev` | `Admin@123` | Platform Control Center, Verification Queue Review, User Suspend/Activate, Audit Logs |
-| **Recruiter** | `recruiter1@techcorp.com` | `Recruiter@123` | Talent Search, Verified Filters, Candidate Bookmarking |
-| **Developer** | `arjun@skillproof.dev` | `Dev@123` | Profile Completion (90%), Take Quizzes, Add Projects, Upload Verification Proof |
+| **Admin** | `admin@skillproof.dev` | `Admin@123` | Question bank CRUD, flag review, user suspension, audit logs |
+| **Recruiter** | `recruiter@techcorp.com` | `Recruiter@123` | Search verified developers, filter by score/level, bookmark with notes |
+| **Developer 1** | `arjun@skillproof.dev` | `Dev@123` | Verified in JS (88%) & Python (76%), 1 claimed skill, 2 projects |
+| **Developer 2** | `priya@skillproof.dev` | `Dev@123` | Verified in Java (92% Expert), 2 projects |
 
 ---
 
-## ⚡ Quick Start & Installation Guide
+## ⚡ Quick Start & Run Commands
 
-### Prerequisites
-- Node.js (>= v20.0.0)
-- npm (>= v10.0.0)
-
-### 1. Clone & Setup Workspace
+### 1. Setup Environment & Install Dependencies
 ```bash
-git clone https://github.com/your-username/skillproof.git
-cd skillproof
-npm run install:all
+# Server dependencies
+cd skillproof/server
+npm install
+
+# Client dependencies
+cd ../client
+npm install
 ```
 
-### 2. Configure Environment Variables
+### 2. Database Migration & Seed
 ```bash
-# Server Environment (.env created automatically in server/.env)
-PORT=5000
-NODE_ENV=development
-CLIENT_URL=http://localhost:5173
-JWT_SECRET=skillproof_super_secret_jwt_key_2026_prod_quality
-DATABASE_URL=file:./dev.db
-UPLOAD_DIR=../uploads
+cd skillproof/server
+
+# Push Prisma schema to dev.db & generate Prisma client
+npx prisma db push --force-reset
+npx prisma generate
+
+# Populate users, skills, projects, and 63 randomized questions
+npx tsx src/seed.ts
 ```
 
-### 3. Initialize Database & Run Seeder
+### 3. Run Test Suite
 ```bash
-# Push database schema & generate Prisma Client
-npm run db:migrate
-
-# Seed 5 Developers, 2 Recruiters, 1 Admin, Skills & Timed Assessments
-npm run db:seed
+cd skillproof/server
+npx tsx src/tests/runTests.ts
 ```
+Expected: `6 Passed, 0 Failed (100% pass)`.
 
 ### 4. Start Development Servers
+In separate terminals:
 ```bash
-# Runs Express Backend (port 5000) and Vite Frontend (port 5173) concurrently
+# Terminal 1: Backend Server (Port 5000)
+cd skillproof/server
+npm run dev
+
+# Terminal 2: Frontend Vite Client (Port 5173)
+cd skillproof/client
 npm run dev
 ```
 
 Visit **`http://localhost:5173`** in your browser.
-
----
-
-## 📊 REST API Overview
-
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | Register new Developer or Recruiter account | Public |
-| `POST` | `/api/auth/login` | Authenticate & return JWT token | Public |
-| `GET` | `/api/auth/me` | Fetch authenticated user profile & skills | Bearer JWT |
-| `GET` | `/api/profile` | Get logged-in developer profile | Bearer JWT |
-| `PUT` | `/api/profile` | Update profile details (recalculates completion %) | Bearer JWT |
-| `POST` | `/api/profile/avatar` | Upload profile image via Multer | Bearer JWT |
-| `GET` | `/api/profile/developer/:username` | Fetch public portfolio data | Public |
-| `GET` | `/api/skills` | Master skills catalog | Public |
-| `POST` | `/api/skills/user` | Add skill with proficiency level | Bearer JWT |
-| `DELETE` | `/api/skills/user/:id` | Remove skill from developer profile | Bearer JWT |
-| `GET` | `/api/projects` | List developer projects | Bearer JWT |
-| `POST` | `/api/projects` | Create new project with tech tags | Bearer JWT |
-| `POST` | `/api/projects/:id/image` | Upload project cover image | Bearer JWT |
-| `GET` | `/api/assessments` | Browse available timed technical quizzes | Bearer JWT |
-| `POST` | `/api/assessments/:id/start` | Start timed assessment attempt | Bearer JWT |
-| `POST` | `/api/assessments/:id/submit` | Evaluate answers, score attempt & auto-verify skill | Bearer JWT |
-| `GET` | `/api/verifications` | View verification requests | Bearer JWT |
-| `POST` | `/api/verifications` | Submit proof document verification request | Bearer JWT |
-| `GET` | `/api/recruiters/developers` | Filtered paginated developer candidate search | Public / Recruiter |
-| `POST` | `/api/recruiters/bookmarks` | Save developer candidate bookmark | Recruiter / Admin |
-| `GET` | `/api/admin/dashboard` | Aggregated platform metrics & charts | Admin |
-| `PUT` | `/api/admin/verifications/:id` | Approve or Reject skill verification request | Admin |
-| `PUT` | `/api/admin/users/:id/status` | Suspend or Activate user account | Admin |
-| `GET` | `/api/admin/audit-logs` | Stream system security audit logs | Admin |
-
----
-
-## 🧪 Running Automated Tests
-
-```bash
-# Run backend integration tests (Auth, Passwords, Scoring, Completion, Seeding)
-npm test
-```
-
----
-
-## 🛡 Security Highlights
-
-- **No Plaintext Passwords**: Passwords hashed using Bcrypt with salt factor 10.
-- **Role-Based Access Control (RBAC)**: Strict server middleware checking `DEVELOPER`, `RECRUITER`, and `ADMIN` privileges.
-- **Upload File Validation**: File type validation (PNG, JPG, PDF only) and safe filename sanitization to prevent directory traversal.
-- **Input Validation**: Request body parsing with Zod schemas.
-

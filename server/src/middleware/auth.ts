@@ -9,17 +9,26 @@ export interface AuthRequest extends Request {
 
 export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return sendError(res, 'Authentication token missing or invalid', 401);
+    // 1. Try httpOnly cookie first
+    let token = req.cookies?.token;
+
+    // 2. Fallback to Authorization Bearer header
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
     }
 
-    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return sendError(res, 'Authentication required. Please log in.', 401);
+    }
+
     const decoded = verifyToken(token);
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, role: true },
     });
 
     if (!user) {
@@ -33,21 +42,25 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
     req.user = decoded;
     next();
   } catch (err) {
-    return sendError(res, 'Invalid or expired authentication token', 401);
+    return sendError(res, 'Invalid or expired session. Please log in again.', 401);
   }
 };
 
 export const optionalAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
+  let token = req.cookies?.token;
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    }
+  }
+
+  if (token) {
     try {
       req.user = verifyToken(token);
     } catch (_) {
-      // ignore token verification error for optional auth
+      // ignore
     }
   }
   next();
 };
-
-

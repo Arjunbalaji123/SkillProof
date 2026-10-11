@@ -1,9 +1,9 @@
 import React from 'react';
-import { VerificationStatus } from '../types';
+import { SkillStatus } from '../types';
 import { CheckCircle2, Clock, XCircle, Circle } from 'lucide-react';
 
 interface VerifiedBadgeProps {
-  status: VerificationStatus | string;
+  status: SkillStatus | string;
   size?: 'sm' | 'md' | 'lg';
   showText?: boolean;
 }
