@@ -124,16 +124,31 @@ export const PublicPortfolioPage: React.FC = () => {
 
                 {s.topicBreakdown && Object.keys(s.topicBreakdown).length > 0 && (
                   <div className="pt-2 border-t border-[#E2E8F0] space-y-1.5">
-                    <p className="text-[11px] font-bold text-[#64748B] uppercase">Topic Accuracy</p>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(s.topicBreakdown).map(([t, stat]: any) => (
-                        <span
-                          key={t}
-                          className="px-2 py-0.5 rounded text-[11px] bg-slate-100 text-[#475569] border border-slate-200"
-                        >
-                          {t}: <strong>{stat.accuracy}%</strong>
-                        </span>
-                      ))}
+                    <p className="text-[11px] font-bold text-[#64748B] uppercase">Per-Topic Strengths</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(s.topicBreakdown).map(([t, stat]: any) => {
+                        const acc = stat.accuracy;
+                        const isStrong = acc >= 75;
+                        const isProficient = acc >= 60;
+                        return (
+                          <span
+                            key={t}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1.5 ${
+                              isStrong
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : isProficient
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}
+                          >
+                            <span>{t}:</span>
+                            <strong className="font-extrabold">{acc}%</strong>
+                            <span className="text-[10px] opacity-75">
+                              ({isStrong ? 'Strong' : isProficient ? 'Proficient' : 'Focus'})
+                            </span>
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

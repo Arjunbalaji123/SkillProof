@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Home,
   ShieldAlert,
+  Award,
 } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
@@ -290,48 +291,143 @@ export const AssessmentPlayerPage: React.FC = () => {
               : `You scored ${result.weightedPercent ?? 0}%. Passing requires at least 40% (Basic level). Review your mistakes below.`}
           </p>
 
-          <div className="flex flex-wrap justify-center gap-6 pt-4">
-            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[140px]">
+          <div className="flex flex-wrap justify-center gap-4 pt-4">
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[130px]">
               <p className="text-xs font-semibold text-[#64748B] uppercase">Weighted Score</p>
               <p className="text-3xl font-black text-blue-600 mt-1">
                 {result.weightedPercent != null ? `${result.weightedPercent}%` : '—'}
               </p>
             </div>
-            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[140px]">
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[130px]">
               <p className="text-xs font-semibold text-[#64748B] uppercase">Level Earned</p>
               <p className="text-3xl font-black text-[#0F172A] mt-1">
                 {result.level || (result.weightedPercent != null ? 'Beginner' : 'N/A')}
               </p>
             </div>
-            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[140px]">
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[130px]">
+              <p className="text-xs font-semibold text-[#64748B] uppercase">Confidence</p>
+              <div className="mt-2 flex justify-center">
+                <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                  result.confidence === 'High'
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : result.confidence === 'Medium'
+                    ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}>
+                  {result.confidence || 'Low'}
+                </span>
+              </div>
+            </div>
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm min-w-[130px]">
               <p className="text-xs font-semibold text-[#64748B] uppercase">Tab Focus Blurs</p>
               <p className="text-3xl font-black text-amber-600 mt-1">{result.tabSwitchCount ?? 0}</p>
             </div>
           </div>
+
+          {/* Prominent summary statement */}
+          <div className="pt-2">
+            <p className="text-xs font-bold text-slate-700 bg-white/80 inline-block px-4 py-1.5 rounded-full border border-slate-200">
+              Based on {result.questions?.length || 20} questions across {Object.keys(result.topicBreakdown || {}).length} topics
+              {result.coverage?.attemptsCount ? ` • Attempt #${result.coverage.attemptsCount}` : ''}
+            </p>
+          </div>
         </div>
 
-        {/* Per-Topic Breakdown */}
+        {/* Per-Topic Breakdown & Weak Topic Study Suggestions */}
         {result.topicBreakdown && Object.keys(result.topicBreakdown).length > 0 && (
+          <div className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+                <BarChart2 size={18} className="text-blue-600" />
+                Topic Performance Heatmap
+              </h3>
+              <span className="text-xs text-[#64748B]">
+                Threshold: <span className="text-emerald-700 font-bold">≥60% Pass</span> | <span className="text-amber-700 font-bold">&lt;60% Focus Area</span>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {Object.entries(result.topicBreakdown).map(([topic, stats]) => {
+                const isWeak = stats.accuracy < 60;
+                return (
+                  <div
+                    key={topic}
+                    className={`p-4 rounded-2xl border transition space-y-2.5 ${
+                      isWeak
+                        ? 'bg-amber-50/70 border-amber-200 shadow-sm'
+                        : 'bg-slate-50 border-[#E2E8F0]'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start text-xs">
+                      <span className="font-bold text-[#0F172A] pr-2 leading-tight">{topic}</span>
+                      <span className={`px-2 py-0.5 rounded-full font-black text-xs ${
+                        isWeak
+                          ? 'bg-amber-200 text-amber-900'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {stats.accuracy}%
+                      </span>
+                    </div>
+
+                    <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isWeak ? 'bg-amber-500' : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${stats.accuracy}%` }}
+                      />
+                    </div>
+
+                    <div className="flex justify-between items-center text-[11px] text-[#64748B]">
+                      <span>{stats.correct} / {stats.total} correct</span>
+                      {isWeak && (
+                        <span className="text-amber-800 font-bold text-[10px] uppercase">
+                          Weak Area
+                        </span>
+                      )}
+                    </div>
+
+                    {isWeak && (
+                      <div className="pt-2 border-t border-amber-200/80 text-[11px] text-amber-950 space-y-0.5">
+                        <strong className="text-amber-800 flex items-center gap-1 font-bold">
+                          💡 Study Suggestion:
+                        </strong>
+                        <p className="leading-tight text-amber-900">
+                          Review core concepts, runtime semantics, and hands-on coding scenarios for {topic}.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Cumulative Topic Profile from all Submitted Attempts */}
+        {result.cumulativeProfile && result.cumulativeProfile.length > 0 && (
           <div className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4">
             <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-              <BarChart2 size={18} className="text-blue-600" />
-              Per-Topic Breakdown
+              <Award size={18} className="text-emerald-600" />
+              Cumulative Profile (Across All Attempts)
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.entries(result.topicBreakdown).map(([topic, stats]) => (
-                <div key={topic} className="p-3.5 rounded-xl border border-[#E2E8F0] bg-slate-50 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {result.cumulativeProfile.map((cp) => (
+                <div key={cp.topic} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-[#0F172A]">{topic}</span>
-                    <span className="font-extrabold text-blue-600">{stats.accuracy}%</span>
+                    <span className="font-bold text-[#0F172A]">{cp.topic}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                      cp.strength === 'Strong'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : cp.strength === 'Proficient'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {cp.strength} ({cp.accuracy}%)
+                    </span>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-                    <div
-                      className="h-full bg-blue-600 rounded-full"
-                      style={{ width: `${stats.accuracy}%` }}
-                    />
-                  </div>
-                  <p className="text-[11px] text-[#64748B] text-right">
-                    {stats.correct} / {stats.total} correct
+                  <p className="text-[11px] text-[#64748B]">
+                    {cp.correct} of {cp.total} total answered correctly
                   </p>
                 </div>
               ))}
@@ -459,9 +555,22 @@ export const AssessmentPlayerPage: React.FC = () => {
 
       {/* Question Progress bar */}
       <div className="space-y-1.5">
-        <div className="flex justify-between text-xs text-[#64748B]">
+        <div className="flex justify-between items-center text-xs text-[#64748B]">
           <span>Question {currentIndex + 1} of {questions.length}</span>
-          <span className="font-bold text-[#0F172A]">{currentQ.difficulty} ({currentQ.topic})</span>
+          <div className="flex items-center gap-2">
+            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+              currentQ.type === 'SCENARIO'
+                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                : currentQ.type === 'CODE_OUTPUT'
+                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                : currentQ.type === 'MULTI'
+                ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                : 'bg-blue-100 text-blue-800 border border-blue-200'
+            }`}>
+              {currentQ.type === 'SCENARIO' ? 'Scenario' : currentQ.type === 'CODE_OUTPUT' ? 'Code Output' : currentQ.type === 'MULTI' ? 'Multi-Select' : 'MCQ'}
+            </span>
+            <span className="font-bold text-[#0F172A]">{currentQ.difficulty} ({currentQ.topic})</span>
+          </div>
         </div>
         <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
           <div

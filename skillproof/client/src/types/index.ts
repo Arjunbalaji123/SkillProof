@@ -3,8 +3,9 @@ export type UserStatus = 'ACTIVE' | 'SUSPENDED';
 export type SkillStatus = 'CLAIMED' | 'VERIFIED';
 export type AssessmentStatus = 'IN_PROGRESS' | 'SUBMITTED' | 'EXPIRED';
 export type QuestionDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
-export type QuestionType = 'MCQ' | 'MULTI' | 'CODE_OUTPUT';
+export type QuestionType = 'MCQ' | 'MULTI' | 'CODE_OUTPUT' | 'SCENARIO';
 export type SkillLevel = 'Beginner' | 'Basic' | 'Intermediate' | 'Advanced' | 'Expert';
+export type ConfidenceLabel = 'Low' | 'Medium' | 'High';
 
 export interface User {
   id: string;
@@ -25,9 +26,34 @@ export interface DeveloperProfile {
   isPublic: boolean;
 }
 
+export interface TopicCatalogItem {
+  id: string;
+  name: string;
+  weightPercent: number;
+}
+
+export interface SkillCatalogItem {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  durationSec: number;
+  questionCount: number;
+  activeQuestionsCount?: number;
+  topics: TopicCatalogItem[];
+}
+
+export interface TrackCatalogItem {
+  id: string;
+  name: string;
+  description?: string;
+  skills: SkillCatalogItem[];
+}
+
 export interface SkillItem {
   id: string;
   userId?: string;
+  skillCatalogId?: string;
   language: string;
   claimedLevel: string;
   certificateUrl?: string | null;
@@ -68,6 +94,21 @@ export interface ActiveAssessment {
   questions: AssessmentQuestionItem[];
 }
 
+export interface CoverageData {
+  topicsCovered: number;
+  questionsAnswered: number;
+  attemptsCount: number;
+}
+
+export interface TopicCumulativeItem {
+  topic: string;
+  total: number;
+  correct: number;
+  accuracy: number;
+  strength: 'Strong' | 'Proficient' | 'Needs Focus';
+  studySuggestion?: string;
+}
+
 export interface AssessmentResult {
   id: string;
   language: string;
@@ -79,6 +120,9 @@ export interface AssessmentResult {
   level: SkillLevel;
   tabSwitchCount: number;
   topicBreakdown: Record<string, { total: number; correct: number; accuracy: number }>;
+  coverage?: CoverageData;
+  confidence?: ConfidenceLabel;
+  cumulativeProfile?: TopicCumulativeItem[];
   passed: boolean;
   questions: AssessmentQuestionItem[];
 }
@@ -91,6 +135,12 @@ export interface ProjectItem {
   repoUrl?: string | null;
   techStack: string;
   createdAt?: string;
+}
+
+export interface TopicStrengthItem {
+  topic: string;
+  accuracy: number;
+  strength: 'Strong' | 'Proficient' | 'Needs Focus';
 }
 
 export interface VerifiedDeveloperCard {
@@ -106,6 +156,7 @@ export interface VerifiedDeveloperCard {
     expiresAt?: string;
     latestLevel: string;
     topicBreakdown?: Record<string, { total: number; correct: number; accuracy: number }>;
+    topicStrengths?: TopicStrengthItem[];
   }[];
   claimedSkills: {
     language: string;
@@ -155,10 +206,26 @@ export interface AdminPlatformStats {
   };
 }
 
+export interface PoolHealthItem {
+  topicId: string;
+  topicName: string;
+  weightPercent: number;
+  skillId: string;
+  skillName: string;
+  trackName: string;
+  activeCount: number;
+  flaggedCount: number;
+  totalCount: number;
+  isLow: boolean;
+  warning?: string | null;
+}
+
 export interface AdminQuestionItem {
   id: string;
   language: string;
   topic: string;
+  skillCatalogId?: string;
+  topicId?: string;
   difficulty: QuestionDifficulty;
   type: QuestionType;
   prompt: string;

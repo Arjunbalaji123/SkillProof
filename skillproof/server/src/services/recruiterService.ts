@@ -75,14 +75,24 @@ export class RecruiterService {
     return developers.map((dev) => {
       const verifiedSkills = dev.skills
         .filter((s) => s.status === 'VERIFIED')
-        .map((s) => ({
-          language: s.language,
-          score: s.bestScore,
-          verifiedAt: s.verifiedAt,
-          expiresAt: s.expiresAt,
-          latestLevel: s.assessments[0]?.level || 'Basic',
-          topicBreakdown: s.assessments[0]?.topicBreakdown ? JSON.parse(s.assessments[0].topicBreakdown) : {},
-        }));
+        .map((s) => {
+          const topicBreakdown = s.assessments[0]?.topicBreakdown ? JSON.parse(s.assessments[0].topicBreakdown) : {};
+          const topicStrengths = Object.entries(topicBreakdown).map(([topic, stat]: any) => ({
+            topic,
+            accuracy: stat.accuracy,
+            strength: stat.accuracy >= 75 ? 'Strong' : stat.accuracy >= 60 ? 'Proficient' : 'Needs Focus',
+          }));
+
+          return {
+            language: s.language,
+            score: s.bestScore,
+            verifiedAt: s.verifiedAt,
+            expiresAt: s.expiresAt,
+            latestLevel: s.assessments[0]?.level || 'Basic',
+            topicBreakdown,
+            topicStrengths,
+          };
+        });
 
       const claimedSkills = dev.skills
         .filter((s) => s.status === 'CLAIMED')

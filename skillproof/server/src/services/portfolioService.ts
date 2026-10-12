@@ -40,6 +40,13 @@ export class PortfolioService {
       .filter((s) => s.status === 'VERIFIED')
       .map((s) => {
         const derivedLevel = s.assessments[0]?.level || (s.bestScore ? (s.bestScore >= 90 ? 'Expert' : s.bestScore >= 75 ? 'Advanced' : s.bestScore >= 60 ? 'Intermediate' : s.bestScore >= 40 ? 'Basic' : 'Beginner') : 'Basic');
+        const topicBreakdown = s.assessments[0]?.topicBreakdown ? JSON.parse(s.assessments[0].topicBreakdown) : {};
+        const topicStrengths = Object.entries(topicBreakdown).map(([topic, stat]: any) => ({
+          topic,
+          accuracy: stat.accuracy,
+          strength: stat.accuracy >= 75 ? 'Strong' : stat.accuracy >= 60 ? 'Proficient' : 'Needs Focus',
+        }));
+
         return {
           id: s.id,
           language: s.language,
@@ -47,7 +54,8 @@ export class PortfolioService {
           level: derivedLevel,
           verifiedAt: s.verifiedAt,
           expiresAt: s.expiresAt,
-          topicBreakdown: s.assessments[0]?.topicBreakdown ? JSON.parse(s.assessments[0].topicBreakdown) : {},
+          topicBreakdown,
+          topicStrengths,
         };
       });
 

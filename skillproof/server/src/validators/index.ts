@@ -67,8 +67,10 @@ export const bookmarkSchema = z.object({
 export const adminQuestionSchema = z.object({
   language: z.string().min(1, 'Language is required'),
   topic: z.string().min(1, 'Topic is required'),
+  skillCatalogId: z.string().optional(),
+  topicId: z.string().optional(),
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
-  type: z.enum(['MCQ', 'MULTI', 'CODE_OUTPUT']).default('MCQ'),
+  type: z.enum(['MCQ', 'MULTI', 'CODE_OUTPUT', 'SCENARIO']).default('MCQ'),
   prompt: z.string().min(5, 'Prompt must be at least 5 characters'),
   options: z.any(),
   correctAnswer: z.any(),

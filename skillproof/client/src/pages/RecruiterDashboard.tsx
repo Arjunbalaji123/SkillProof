@@ -172,18 +172,35 @@ export const RecruiterDashboard: React.FC = () => {
                   {dev.bio || 'Verified developer benchmarked on technical assessments.'}
                 </p>
 
-                {/* Verified Skills Pill Badges */}
-                <div className="space-y-1.5 pt-2 border-t border-[#E2E8F0]">
-                  <p className="text-[11px] font-bold text-[#64748B] uppercase">Verified Benchmarks</p>
-                  <div className="flex flex-wrap gap-1.5">
+                {/* Verified Skills Pill Badges with Topic Strengths */}
+                <div className="space-y-2 pt-2 border-t border-[#E2E8F0]">
+                  <p className="text-[11px] font-bold text-[#64748B] uppercase">Verified Benchmarks & Topic Strengths</p>
+                  <div className="space-y-2">
                     {dev.verifiedSkills.map((vs, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1"
-                      >
-                        <CheckCircle2 size={12} />
-                        {vs.language}: {vs.score}% ({vs.latestLevel})
-                      </span>
+                      <div key={idx} className="space-y-1">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                          <CheckCircle2 size={12} />
+                          {vs.language}: {vs.score}% ({vs.latestLevel})
+                        </span>
+                        {vs.topicStrengths && vs.topicStrengths.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {vs.topicStrengths.map((ts: any) => (
+                              <span
+                                key={ts.topic}
+                                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                  ts.strength === 'Strong'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
+                                    : ts.strength === 'Proficient'
+                                    ? 'bg-blue-50 text-blue-800 border-blue-200 font-medium'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200 font-medium'
+                                }`}
+                              >
+                                {ts.topic}: <strong>{ts.accuracy}%</strong>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

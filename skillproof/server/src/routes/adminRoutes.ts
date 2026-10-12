@@ -11,6 +11,17 @@ import {
   getFlags,
   resolveFlag,
   getAuditLogs,
+  getCatalog,
+  createTrack,
+  updateTrack,
+  deleteTrack,
+  createSkillCatalog,
+  updateSkillCatalog,
+  deleteSkillCatalog,
+  createTopic,
+  updateTopic,
+  deleteTopic,
+  getQuestionPoolHealth,
 } from '../controllers/adminController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/role.js';
@@ -28,6 +39,21 @@ router.post('/questions', validateBody(adminQuestionSchema), createQuestion);
 router.patch('/questions/:id', updateQuestion);
 router.delete('/questions/:id', deleteQuestion);
 router.post('/questions/import', importQuestions);
+router.get('/pool-health', getQuestionPoolHealth);
+
+// Catalog management
+router.get('/catalog', getCatalog);
+router.post('/tracks', createTrack);
+router.patch('/tracks/:id', updateTrack);
+router.delete('/tracks/:id', deleteTrack);
+
+router.post('/skills', createSkillCatalog);
+router.patch('/skills/:id', updateSkillCatalog);
+router.delete('/skills/:id', deleteSkillCatalog);
+
+router.post('/topics', createTopic);
+router.patch('/topics/:id', updateTopic);
+router.delete('/topics/:id', deleteTopic);
 
 router.get('/users', listUsers);
 router.patch('/users/:id/status', validateBody(adminUserStatusSchema), updateUserStatus);

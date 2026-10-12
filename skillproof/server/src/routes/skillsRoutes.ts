@@ -6,6 +6,7 @@ import {
   updateClaimedSkill,
   deleteSkill,
   getCertificateClaims,
+  getSkillCatalog,
 } from '../controllers/skillsController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin, requireDeveloper } from '../middleware/role.js';
@@ -16,6 +17,7 @@ const router = Router();
 
 router.use(requireAuth);
 
+router.get('/catalog', getSkillCatalog);
 router.get('/summary', requireDeveloper, getDashboardSummary);
 router.get('/', requireDeveloper, getUserSkills);
 router.post('/claim', requireDeveloper, validateBody(claimSkillSchema), claimSkill);

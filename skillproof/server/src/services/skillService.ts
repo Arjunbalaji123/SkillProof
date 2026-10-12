@@ -227,5 +227,49 @@ export class SkillService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  /**
+   * Public/Developer Catalog view:
+   * Returns tracks with skills and topics, plus active question count
+   */
+  static async getSkillCatalog() {
+    const tracks = await prisma.track.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        skills: {
+          include: {
+            topics: {
+              orderBy: { weightPercent: 'desc' },
+            },
+            _count: {
+              select: {
+                questions: { where: { status: 'ACTIVE' } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return tracks.map((track) => ({
+      id: track.id,
+      name: track.name,
+      description: track.description,
+      skills: track.skills.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        slug: skill.slug,
+        description: skill.description,
+        durationSec: skill.durationSec,
+        questionCount: skill.questionCount,
+        activeQuestionsCount: skill._count.questions,
+        topics: skill.topics.map((t) => ({
+          id: t.id,
+          name: t.name,
+          weightPercent: t.weightPercent,
+        })),
+      })),
+    }));
+  }
 }
 

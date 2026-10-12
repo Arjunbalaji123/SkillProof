@@ -47,6 +47,202 @@ export class AdminService {
   }
 
   /**
+   * Catalog management: List tracks, skills, and topics
+   */
+  static async getCatalog() {
+    return prisma.track.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        skills: {
+          include: {
+            topics: {
+              orderBy: { weightPercent: 'desc' },
+            },
+            _count: {
+              select: {
+                questions: { where: { status: 'ACTIVE' } },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Track CRUD
+   */
+  static async createTrack(adminId: string, data: { name: string; description?: string }) {
+    const track = await prisma.track.create({ data });
+    await logAudit(adminId, 'TRACK_CREATED', 'Track', track.id, { name: track.name });
+    return track;
+  }
+
+  static async updateTrack(adminId: string, id: string, data: { name?: string; description?: string }) {
+    const track = await prisma.track.update({ where: { id }, data });
+    await logAudit(adminId, 'TRACK_UPDATED', 'Track', id, data);
+    return track;
+  }
+
+  static async deleteTrack(adminId: string, id: string) {
+    const track = await prisma.track.delete({ where: { id } });
+    await logAudit(adminId, 'TRACK_DELETED', 'Track', id);
+    return track;
+  }
+
+  /**
+   * SkillCatalog CRUD
+   */
+  static async createSkillCatalog(adminId: string, data: {
+    trackId: string;
+    name: string;
+    slug?: string;
+    description?: string;
+    durationSec?: number;
+    questionCount?: number;
+  }) {
+    const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const skill = await prisma.skillCatalog.create({
+      data: {
+        trackId: data.trackId,
+        name: data.name,
+        slug,
+        description: data.description,
+        durationSec: data.durationSec || 1800,
+        questionCount: data.questionCount || 20,
+      },
+    });
+    await logAudit(adminId, 'SKILL_CATALOG_CREATED', 'SkillCatalog', skill.id, { name: skill.name });
+    return skill;
+  }
+
+  static async updateSkillCatalog(adminId: string, id: string, data: {
+    trackId?: string;
+    name?: string;
+    slug?: string;
+    description?: string;
+    durationSec?: number;
+    questionCount?: number;
+  }) {
+    const skill = await prisma.skillCatalog.update({ where: { id }, data });
+    await logAudit(adminId, 'SKILL_CATALOG_UPDATED', 'SkillCatalog', id, data);
+    return skill;
+  }
+
+  static async deleteSkillCatalog(adminId: string, id: string) {
+    const skill = await prisma.skillCatalog.delete({ where: { id } });
+    await logAudit(adminId, 'SKILL_CATALOG_DELETED', 'SkillCatalog', id);
+    return skill;
+  }
+
+  /**
+   * Topic CRUD
+   */
+  static async createTopic(adminId: string, data: {
+    skillCatalogId: string;
+    name: string;
+    weightPercent: number;
+  }) {
+    const topic = await prisma.topic.create({ data });
+    await logAudit(adminId, 'TOPIC_CREATED', 'Topic', topic.id, {
+      name: topic.name,
+      skillCatalogId: topic.skillCatalogId,
+    });
+    return topic;
+  }
+
+  static async updateTopic(adminId: string, id: string, data: {
+    name?: string;
+    weightPercent?: number;
+  }) {
+    const topic = await prisma.topic.update({ where: { id }, data });
+    await logAudit(adminId, 'TOPIC_UPDATED', 'Topic', id, data);
+    return topic;
+  }
+
+  static async deleteTopic(adminId: string, id: string) {
+    const topic = await prisma.topic.delete({ where: { id } });
+    await logAudit(adminId, 'TOPIC_DELETED', 'Topic', id);
+    return topic;
+  }
+
+  /**
+   * Question Pool Health: Questions per topic, flagged count, warning for <15 active
+   */
+  static async getQuestionPoolHealth() {
+    const topics = await prisma.topic.findMany({
+      include: {
+        skillCatalog: {
+          select: { id: true, name: true, slug: true, track: { select: { name: true } } },
+        },
+        _count: {
+          select: {
+            questions: true,
+          },
+        },
+      },
+      orderBy: [
+        { skillCatalog: { name: 'asc' } },
+        { weightPercent: 'desc' },
+      ],
+    });
+
+    const results = [];
+    for (const t of topics) {
+      const activeCount = await prisma.question.count({
+        where: {
+          status: 'ACTIVE',
+          OR: [
+            { topicId: t.id },
+            {
+              skillCatalogId: t.skillCatalogId,
+              topic: { equals: t.name },
+            },
+            {
+              language: { equals: t.skillCatalog.name },
+              topic: { equals: t.name },
+            },
+          ],
+        },
+      });
+
+      const flaggedCount = await prisma.question.count({
+        where: {
+          status: 'FLAGGED',
+          OR: [
+            { topicId: t.id },
+            {
+              skillCatalogId: t.skillCatalogId,
+              topic: { equals: t.name },
+            },
+            {
+              language: { equals: t.skillCatalog.name },
+              topic: { equals: t.name },
+            },
+          ],
+        },
+      });
+
+      const isLow = activeCount < 15;
+      results.push({
+        topicId: t.id,
+        topicName: t.name,
+        weightPercent: t.weightPercent,
+        skillId: t.skillCatalog.id,
+        skillName: t.skillCatalog.name,
+        trackName: t.skillCatalog.track.name,
+        activeCount,
+        flaggedCount,
+        totalCount: t._count.questions,
+        isLow,
+        warning: isLow ? `Topic has fewer than 15 active questions (${activeCount} available)` : null,
+      });
+    }
+
+    return results;
+  }
+
+  /**
    * User management
    */
   static async listUsers(search?: string, role?: string) {
@@ -132,7 +328,6 @@ export class AdminService {
       });
       await logAudit(adminId, 'QUESTION_RETIRED', 'Question', flag.questionId, { flagId });
     } else {
-      // Revert status to ACTIVE if no other unresolved flags
       const unresolved = await prisma.questionFlag.count({
         where: { questionId: flag.questionId, resolved: false },
       });
@@ -163,4 +358,3 @@ export class AdminService {
     });
   }
 }
-

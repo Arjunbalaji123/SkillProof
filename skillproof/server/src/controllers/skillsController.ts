@@ -63,3 +63,12 @@ export const getCertificateClaims = async (_req: AuthRequest, res: Response) => 
     return sendError(res, err.message || 'Failed to fetch certificate claims', 500);
   }
 };
+
+export const getSkillCatalog = async (_req: AuthRequest, res: Response) => {
+  try {
+    const catalog = await SkillService.getSkillCatalog();
+    return sendSuccess(res, 'Skill catalog retrieved', catalog);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch skill catalog', 500);
+  }
+};

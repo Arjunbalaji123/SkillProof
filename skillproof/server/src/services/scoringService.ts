@@ -7,6 +7,14 @@ export interface QuestionScoreInput {
   isCorrect: boolean;
 }
 
+export interface CoverageData {
+  topicsCovered: number;
+  questionsAnswered: number;
+  attemptsCount: number;
+}
+
+export type ConfidenceLabel = 'Low' | 'Medium' | 'High';
+
 export interface ScoreCalculationResult {
   totalQuestions: number;
   correctQuestions: number;
@@ -17,6 +25,8 @@ export interface ScoreCalculationResult {
   level: 'Beginner' | 'Basic' | 'Intermediate' | 'Advanced' | 'Expert';
   hardAccuracyPercent: number;
   topicBreakdown: Record<string, { total: number; correct: number; accuracy: number }>;
+  coverage: CoverageData;
+  confidence: ConfidenceLabel;
   passed: boolean;
 }
 
@@ -83,9 +93,39 @@ export class ScoringService {
   }
 
   /**
-   * Computes score percent, weighted percent, level, hard accuracy, and topic breakdown.
+   * Computes confidence label:
+   * Low = 1 attempt
+   * Medium = 2 attempts
+   * High = 3+ attempts or a 40-question Expert test
    */
-  static calculateScore(results: QuestionScoreInput[]): ScoreCalculationResult {
+  static computeConfidence(attemptsCount: number, questionCount: number = 20): ConfidenceLabel {
+    if (questionCount >= 40) return 'High';
+    if (attemptsCount >= 3) return 'High';
+    if (attemptsCount === 2) return 'Medium';
+    return 'Low';
+  }
+
+  /**
+   * Computes coverage: topicsCovered, questionsAnswered, attemptsCount
+   */
+  static computeCoverage(results: QuestionScoreInput[], attemptsCount: number): CoverageData {
+    const topics = new Set(results.map((r) => r.topic).filter(Boolean));
+    const answered = results.filter((r) => {
+      const norm = ScoringService.normalize(r.userAnswer);
+      return norm.length > 0;
+    }).length;
+
+    return {
+      topicsCovered: topics.size,
+      questionsAnswered: answered,
+      attemptsCount,
+    };
+  }
+
+  /**
+   * Computes score percent, weighted percent, level, hard accuracy, topic breakdown, coverage, and confidence.
+   */
+  static calculateScore(results: QuestionScoreInput[], attemptsCount: number = 1): ScoreCalculationResult {
     const totalQuestions = results.length;
     let correctQuestions = 0;
     let weightedScore = 0;
@@ -157,6 +197,9 @@ export class ScoringService {
       };
     }
 
+    const coverage = ScoringService.computeCoverage(results, attemptsCount);
+    const confidence = ScoringService.computeConfidence(attemptsCount, totalQuestions);
+
     // Passed condition: weightedPercent >= 40 (reaches at least Basic)
     const passed = weightedPercent >= 40;
 
@@ -170,6 +213,8 @@ export class ScoringService {
       level,
       hardAccuracyPercent,
       topicBreakdown,
+      coverage,
+      confidence,
       passed,
     };
   }
@@ -249,4 +294,3 @@ export class ScoringService {
     return { eligible: true };
   }
 }
-

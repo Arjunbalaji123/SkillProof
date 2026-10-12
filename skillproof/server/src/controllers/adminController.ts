@@ -126,3 +126,114 @@ export const getAuditLogs = async (req: AuthRequest, res: Response) => {
     return sendError(res, err.message || 'Failed to fetch audit logs', 500);
   }
 };
+
+// ==========================================
+// Catalog CRUD & Question Pool Health
+// ==========================================
+export const getCatalog = async (_req: AuthRequest, res: Response) => {
+  try {
+    const catalog = await AdminService.getCatalog();
+    return sendSuccess(res, 'Catalog retrieved', catalog);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch catalog', 500);
+  }
+};
+
+export const createTrack = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const track = await AdminService.createTrack(adminId, req.body);
+    return sendSuccess(res, 'Track created successfully', track, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create track', 400);
+  }
+};
+
+export const updateTrack = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const track = await AdminService.updateTrack(adminId, req.params.id, req.body);
+    return sendSuccess(res, 'Track updated successfully', track);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update track', 400);
+  }
+};
+
+export const deleteTrack = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    await AdminService.deleteTrack(adminId, req.params.id);
+    return sendSuccess(res, 'Track deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete track', 400);
+  }
+};
+
+export const createSkillCatalog = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const skill = await AdminService.createSkillCatalog(adminId, req.body);
+    return sendSuccess(res, 'Skill created successfully', skill, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create skill', 400);
+  }
+};
+
+export const updateSkillCatalog = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const skill = await AdminService.updateSkillCatalog(adminId, req.params.id, req.body);
+    return sendSuccess(res, 'Skill updated successfully', skill);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update skill', 400);
+  }
+};
+
+export const deleteSkillCatalog = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    await AdminService.deleteSkillCatalog(adminId, req.params.id);
+    return sendSuccess(res, 'Skill deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete skill', 400);
+  }
+};
+
+export const createTopic = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const topic = await AdminService.createTopic(adminId, req.body);
+    return sendSuccess(res, 'Topic created successfully', topic, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create topic', 400);
+  }
+};
+
+export const updateTopic = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const topic = await AdminService.updateTopic(adminId, req.params.id, req.body);
+    return sendSuccess(res, 'Topic updated successfully', topic);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update topic', 400);
+  }
+};
+
+export const deleteTopic = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    await AdminService.deleteTopic(adminId, req.params.id);
+    return sendSuccess(res, 'Topic deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete topic', 400);
+  }
+};
+
+export const getQuestionPoolHealth = async (_req: AuthRequest, res: Response) => {
+  try {
+    const poolHealth = await AdminService.getQuestionPoolHealth();
+    return sendSuccess(res, 'Question pool health retrieved', poolHealth);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch question pool health', 500);
+  }
+};

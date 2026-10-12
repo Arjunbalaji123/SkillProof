@@ -9,6 +9,16 @@ export class AssessmentService {
    * Enforces 7-day cooldown and max 3 attempts per 30 days.
    */
   static async startAssessment(userId: string, language: string) {
+    // Resolve catalog
+    const catalog = await prisma.skillCatalog.findFirst({
+      where: {
+        OR: [
+          { name: { equals: language } },
+          { slug: { equals: language.toLowerCase() } },
+        ],
+      },
+    });
+
     // 1. Ensure user has a skill entry for this language (claimed or existing)
     let skill = await prisma.skill.findUnique({
       where: {
@@ -23,12 +33,18 @@ export class AssessmentService {
       skill = await prisma.skill.create({
         data: {
           userId,
+          skillCatalogId: catalog?.id,
           language,
           claimedLevel: 'Intermediate',
           status: 'CLAIMED',
         },
       });
       await logAudit(userId, 'SKILL_AUTO_CLAIMED', 'Skill', skill.id, { language });
+    } else if (!skill.skillCatalogId && catalog) {
+      skill = await prisma.skill.update({
+        where: { id: skill.id },
+        data: { skillCatalogId: catalog.id },
+      });
     }
 
     // 2. Check retake cooldowns (counting only SUBMITTED attempts)
@@ -149,13 +165,14 @@ export class AssessmentService {
       userId,
     });
 
-    // 5. Create Assessment record (30 min = 1800 sec duration)
+    // 5. Create Assessment record
     const assessment = await prisma.assessment.create({
       data: {
         userId,
         skillId: skill.id,
+        skillCatalogId: catalog?.id,
         language,
-        durationSec: 1800,
+        durationSec: catalog?.durationSec || 1800,
         status: 'IN_PROGRESS',
         questions: {
           create: selectedQuestions.map((q, idx) => ({
@@ -412,8 +429,16 @@ export class AssessmentService {
       });
     }
 
-    // Calculate score using ScoringService
-    const scoreResult = ScoringService.calculateScore(questionEvaluations);
+    // Calculate score using ScoringService with user's attempt count
+    const pastSubmittedCount = await prisma.assessment.count({
+      where: {
+        userId,
+        language: { equals: assessment.language },
+        status: 'SUBMITTED',
+      },
+    });
+    const attemptsCount = pastSubmittedCount + 1;
+    const scoreResult = ScoringService.calculateScore(questionEvaluations, attemptsCount);
 
     // Save assessment result and update Developer Skill atomically in the same transaction
     await prisma.$transaction(async (tx) => {
@@ -427,6 +452,8 @@ export class AssessmentService {
           weightedPercent: scoreResult.weightedPercent ?? 0,
           level: scoreResult.level || 'Beginner',
           topicBreakdown: JSON.stringify(scoreResult.topicBreakdown || {}),
+          coverage: JSON.stringify(scoreResult.coverage || {}),
+          confidence: scoreResult.confidence || 'Low',
         },
       });
 
@@ -539,6 +566,20 @@ export class AssessmentService {
       };
     });
 
+    let parsedCoverage = null;
+    if (assessment.coverage) {
+      try {
+        parsedCoverage = JSON.parse(assessment.coverage);
+      } catch {
+        parsedCoverage = null;
+      }
+    }
+
+    const cumulativeProfile = await AssessmentService.getCumulativeTopicProfile(
+      userId,
+      assessment.language
+    );
+
     return {
       id: assessment.id,
       language: assessment.language,
@@ -550,9 +591,67 @@ export class AssessmentService {
       level: assessment.level,
       tabSwitchCount: assessment.tabSwitchCount,
       topicBreakdown: parsedBreakdown,
+      coverage: parsedCoverage || {
+        topicsCovered: Object.keys(parsedBreakdown).length,
+        questionsAnswered: assessment.questions.filter((q) => q.userAnswer).length,
+        attemptsCount: 1,
+      },
+      confidence: assessment.confidence || 'Low',
+      cumulativeProfile,
       passed: (assessment.weightedPercent || 0) >= 40,
       questions: reviewedQuestions,
     };
+  }
+
+  /**
+   * Builds cumulative per-topic profile from all SUBMITTED attempts for a user and skill
+   */
+  static async getCumulativeTopicProfile(userId: string, language: string) {
+    const submittedAssessments = await prisma.assessment.findMany({
+      where: {
+        userId,
+        language: { equals: language },
+        status: 'SUBMITTED',
+      },
+      include: {
+        questions: {
+          include: { question: true },
+        },
+      },
+    });
+
+    const topicStats: Record<string, { total: number; correct: number }> = {};
+    for (const a of submittedAssessments) {
+      for (const aq of a.questions) {
+        const topic = aq.question.topic || 'General';
+        if (!topicStats[topic]) {
+          topicStats[topic] = { total: 0, correct: 0 };
+        }
+        topicStats[topic].total += 1;
+        if (aq.isCorrect) {
+          topicStats[topic].correct += 1;
+        }
+      }
+    }
+
+    return Object.entries(topicStats).map(([topic, stat]) => {
+      const accuracy = stat.total > 0 ? Math.round((stat.correct / stat.total) * 100) : 0;
+      const strength: 'Strong' | 'Proficient' | 'Needs Focus' =
+        accuracy >= 75 ? 'Strong' : accuracy >= 60 ? 'Proficient' : 'Needs Focus';
+
+      const studySuggestion = accuracy < 60
+        ? `Focus on reviewing core principles and hands-on exercises for ${topic}.`
+        : undefined;
+
+      return {
+        topic,
+        total: stat.total,
+        correct: stat.correct,
+        accuracy,
+        strength,
+        studySuggestion,
+      };
+    });
   }
 
   /**

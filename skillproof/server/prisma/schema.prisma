@@ -39,46 +39,100 @@ model DeveloperProfile {
   updatedAt  DateTime @updatedAt
 }
 
-model Skill {
+model Track {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  skills      SkillCatalog[]
+}
+
+model SkillCatalog {
+  id            String       @id @default(uuid())
+  trackId       String
+  track         Track        @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  name          String       @unique
+  slug          String       @unique
+  description   String?
+  durationSec   Int          @default(1800)
+  questionCount Int          @default(20)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  topics        Topic[]
+  skills        Skill[]
+  questions     Question[]
+  assessments   Assessment[]
+
+  @@index([trackId])
+}
+
+model Topic {
   id             String       @id @default(uuid())
+  skillCatalogId String
+  skillCatalog   SkillCatalog @relation(fields: [skillCatalogId], references: [id], onDelete: Cascade)
+  name           String
+  weightPercent  Float
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  questions      Question[]
+
+  @@unique([skillCatalogId, name])
+  @@index([skillCatalogId])
+}
+
+model Skill {
+  id             String        @id @default(uuid())
   userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillCatalogId String?
+  skillCatalog   SkillCatalog? @relation(fields: [skillCatalogId], references: [id], onDelete: SetNull)
   language       String
-  claimedLevel   String       @default("Intermediate") // Beginner, Basic, Intermediate, Advanced, Expert
+  claimedLevel   String        @default("Intermediate") // Beginner, Basic, Intermediate, Advanced, Expert
   certificateUrl String?
-  status         String       @default("CLAIMED")      // CLAIMED | VERIFIED
+  status         String        @default("CLAIMED")      // CLAIMED | VERIFIED
   bestScore      Float?
   verifiedAt     DateTime?
   expiresAt      DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   assessments    Assessment[]
 
   @@unique([userId, language])
   @@index([userId])
+  @@index([skillCatalogId])
 }
 
 model Question {
-  id            String               @id @default(uuid())
-  language      String
-  topic         String
-  difficulty    String               // EASY | MEDIUM | HARD
-  type          String               @default("MCQ") // MCQ | MULTI | CODE_OUTPUT
-  prompt        String
-  options       String               // JSON array of strings
-  correctAnswer String               // JSON array or string
-  explanation   String
-  status        String               @default("ACTIVE") // ACTIVE | FLAGGED | RETIRED
-  createdBy     String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  id             String               @id @default(uuid())
+  skillCatalogId String?
+  skillCatalog   SkillCatalog?        @relation(fields: [skillCatalogId], references: [id], onDelete: SetNull)
+  topicId        String?
+  topicRelation  Topic?               @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  language       String
+  topic          String
+  difficulty     String               // EASY | MEDIUM | HARD
+  type           String               @default("MCQ") // MCQ | MULTI | CODE_OUTPUT | SCENARIO
+  prompt         String
+  options        String               // JSON array of strings
+  correctAnswer  String               // JSON array or string
+  explanation    String
+  status         String               @default("ACTIVE") // ACTIVE | FLAGGED | RETIRED
+  createdBy      String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   assessmentQuestions AssessmentQuestion[]
   flags               QuestionFlag[]
 
   @@index([language, difficulty, status])
   @@index([language, topic])
+  @@index([skillCatalogId])
+  @@index([topicId])
 }
 
 model Assessment {
@@ -87,6 +141,8 @@ model Assessment {
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   skillId         String
   skill           Skill                @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  skillCatalogId  String?
+  skillCatalog    SkillCatalog?        @relation(fields: [skillCatalogId], references: [id], onDelete: SetNull)
   language        String
   startedAt       DateTime             @default(now())
   submittedAt     DateTime?
@@ -97,12 +153,15 @@ model Assessment {
   level           String?              // Beginner, Basic, Intermediate, Advanced, Expert
   tabSwitchCount  Int                  @default(0)
   topicBreakdown  String?              // JSON object of topic accuracy
+  coverage        String?              // JSON object { topicsCovered, questionsAnswered, attemptsCount }
+  confidence      String?              // Low | Medium | High
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
   questions       AssessmentQuestion[]
 
   @@index([userId, language])
+  @@index([skillCatalogId])
 }
 
 model AssessmentQuestion {
