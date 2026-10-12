@@ -10,6 +10,7 @@ import {
   flagQuestion,
 } from '../controllers/assessmentsController.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireDeveloper } from '../middleware/role.js';
 import { validateBody } from '../middleware/validate.js';
 import {
   startAssessmentSchema,
@@ -21,13 +22,13 @@ const router = Router();
 
 router.use(requireAuth);
 
-router.post('/start', validateBody(startAssessmentSchema), startAssessment);
-router.get('/:id', getAssessment);
-router.post('/:id/answer', validateBody(saveAnswerSchema), saveAnswer);
-router.post('/:id/tab-switch', recordTabSwitch);
-router.post('/:id/submit', submitAssessment);
-router.get('/:id/result', getAssessmentResult);
-router.get('/history', getAssessmentHistory);
-router.post('/questions/:id/flag', validateBody(flagQuestionSchema), flagQuestion);
+router.get('/history', requireDeveloper, getAssessmentHistory);
+router.post('/start', requireDeveloper, validateBody(startAssessmentSchema), startAssessment);
+router.get('/:id', requireDeveloper, getAssessment);
+router.post('/:id/answer', requireDeveloper, validateBody(saveAnswerSchema), saveAnswer);
+router.post('/:id/tab-switch', requireDeveloper, recordTabSwitch);
+router.post('/:id/submit', requireDeveloper, submitAssessment);
+router.get('/:id/result', requireDeveloper, getAssessmentResult);
+router.post('/questions/:id/flag', requireDeveloper, validateBody(flagQuestionSchema), flagQuestion);
 
 export default router;

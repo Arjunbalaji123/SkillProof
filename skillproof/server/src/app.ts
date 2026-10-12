@@ -11,6 +11,11 @@ import { requestLogger } from './middleware/logger.js';
 import { prisma } from './config/db.js';
 import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
 
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is missing.');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR || '../uploads');

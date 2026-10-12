@@ -10,6 +10,12 @@ const COOKIE_OPTIONS = {
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
+const CLEAR_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+};
+
 export const register = async (req: AuthRequest, res: Response) => {
   try {
     const { user, token } = await AuthService.register(req.body);
@@ -58,7 +64,7 @@ export const login = async (req: AuthRequest, res: Response) => {
 };
 
 export const logout = async (_req: AuthRequest, res: Response) => {
-  res.clearCookie('token', COOKIE_OPTIONS);
+  res.clearCookie('token', CLEAR_COOKIE_OPTIONS);
   return sendSuccess(res, 'Logged out successfully');
 };
 

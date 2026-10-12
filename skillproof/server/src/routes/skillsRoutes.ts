@@ -8,7 +8,7 @@ import {
   getCertificateClaims,
 } from '../controllers/skillsController.js';
 import { requireAuth } from '../middleware/auth.js';
-import { requireAdmin } from '../middleware/role.js';
+import { requireAdmin, requireDeveloper } from '../middleware/role.js';
 import { validateBody } from '../middleware/validate.js';
 import { claimSkillSchema, updateClaimSkillSchema } from '../validators/index.js';
 
@@ -16,11 +16,11 @@ const router = Router();
 
 router.use(requireAuth);
 
-router.get('/summary', getDashboardSummary);
-router.get('/', getUserSkills);
-router.post('/claim', validateBody(claimSkillSchema), claimSkill);
-router.patch('/:id', validateBody(updateClaimSkillSchema), updateClaimedSkill);
-router.delete('/:id', deleteSkill);
+router.get('/summary', requireDeveloper, getDashboardSummary);
+router.get('/', requireDeveloper, getUserSkills);
+router.post('/claim', requireDeveloper, validateBody(claimSkillSchema), claimSkill);
+router.patch('/:id', requireDeveloper, validateBody(updateClaimSkillSchema), updateClaimedSkill);
+router.delete('/:id', requireDeveloper, deleteSkill);
 
 // Admin or reviewer endpoint for certificate claims
 router.get('/claims/unverified', requireAdmin, getCertificateClaims);

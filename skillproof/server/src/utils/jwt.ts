@@ -1,7 +1,11 @@
 import jwt from 'jsonwebtoken';
 
 const getJwtSecret = (): string => {
-  return process.env.JWT_SECRET || 'skillproof_super_secret_jwt_key_2026_prod_quality';
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('FATAL: JWT_SECRET environment variable is missing in server configuration.');
+  }
+  return secret;
 };
 
 const JWT_EXPIRES_IN = '7d';

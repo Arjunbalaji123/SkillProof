@@ -15,14 +15,30 @@ import {
   CheckCircle,
 } from 'lucide-react';
 
+import { useNavigate } from 'react-router-dom';
+
 export const LandingPage: React.FC = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
   const [scrollProgress, setScrollProgress] = useState(0);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
   const [cursorScreenPos, setCursorScreenPos] = useState({ x: -100, y: -100 });
   const [isCursorHovered, setIsCursorHovered] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Redirect logged-in users who open / to their role dashboard
+  useEffect(() => {
+    if (!loading && user) {
+      if (user.role === 'RECRUITER') {
+        navigate('/recruiters/developers', { replace: true });
+      } else if (user.role === 'ADMIN') {
+        navigate('/admin', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [user, loading, navigate]);
 
   // 1. Scroll Timeline Progress Handler
   useEffect(() => {

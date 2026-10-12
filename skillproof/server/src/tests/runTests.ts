@@ -1,3 +1,4 @@
+process.env.NODE_ENV = 'test';
 import assert from 'assert';
 import { prisma } from '../config/db.js';
 import { ScoringService } from '../services/scoringService.js';
@@ -175,6 +176,97 @@ export async function runSkillProofTests() {
 
     const session = await AuthService.getSession(loginRes.user.id);
     assert.strictEqual(session?.email, 'recruiter@techcorp.com');
+  });
+
+  // 7. Full HTTP Auth, Cookie Session & Role Guard Verification
+  await test('HTTP Auth & RBAC: Cookies, sessions, role guards, and uniform errors', async () => {
+    const { default: app } = await import('../app.js');
+    const server = app.listen(0);
+    const port = (server.address() as any).port;
+    const API_URL = `http://127.0.0.1:${port}/api`;
+
+    try {
+      // Uniform error check
+      const badRes = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'arjun@skillproof.dev', password: 'bad' }),
+      });
+      assert.strictEqual(badRes.status, 401);
+      const badData = await badRes.json();
+      assert.strictEqual(badData.message, 'Invalid email or password credentials');
+
+      // Developer login with uppercase and whitespace
+      const devRes = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: '  ARJUN@SKILLPROOF.DEV  ', password: 'Dev@123' }),
+      });
+      assert.strictEqual(devRes.status, 200);
+      const cookie = devRes.headers.get('set-cookie')?.split(';')[0] || '';
+      assert(cookie.includes('token='), 'httpOnly cookie set');
+
+      // Session persistence via cookie
+      const sessionRes = await fetch(`${API_URL}/auth/session`, {
+        headers: { Cookie: cookie },
+      });
+      assert.strictEqual(sessionRes.status, 200);
+      const sessionData = await sessionRes.json();
+      assert.strictEqual(sessionData.data.role, 'DEVELOPER');
+
+      // Developer allowed on history, blocked on admin
+      const histRes = await fetch(`${API_URL}/assessments/history`, {
+        headers: { Cookie: cookie },
+      });
+      assert.strictEqual(histRes.status, 200);
+
+      const devAdminRes = await fetch(`${API_URL}/admin/users`, {
+        headers: { Cookie: cookie },
+      });
+      assert.strictEqual(devAdminRes.status, 403);
+
+      // Recruiter login & role check
+      const recRes = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'recruiter@techcorp.com', password: 'Recruiter@123' }),
+      });
+      assert.strictEqual(recRes.status, 200);
+      const recCookie = recRes.headers.get('set-cookie')?.split(';')[0] || '';
+
+      const recDevsRes = await fetch(`${API_URL}/recruiter/developers`, {
+        headers: { Cookie: recCookie },
+      });
+      assert.strictEqual(recDevsRes.status, 200);
+
+      const recAdminRes = await fetch(`${API_URL}/admin/users`, {
+        headers: { Cookie: recCookie },
+      });
+      assert.strictEqual(recAdminRes.status, 403);
+
+      // Admin login & role check
+      const adminRes = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin@skillproof.dev', password: 'Admin@123' }),
+      });
+      assert.strictEqual(adminRes.status, 200);
+      const adminCookie = adminRes.headers.get('set-cookie')?.split(';')[0] || '';
+
+      const adminUsersRes = await fetch(`${API_URL}/admin/users`, {
+        headers: { Cookie: adminCookie },
+      });
+      assert.strictEqual(adminUsersRes.status, 200);
+
+      // Logout clears cookie
+      const logoutRes = await fetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { Cookie: cookie },
+      });
+      assert.strictEqual(logoutRes.status, 200);
+    } finally {
+      server.close();
+    }
   });
 
   console.log(`\n========================================`);
