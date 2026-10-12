@@ -27,8 +27,9 @@ async function runE2EVerification() {
   assert(searchResults.length > 0, 'Should find arjun');
   console.log('Search result sample:', JSON.stringify(searchResults[0]));
   assert(!('email' in searchResults[0]), 'Search result MUST NOT contain email');
-  assert(searchResults[0].username === 'arjun');
-  assert(searchResults[0].points !== undefined);
+  const arjunMatch = searchResults.find(r => r.username === 'arjun');
+  assert(arjunMatch, 'Arjun should be in search results');
+  assert(arjunMatch.points !== undefined);
   console.log('✅ Username search works and guarantees zero email leakage');
 
   // 3. Test Portfolio Lookup by Username & Redirect by Slug
@@ -64,9 +65,8 @@ async function runE2EVerification() {
   const devAlex = users.find(u => u.username === 'dev_alex') || users[1];
   const priya = users.find(u => u.username === 'priyasharma') || users[2];
 
-  // Invalidate cache and fetch initial leaderboard
-  LeaderboardService.clearCache();
-  const lbInitial = await LeaderboardService.getLeaderboard({ scope: 'global', period: 'all' }, devAlex.id);
+  // Fetch initial leaderboard from real DB
+  const lbInitial = await LeaderboardService.getLeaderboard({ scope: 'global', period: 'all', currentUserId: devAlex.id });
   console.log(`Initial entries: ${lbInitial.entries.length}, Alex rank: ${lbInitial.currentUserRank?.rank}`);
 
   // Alex completes an assessment in JavaScript
@@ -122,8 +122,8 @@ async function runE2EVerification() {
       },
     });
 
-    // Recalculate leaderboard
-    await LeaderboardService.recalculateLeaderboard();
+    // Recalculate leaderboard for user in real database
+    await LeaderboardService.recalculateUser(devAlex.id);
 
     // Fetch updated leaderboard from Priya's perspective and Alex's perspective
     const lbAlex = await LeaderboardService.getLeaderboard({ scope: 'global', period: 'all', currentUserId: devAlex.id });

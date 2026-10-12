@@ -32,6 +32,8 @@ export const LeaderboardPage: React.FC = () => {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [errorMsg, setErrorMsg] = useState<string>('');
+
   // Load catalog tracks and skills for dropdowns
   useEffect(() => {
     api.get('/skills/catalog')
@@ -50,6 +52,7 @@ export const LeaderboardPage: React.FC = () => {
 
   const fetchLeaderboard = async () => {
     setLoading(true);
+    setErrorMsg('');
     try {
       let scope = 'global';
       let period = 'all';
@@ -79,9 +82,12 @@ export const LeaderboardPage: React.FC = () => {
       const res = await api.get(`/leaderboard?${params.toString()}`);
       if (res.data.success) {
         setData(res.data.data);
+      } else {
+        setErrorMsg(res.data.message || 'Failed to load leaderboard');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load leaderboard data:', err);
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to load leaderboard data');
     } finally {
       setLoading(false);
     }
@@ -254,10 +260,24 @@ export const LeaderboardPage: React.FC = () => {
 
       {loading ? (
         <PageSkeleton />
+      ) : errorMsg ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-red-200 shadow-xs space-y-3">
+          <Trophy size={40} className="mx-auto text-red-300" />
+          <h3 className="text-base font-bold text-red-800">Error Loading Leaderboard</h3>
+          <p className="text-xs text-red-600 max-w-md mx-auto">{errorMsg}</p>
+          <div className="pt-2">
+            <button
+              onClick={() => fetchLeaderboard()}
+              className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
       ) : entries.length === 0 ? (
         <div className="p-12 text-center bg-white rounded-3xl border border-[#E2E8F0] shadow-xs space-y-3">
           <Trophy size={40} className="mx-auto text-slate-300" />
-          <h3 className="text-base font-bold text-[#0F172A]">No developers ranked in this category yet</h3>
+          <h3 className="text-base font-bold text-[#0F172A]">No ranked developers yet</h3>
           <p className="text-xs text-[#64748B] max-w-md mx-auto">
             Take a randomized verified assessment to claim points and earn your place on the leaderboard!
           </p>

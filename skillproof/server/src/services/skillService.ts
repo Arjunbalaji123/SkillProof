@@ -1,5 +1,6 @@
 import { prisma } from '../config/db.js';
 import { logAudit } from '../utils/audit.js';
+import { LeaderboardService } from './leaderboardService.js';
 
 export class SkillService {
   /**
@@ -29,6 +30,7 @@ export class SkillService {
       id: skill.id,
       language: skill.language,
       claimedLevel: skill.claimedLevel,
+      level: skill.status === 'VERIFIED' ? (skill.assessments[0]?.level || skill.claimedLevel) : skill.claimedLevel,
       certificateUrl: skill.certificateUrl,
       status: skill.status, // CLAIMED | VERIFIED
       bestScore: skill.bestScore,
@@ -205,6 +207,8 @@ export class SkillService {
     await prisma.skill.delete({
       where: { id: skillId },
     });
+
+    await LeaderboardService.recalculateUser(userId);
 
     await logAudit(userId, 'SKILL_DELETED', 'Skill', skillId, { language: skill.language });
     return { success: true };

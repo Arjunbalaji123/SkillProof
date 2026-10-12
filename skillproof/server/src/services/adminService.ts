@@ -1,5 +1,6 @@
 import { prisma } from '../config/db.js';
 import { logAudit } from '../utils/audit.js';
+import { LeaderboardService } from './leaderboardService.js';
 
 export class AdminService {
   /**
@@ -286,6 +287,8 @@ export class AdminService {
       where: { id: userId },
       data: { status },
     });
+
+    await LeaderboardService.recalculateUser(userId);
 
     await logAudit(adminId, 'USER_STATUS_UPDATED', 'User', userId, { newStatus: status });
     return user;

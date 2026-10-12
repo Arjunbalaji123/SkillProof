@@ -474,12 +474,19 @@ export class AssessmentService {
           where: { id: assessment.skillId },
           data: {
             status: 'VERIFIED',
+            claimedLevel: scoreResult.level,
             bestScore: newBestScore,
             verifiedAt: now,
             expiresAt,
           },
         });
       }
+
+      // 3. Recalculate leaderboard entries inside the same transaction
+      await LeaderboardService.recalculateUser(userId, tx);
+
+      // 4. Safety net: verify consistency between verified skills and leaderboard entries
+      await LeaderboardService.validateConsistency(userId, tx);
     });
 
     if (scoreResult.passed) {
@@ -495,9 +502,6 @@ export class AssessmentService {
       weightedPercent: scoreResult.weightedPercent,
       level: scoreResult.level,
     });
-
-    // Recalculate leaderboard entries asynchronously
-    LeaderboardService.onAssessmentSubmitted(userId, assessment.language);
 
     return this.getAssessmentResult(userId, assessmentId);
   }

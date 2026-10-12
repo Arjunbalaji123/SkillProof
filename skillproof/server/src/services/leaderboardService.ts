@@ -1,4 +1,5 @@
 import { prisma } from '../config/db.js';
+import { Prisma } from '@prisma/client';
 
 export const LEVEL_MULTIPLIERS: Record<string, number> = {
   Expert: 3.0,
@@ -17,11 +18,14 @@ function getWeekKey(d: Date): string {
   return `${date.getUTCFullYear()}-W${weekNo}`;
 }
 
-export interface UserPointsBreakdown {
+export function getCurrentMonthKey(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+export interface CalculatedUserPoints {
   userId: string;
-  username: string;
-  name: string;
-  avatar?: string;
   points: number;
   earliestVerifiedAt: Date | null;
   verifiedSkills: {
@@ -36,33 +40,26 @@ export interface UserPointsBreakdown {
   topLevel: string;
 }
 
-// 60-second in-memory cache
-const leaderboardCache = new Map<string, { data: any; expiresAt: number }>();
-const CACHE_TTL_MS = 60 * 1000;
-
 export class LeaderboardService {
   /**
-   * Calculate points for a specific user according to specification:
-   * - sum over VERIFIED skills of bestScore * level multiplier (Basic 1.0, Intermediate 1.5, Advanced 2.0, Expert 3.0)
-   * - up to 10 hard-question bonus per skill (2.5 pts per hard correct question, max 10)
-   * - +25 per extra verified skill
-   * - +5 per week with a completed assessment (cap 50)
-   * - Expired skills count at 50%
-   * - Exclude attempts flagged for integrity (high tab-switch count >= 3)
-   * - Exclude users with showOnLeaderboard = false
+   * Reads user's VERIFIED skills (bestScore, level, verifiedAt, expiresAt) and
+   * SUBMITTED, integrity-clean assessments (tabSwitchCount < 3).
+   * Applies level multiplier, hard-question bonus, breadth bonus (+25 per extra verified skill in GLOBAL),
+   * and weekly activity bonus (+5 per week, cap 50). Expired skills count at 50%.
    */
-  static async calculateUserPoints(
+  static async calculatePoints(
     userId: string,
     options: {
-      scope?: 'global' | 'track' | 'skill';
-      trackId?: string;
-      skillId?: string;
-      period?: 'all' | 'month';
-    } = {}
-  ): Promise<UserPointsBreakdown | null> {
-    const { scope = 'global', trackId, skillId, period = 'all' } = options;
+      scope?: 'GLOBAL' | 'TRACK' | 'SKILL';
+      scopeId?: string | null;
+      period?: 'ALL' | 'MONTH';
+      periodKey?: string;
+    } = {},
+    db: Prisma.TransactionClient = prisma
+  ): Promise<CalculatedUserPoints | null> {
+    const { scope = 'GLOBAL', scopeId, period = 'ALL', periodKey } = options;
 
-    const user = await prisma.user.findUnique({
+    const user = await db.user.findUnique({
       where: { id: userId },
       include: {
         profile: true,
@@ -75,11 +72,13 @@ export class LeaderboardService {
         assessments: {
           where: {
             status: 'SUBMITTED',
-            tabSwitchCount: { lt: 3 }, // Integrity filter: exclude high tab-switch attempts
-            ...(period === 'month'
+            tabSwitchCount: { lt: 3 }, // Integrity clean
+            ...(period === 'MONTH'
               ? {
                   submittedAt: {
-                    gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+                    gte: periodKey
+                      ? new Date(`${periodKey}-01T00:00:00Z`)
+                      : new Date(new Date().getFullYear(), new Date().getMonth(), 1),
                   },
                 }
               : {}),
@@ -97,29 +96,28 @@ export class LeaderboardService {
 
     if (!user || user.status === 'SUSPENDED') return null;
     if (user.profile && user.profile.showOnLeaderboard === false) {
-      return null; // Excluded from leaderboard
+      return null;
     }
 
     // Filter skills based on scope
     let relevantSkills = user.skills;
-    if (scope === 'track' && trackId) {
-      relevantSkills = relevantSkills.filter((s) => s.skillCatalog?.trackId === trackId);
-    } else if (scope === 'skill' && skillId) {
+    if (scope === 'TRACK' && scopeId) {
+      relevantSkills = relevantSkills.filter((s) => s.skillCatalog?.trackId === scopeId);
+    } else if (scope === 'SKILL' && scopeId) {
       relevantSkills = relevantSkills.filter(
         (s) =>
-          s.skillCatalogId === skillId ||
-          s.language.toLowerCase() === skillId.toLowerCase()
+          s.skillCatalogId === scopeId ||
+          s.language.toLowerCase() === scopeId.toLowerCase()
       );
     }
 
-    if ((scope === 'skill' || scope === 'track') && relevantSkills.length === 0) {
+    if (relevantSkills.length === 0) {
       return null;
     }
 
     let sumSkillPoints = 0;
     let earliestVerifiedAt: Date | null = null;
-    const verifiedDetails: UserPointsBreakdown['verifiedSkills'] = [];
-
+    const verifiedDetails: CalculatedUserPoints['verifiedSkills'] = [];
     const now = new Date();
 
     for (const skill of relevantSkills) {
@@ -127,7 +125,7 @@ export class LeaderboardService {
       const mult = LEVEL_MULTIPLIERS[level] ?? 1.0;
       const base = (skill.bestScore || 0) * mult;
 
-      // Hard question bonus: count unique HARD questions answered correctly in valid assessments
+      // Hard question bonus: unique HARD questions answered correctly in valid assessments
       const hardCorrectQuestionIds = new Set<string>();
       const skillAssessments = user.assessments.filter(
         (a) => a.language.toLowerCase() === skill.language.toLowerCase()
@@ -166,15 +164,15 @@ export class LeaderboardService {
       });
     }
 
-    // Extra verified skills bonus: +25 per extra verified skill (in global scope)
-    const extraSkillsBonus = scope === 'global' ? Math.max(0, relevantSkills.length - 1) * 25 : 0;
+    // Extra verified skills breadth bonus: +25 per extra verified skill in GLOBAL scope
+    const extraSkillsBonus = scope === 'GLOBAL' ? Math.max(0, relevantSkills.length - 1) * 25 : 0;
 
     // Weekly consistency bonus: +5 per week with a completed assessment (cap 50)
     const relevantAssessments = user.assessments.filter((a) => {
-      if (scope === 'skill' && skillId) {
-        return a.language.toLowerCase() === skillId.toLowerCase();
+      if (scope === 'SKILL' && scopeId) {
+        return a.language.toLowerCase() === scopeId.toLowerCase();
       }
-      if (scope === 'track' && trackId) {
+      if (scope === 'TRACK' && scopeId) {
         return relevantSkills.some((s) => s.language.toLowerCase() === a.language.toLowerCase());
       }
       return true;
@@ -202,8 +200,6 @@ export class LeaderboardService {
 
     return {
       userId: user.id,
-      username: user.username || user.name.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-      name: user.name,
       points: totalPoints,
       earliestVerifiedAt,
       verifiedSkills: verifiedDetails,
@@ -213,194 +209,499 @@ export class LeaderboardService {
     };
   }
 
-  /**
-   * Invalidate 60-second leaderboard cache
-   */
-  static clearCache() {
-    leaderboardCache.clear();
+  // Alias for backward compatibility with unit tests
+  static calculateUserPoints(userId: string, options: any = {}) {
+    const scope = (options.scope || 'GLOBAL').toUpperCase() as any;
+    const period = (options.period || 'ALL').toUpperCase() as any;
+    const scopeId = scope === 'TRACK' ? options.trackId : scope === 'SKILL' ? options.skillId : null;
+    return this.calculatePoints(userId, { scope, scopeId, period, periodKey: period === 'MONTH' ? getCurrentMonthKey() : 'all' });
   }
 
   /**
-   * Recalculate leaderboard entries and persist to LeaderboardEntry table.
-   * Ties: earlier verifiedAt wins.
+   * Recalculates and upserts that user's entries for GLOBAL, their tracks, their skills, and the current month.
+   * Can run within an existing transaction client `tx` or the default Prisma client.
    */
-  static async recalculateLeaderboard(options: {
-    scope?: 'global' | 'track' | 'skill';
-    trackId?: string;
-    skillId?: string;
-    period?: 'all' | 'month';
-  } = {}) {
-    const { scope = 'global', trackId, skillId, period = 'all' } = options;
+  static async recalculateUser(userId: string, tx: Prisma.TransactionClient = prisma): Promise<void> {
+    const currentMonthKey = getCurrentMonthKey();
 
-    const developers = await prisma.user.findMany({
+    // Check if user is active and should be on leaderboard
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      include: {
+        profile: true,
+        skills: {
+          where: { status: 'VERIFIED' },
+          include: { skillCatalog: true },
+        },
+      },
+    });
+
+    // If user is suspended or showOnLeaderboard = false or has 0 verified skills or user deleted/missing, remove all their entries
+    if (!user || user.status === 'SUSPENDED' || (user.profile && user.profile.showOnLeaderboard === false) || user.skills.length === 0) {
+      await tx.leaderboardEntry.deleteMany({
+        where: { userId },
+      });
+      // Recompute ranks for all scopes user might have been in
+      await this.recomputeAllRanks(tx);
+      return;
+    }
+
+    // Determine all relevant scopes for this user
+    interface TargetScope {
+      scope: 'GLOBAL' | 'TRACK' | 'SKILL';
+      scopeId: string;
+      period: 'ALL' | 'MONTH';
+      periodKey: string;
+    }
+
+    const targetScopes: TargetScope[] = [
+      { scope: 'GLOBAL', scopeId: '', period: 'ALL', periodKey: 'all' },
+      { scope: 'GLOBAL', scopeId: '', period: 'MONTH', periodKey: currentMonthKey },
+    ];
+
+    // Collect distinct tracks and skills
+    const trackIds = new Set<string>();
+    const skillIds = new Set<string>();
+
+    for (const skill of user.skills) {
+      if (skill.skillCatalog?.trackId) {
+        trackIds.add(skill.skillCatalog.trackId);
+      }
+      if (skill.skillCatalogId) {
+        skillIds.add(skill.skillCatalogId);
+      }
+      skillIds.add(skill.language);
+    }
+
+    for (const trackId of trackIds) {
+      targetScopes.push({ scope: 'TRACK', scopeId: trackId, period: 'ALL', periodKey: 'all' });
+      targetScopes.push({ scope: 'TRACK', scopeId: trackId, period: 'MONTH', periodKey: currentMonthKey });
+    }
+
+    for (const skillId of skillIds) {
+      targetScopes.push({ scope: 'SKILL', scopeId: skillId, period: 'ALL', periodKey: 'all' });
+      targetScopes.push({ scope: 'SKILL', scopeId: skillId, period: 'MONTH', periodKey: currentMonthKey });
+    }
+
+    // For each scope, calculate points and upsert
+    for (const target of targetScopes) {
+      const calc = await this.calculatePoints(userId, target, tx);
+
+      if (calc && calc.points > 0) {
+        const verifiedSkillsNames = JSON.stringify(calc.verifiedSkills.map((v) => v.language));
+        await tx.leaderboardEntry.upsert({
+          where: {
+            userId_scope_scopeId_period_periodKey: {
+              userId,
+              scope: target.scope,
+              scopeId: target.scopeId,
+              period: target.period,
+              periodKey: target.periodKey,
+            },
+          },
+          create: {
+            userId,
+            scope: target.scope,
+            scopeId: target.scopeId,
+            period: target.period,
+            periodKey: target.periodKey,
+            points: calc.points,
+            verifiedSkills: verifiedSkillsNames,
+            rank: 0, // will be assigned in recomputeRanks
+          },
+          update: {
+            points: calc.points,
+            verifiedSkills: verifiedSkillsNames,
+          },
+        });
+      } else {
+        // User has 0 points or no verified skills in this scope: remove entry
+        await tx.leaderboardEntry.deleteMany({
+          where: {
+            userId,
+            scope: target.scope,
+            scopeId: target.scopeId,
+            period: target.period,
+            periodKey: target.periodKey,
+          },
+        });
+      }
+    }
+
+    // Remove any stale entries for this user that are no longer in targetScopes
+    // (e.g. if a skill was removed)
+    const existingEntries = await tx.leaderboardEntry.findMany({
+      where: { userId },
+      select: { id: true, scope: true, scopeId: true, period: true, periodKey: true },
+    });
+
+    for (const entry of existingEntries) {
+      const isTarget = targetScopes.some(
+        (t) =>
+          t.scope === entry.scope &&
+          t.scopeId === entry.scopeId &&
+          t.period === entry.period &&
+          t.periodKey === entry.periodKey
+      );
+      if (!isTarget) {
+        await tx.leaderboardEntry.delete({ where: { id: entry.id } });
+      }
+    }
+
+    // Recompute ranks for each affected scope
+    for (const target of targetScopes) {
+      await this.recomputeRanks(target.scope, target.scopeId, target.period, target.periodKey, tx);
+    }
+  }
+
+  /**
+   * Assign ranks with ORDER BY points DESC, earliest verifiedAt ASC, userId ASC.
+   */
+  static async recomputeRanks(
+    scope: 'GLOBAL' | 'TRACK' | 'SKILL',
+    scopeId: string | null,
+    period: 'ALL' | 'MONTH',
+    periodKey: string,
+    tx: Prisma.TransactionClient = prisma
+  ): Promise<void> {
+    const entries: any[] = await tx.leaderboardEntry.findMany({
+      where: {
+        scope,
+        scopeId: scopeId || '',
+        period,
+        periodKey,
+      },
+      include: {
+        user: {
+          include: {
+            skills: {
+              where: { status: 'VERIFIED' },
+              select: { verifiedAt: true, language: true, skillCatalogId: true, skillCatalog: { select: { trackId: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (entries.length === 0) return;
+
+    // Sort: points DESC, earliest verifiedAt ASC, userId ASC
+    entries.sort((a, b) => {
+      if (b.points !== a.points) {
+        return b.points - a.points;
+      }
+
+      // Find earliest verifiedAt in the relevant scope
+      const getEarliest = (entry: any) => {
+        let skills: any[] = entry.user?.skills || [];
+        if (scope === 'TRACK' && scopeId) {
+          skills = skills.filter((s: any) => s.skillCatalog?.trackId === scopeId);
+        } else if (scope === 'SKILL' && scopeId) {
+          skills = skills.filter((s: any) => s.skillCatalogId === scopeId || s.language.toLowerCase() === scopeId.toLowerCase());
+        }
+        let minTime: number | null = null;
+        for (const s of skills) {
+          if (s.verifiedAt) {
+            const t = new Date(s.verifiedAt).getTime();
+            if (minTime === null || t < minTime) minTime = t;
+          }
+        }
+        return minTime;
+      };
+
+      const earlyA = getEarliest(a);
+      const earlyB = getEarliest(b);
+
+      if (earlyA !== null && earlyB !== null && earlyA !== earlyB) {
+        return earlyA - earlyB;
+      }
+      if (earlyA !== null && earlyB === null) return -1;
+      if (earlyA === null && earlyB !== null) return 1;
+
+      return a.userId.localeCompare(b.userId);
+    });
+
+    // Update rank in database
+    for (let i = 0; i < entries.length; i++) {
+      const rank = i + 1;
+      if (entries[i].rank !== rank) {
+        await tx.leaderboardEntry.update({
+          where: { id: entries[i].id },
+          data: { rank },
+        });
+      }
+    }
+  }
+
+  /**
+   * Recompute ranks across all active scopes and periods.
+   */
+  static async recomputeAllRanks(tx: Prisma.TransactionClient = prisma): Promise<void> {
+    const distinctGroups = await tx.leaderboardEntry.groupBy({
+      by: ['scope', 'scopeId', 'period', 'periodKey'],
+    });
+
+    for (const group of distinctGroups) {
+      await this.recomputeRanks(
+        group.scope as any,
+        group.scopeId,
+        group.period as any,
+        group.periodKey,
+        tx
+      );
+    }
+  }
+
+  /**
+   * Safety Net: Consistency check that runs after every submit and in rebuild script.
+   * For each LeaderboardEntry, verifiedSkills count must equal the user's count of VERIFIED skills in that scope.
+   * If any mismatch is found, logs an error and automatically fixes it.
+   */
+  static async validateConsistency(
+    userId?: string,
+    tx: Prisma.TransactionClient = prisma
+  ): Promise<{ valid: boolean; issues: string[]; fixed: number }> {
+    const issues: string[] = [];
+    let fixed = 0;
+
+    const entries = await tx.leaderboardEntry.findMany({
+      where: userId ? { userId } : {},
+      include: {
+        user: {
+          include: {
+            skills: {
+              where: { status: 'VERIFIED' },
+              include: { skillCatalog: true },
+            },
+          },
+        },
+      },
+    });
+
+    for (const entry of entries) {
+      if (!entry.user) {
+        const msg = `[Leaderboard Consistency Error] Entry ${entry.id} belongs to non-existent user ${entry.userId}`;
+        console.error(msg);
+        issues.push(msg);
+        await tx.leaderboardEntry.delete({ where: { id: entry.id } });
+        fixed++;
+        continue;
+      }
+
+      let relevantSkills = entry.user.skills;
+      if (entry.scope === 'TRACK' && entry.scopeId) {
+        relevantSkills = relevantSkills.filter((s) => s.skillCatalog?.trackId === entry.scopeId);
+      } else if (entry.scope === 'SKILL' && entry.scopeId) {
+        relevantSkills = relevantSkills.filter(
+          (s) => s.skillCatalogId === entry.scopeId || s.language.toLowerCase() === entry.scopeId.toLowerCase()
+        );
+      }
+
+      let parsedSkills: string[] = [];
+      try {
+        parsedSkills = JSON.parse(entry.verifiedSkills);
+      } catch {
+        parsedSkills = [];
+      }
+
+      // Check 1: User has 0 verified skills in scope but has a leaderboard entry
+      if (relevantSkills.length === 0) {
+        const msg = `[Leaderboard Consistency Error] User ${entry.user.username} (${entry.userId}) has a LeaderboardEntry for ${entry.scope} (${entry.scopeId || 'GLOBAL'}) but 0 VERIFIED skills. Removing entry.`;
+        console.error(msg);
+        issues.push(msg);
+        await tx.leaderboardEntry.delete({ where: { id: entry.id } });
+        fixed++;
+        continue;
+      }
+
+      // Check 2: Number of verified skills in entry does not match user's actual verified skills count
+      if (parsedSkills.length !== relevantSkills.length) {
+        const msg = `[Leaderboard Consistency Error] User ${entry.user.username} (${entry.userId}) LeaderboardEntry ${entry.scope} has ${parsedSkills.length} verifiedSkills in entry but ${relevantSkills.length} in DB. Recalculating user.`;
+        console.error(msg);
+        issues.push(msg);
+        await this.recalculateUser(entry.userId, tx);
+        fixed++;
+      }
+    }
+
+    if (fixed > 0) {
+      await this.recomputeAllRanks(tx);
+    }
+
+    return {
+      valid: issues.length === 0,
+      issues,
+      fixed,
+    };
+  }
+
+  /**
+   * Rebuilds all entries from Skill and Assessment data.
+   */
+  static async rebuildAll(): Promise<void> {
+    console.log('🔄 Rebuilding all LeaderboardEntry records from real database records...');
+    await prisma.leaderboardEntry.deleteMany();
+
+    const activeDevelopers = await prisma.user.findMany({
       where: {
         role: 'DEVELOPER',
         status: 'ACTIVE',
-        profile: {
-          showOnLeaderboard: true,
-        },
+        profile: { showOnLeaderboard: true },
       },
       select: { id: true },
     });
 
-    const candidates: UserPointsBreakdown[] = [];
-    for (const dev of developers) {
-      const breakdown = await this.calculateUserPoints(dev.id, {
-        scope,
-        trackId,
-        skillId,
-        period,
-      });
-      if (breakdown) {
-        if ((scope === 'skill' || scope === 'track') && breakdown.verifiedSkills.length === 0) {
-          continue;
-        }
-        if (scope === 'global' && breakdown.points === 0 && breakdown.verifiedSkills.length === 0) {
-          continue;
-        }
-        candidates.push(breakdown);
-      }
+    console.log(`Processing ${activeDevelopers.length} active developers...`);
+    for (const dev of activeDevelopers) {
+      await this.recalculateUser(dev.id);
     }
-
-    // Sort:
-    // 1. Points descending
-    // 2. Earlier verifiedAt wins (earlier timestamp ascending)
-    candidates.sort((a, b) => {
-      if (b.points !== a.points) {
-        return b.points - a.points;
-      }
-      if (a.earliestVerifiedAt && b.earliestVerifiedAt) {
-        return a.earliestVerifiedAt.getTime() - b.earliestVerifiedAt.getTime();
-      }
-      if (a.earliestVerifiedAt && !b.earliestVerifiedAt) return -1;
-      if (!a.earliestVerifiedAt && b.earliestVerifiedAt) return 1;
-      return a.username.localeCompare(b.username);
-    });
-
-    // Delete existing entries for this scope & period & target
-    await prisma.leaderboardEntry.deleteMany({
-      where: {
-        scope,
-        period,
-        ...(trackId ? { trackId } : {}),
-        ...(skillId ? { skillId } : {}),
-      },
-    });
-
-    // Bulk create ranked entries
-    for (let i = 0; i < candidates.length; i++) {
-      const c = candidates[i];
-      await prisma.leaderboardEntry.create({
-        data: {
-          userId: c.userId,
-          scope,
-          period,
-          trackId: trackId || null,
-          skillId: skillId || null,
-          points: c.points,
-          rank: i + 1,
-        },
-      });
-    }
-
-    this.clearCache();
-    return candidates;
+    console.log('✅ Leaderboard successfully rebuilt!');
   }
 
   /**
-   * Recalculate after assessment submit
-   */
-  static async onAssessmentSubmitted(_userId: string, language: string) {
-    // Invalidate cache immediately
-    this.clearCache();
-
-    // Recalculate global and skill-specific leaderboards in background
-    Promise.all([
-      this.recalculateLeaderboard({ scope: 'global', period: 'all' }),
-      this.recalculateLeaderboard({ scope: 'global', period: 'month' }),
-      this.recalculateLeaderboard({ scope: 'skill', skillId: language, period: 'all' }),
-    ]).catch((err) => {
-      console.error('Error recalculating leaderboard in background:', err);
-    });
-  }
-
-  /**
-   * Fetch paginated leaderboard with 60-second caching
+   * API: Reads from LeaderboardEntry joined with User (username, avatar).
+   * Return: entries [{ rank, username, avatar, verifiedSkills, points, topSkill }], total,
+   * and the current user's own entry with rank (even outside the top page).
+   * NEVER returns emails!
    */
   static async getLeaderboard(params: {
-    scope?: 'global' | 'track' | 'skill';
-    id?: string; // trackId or skillId
-    period?: 'all' | 'month';
+    scope?: string;
+    id?: string;
+    period?: string;
     page?: number;
     limit?: number;
     currentUserId?: string;
   }) {
-    const scope = params.scope || 'global';
-    const period = params.period || 'all';
-    const targetId = params.id;
+    const rawScope = (params.scope || 'GLOBAL').toUpperCase();
+    const scope = (['GLOBAL', 'TRACK', 'SKILL'].includes(rawScope) ? rawScope : 'GLOBAL') as 'GLOBAL' | 'TRACK' | 'SKILL';
+    const rawPeriod = (params.period || 'ALL').toUpperCase();
+    const period = (['ALL', 'MONTH'].includes(rawPeriod) ? rawPeriod : 'ALL') as 'ALL' | 'MONTH';
+    const periodKey = period === 'MONTH' ? getCurrentMonthKey() : 'all';
+    const scopeId = scope === 'GLOBAL' ? '' : (params.id || '');
     const page = Math.max(1, Number(params.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(params.limit) || 50));
     const currentUserId = params.currentUserId;
 
-    const cacheKey = `${scope}_${period}_${targetId || ''}`;
-    const cached = leaderboardCache.get(cacheKey);
+    const whereClause: Prisma.LeaderboardEntryWhereInput = {
+      scope,
+      scopeId,
+      period,
+      periodKey,
+      user: {
+        status: 'ACTIVE',
+        profile: { showOnLeaderboard: true },
+      },
+    };
 
-    let rankedCandidates: UserPointsBreakdown[];
+    const total = await prisma.leaderboardEntry.count({
+      where: whereClause,
+    });
 
-    if (cached && cached.expiresAt > Date.now()) {
-      rankedCandidates = cached.data;
-    } else {
-      // Recalculate
-      rankedCandidates = await this.recalculateLeaderboard({
-        scope,
-        period,
-        trackId: scope === 'track' ? targetId : undefined,
-        skillId: scope === 'skill' ? targetId : undefined,
-      });
-
-      leaderboardCache.set(cacheKey, {
-        data: rankedCandidates,
-        expiresAt: Date.now() + CACHE_TTL_MS,
-      });
-    }
-
-    const total = rankedCandidates.length;
     const totalPages = Math.ceil(total / limit) || 1;
     const offset = (page - 1) * limit;
-    const pageSlice = rankedCandidates.slice(offset, offset + limit);
 
-    // Compute current user's rank
+    const dbEntries = await prisma.leaderboardEntry.findMany({
+      where: whereClause,
+      orderBy: { rank: 'asc' },
+      skip: offset,
+      take: limit,
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            skills: {
+              where: { status: 'VERIFIED' },
+              orderBy: { bestScore: 'desc' },
+              take: 1,
+              select: { language: true, claimedLevel: true, bestScore: true },
+            },
+          },
+        },
+      },
+    });
+
+    const entries = dbEntries.map((e) => {
+      let parsedSkills: string[] = [];
+      try {
+        parsedSkills = JSON.parse(e.verifiedSkills);
+      } catch {
+        parsedSkills = [];
+      }
+
+      const top = e.user.skills[0];
+      return {
+        rank: e.rank,
+        userId: e.user.id,
+        username: e.user.username,
+        name: e.user.name,
+        avatar: undefined,
+        verifiedSkills: parsedSkills,
+        points: e.points,
+        level: top ? top.claimedLevel : 'Basic',
+        topSkill: top
+          ? {
+              language: top.language,
+              level: top.claimedLevel,
+              score: top.bestScore || 0,
+            }
+          : null,
+        isCurrentUser: currentUserId === e.user.id,
+      };
+    });
+
+    // Compute current user's entry (even if outside current page)
     let currentUserRank: any = null;
     if (currentUserId) {
-      const userIndex = rankedCandidates.findIndex((c) => c.userId === currentUserId);
-      if (userIndex >= 0) {
-        const uCandidate = rankedCandidates[userIndex];
-        const nextRankPointsDiff =
-          userIndex > 0
-            ? Math.round((rankedCandidates[userIndex - 1].points - uCandidate.points) * 10) / 10
-            : 0;
+      const userEntry = await prisma.leaderboardEntry.findFirst({
+        where: {
+          ...whereClause,
+          userId: currentUserId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              name: true,
+              skills: {
+                where: { status: 'VERIFIED' },
+                orderBy: { bestScore: 'desc' },
+                take: 1,
+                select: { language: true, claimedLevel: true, bestScore: true },
+              },
+            },
+          },
+        },
+      });
 
+      if (userEntry) {
+        // Find previous rank points to compute difference
+        let nextRankPointsDiff = 0;
+        if (userEntry.rank > 1) {
+          const prevEntry = await prisma.leaderboardEntry.findFirst({
+            where: {
+              ...whereClause,
+              rank: userEntry.rank - 1,
+            },
+            select: { points: true },
+          });
+          if (prevEntry) {
+            nextRankPointsDiff = Math.max(0, Math.round((prevEntry.points - userEntry.points) * 10) / 10);
+          }
+        }
+
+        const top = userEntry.user.skills[0];
         currentUserRank = {
-          rank: userIndex + 1,
-          points: uCandidate.points,
+          rank: userEntry.rank,
+          points: userEntry.points,
           nextRankPointsDiff,
           totalParticipants: total,
-          level: uCandidate.topLevel,
+          level: top ? top.claimedLevel : 'Basic',
         };
       }
     }
-
-    // Format output: strictly NO EMAILS!
-    const entries = pageSlice.map((item, idx) => ({
-      rank: offset + idx + 1,
-      userId: item.userId,
-      username: item.username,
-      name: item.name,
-      points: item.points,
-      level: item.topLevel,
-      verifiedSkills: item.verifiedSkills.map((v) => v.language),
-      isCurrentUser: currentUserId === item.userId,
-    }));
 
     return {
       entries,
@@ -410,5 +711,23 @@ export class LeaderboardService {
       totalPages,
       currentUserRank,
     };
+  }
+
+  // Backward compatibility method for tests
+  static async recalculateLeaderboard(options: any = {}) {
+    const scope = (options.scope || 'GLOBAL').toUpperCase() as any;
+    const period = (options.period || 'ALL').toUpperCase() as any;
+    const scopeId = scope === 'TRACK' ? options.trackId : scope === 'SKILL' ? options.skillId : null;
+    const periodKey = period === 'MONTH' ? getCurrentMonthKey() : 'all';
+
+    const devs = await prisma.user.findMany({
+      where: { role: 'DEVELOPER', status: 'ACTIVE' },
+      select: { id: true },
+    });
+    for (const d of devs) {
+      await this.recalculateUser(d.id);
+    }
+    const res = await this.getLeaderboard({ scope, id: scopeId, period });
+    return res.entries;
   }
 }

@@ -152,7 +152,7 @@ export const createTrack = async (req: AuthRequest, res: Response) => {
 export const updateTrack = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    const track = await AdminService.updateTrack(adminId, req.params.id, req.body);
+    const track = await AdminService.updateTrack(adminId, req.params.id as string, req.body);
     return sendSuccess(res, 'Track updated successfully', track);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to update track', 400);
@@ -162,7 +162,7 @@ export const updateTrack = async (req: AuthRequest, res: Response) => {
 export const deleteTrack = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    await AdminService.deleteTrack(adminId, req.params.id);
+    await AdminService.deleteTrack(adminId, req.params.id as string);
     return sendSuccess(res, 'Track deleted successfully');
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to delete track', 400);
@@ -182,7 +182,7 @@ export const createSkillCatalog = async (req: AuthRequest, res: Response) => {
 export const updateSkillCatalog = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    const skill = await AdminService.updateSkillCatalog(adminId, req.params.id, req.body);
+    const skill = await AdminService.updateSkillCatalog(adminId, req.params.id as string, req.body);
     return sendSuccess(res, 'Skill updated successfully', skill);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to update skill', 400);
@@ -192,7 +192,7 @@ export const updateSkillCatalog = async (req: AuthRequest, res: Response) => {
 export const deleteSkillCatalog = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    await AdminService.deleteSkillCatalog(adminId, req.params.id);
+    await AdminService.deleteSkillCatalog(adminId, req.params.id as string);
     return sendSuccess(res, 'Skill deleted successfully');
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to delete skill', 400);
@@ -212,7 +212,7 @@ export const createTopic = async (req: AuthRequest, res: Response) => {
 export const updateTopic = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    const topic = await AdminService.updateTopic(adminId, req.params.id, req.body);
+    const topic = await AdminService.updateTopic(adminId, req.params.id as string, req.body);
     return sendSuccess(res, 'Topic updated successfully', topic);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to update topic', 400);
@@ -222,7 +222,7 @@ export const updateTopic = async (req: AuthRequest, res: Response) => {
 export const deleteTopic = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    await AdminService.deleteTopic(adminId, req.params.id);
+    await AdminService.deleteTopic(adminId, req.params.id as string);
     return sendSuccess(res, 'Topic deleted successfully');
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to delete topic', 400);

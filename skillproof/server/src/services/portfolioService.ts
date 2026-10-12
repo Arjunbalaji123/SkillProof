@@ -1,4 +1,5 @@
 import { prisma } from '../config/db.js';
+import { LeaderboardService } from './leaderboardService.js';
 
 export class PortfolioService {
   /**
@@ -122,7 +123,7 @@ export class PortfolioService {
       showOnLeaderboard?: boolean;
     }
   ) {
-    return prisma.developerProfile.upsert({
+    const profile = await prisma.developerProfile.upsert({
       where: { userId },
       update: data,
       create: {
@@ -134,5 +135,11 @@ export class PortfolioService {
         showOnLeaderboard: data.showOnLeaderboard !== undefined ? data.showOnLeaderboard : true,
       },
     });
+
+    if (data.showOnLeaderboard !== undefined) {
+      await LeaderboardService.recalculateUser(userId);
+    }
+
+    return profile;
   }
 }

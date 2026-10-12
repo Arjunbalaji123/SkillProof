@@ -5,6 +5,8 @@ import { javascriptQuestions } from './data/javascriptQuestions.js';
 import { pythonQuestions } from './data/pythonQuestions.js';
 import { javaQuestions } from './data/javaQuestions.js';
 import { LeaderboardService } from './services/leaderboardService.js';
+import { ScoringService, DIFFICULTY_WEIGHTS, QuestionScoreInput } from './services/scoringService.js';
+import { QuestionService } from './services/questionService.js';
 
 const prisma = new PrismaClient();
 
@@ -82,6 +84,7 @@ async function main() {
       passwordHash: adminPasswordHash,
       role: 'ADMIN',
       status: 'ACTIVE',
+      isDemo: false,
     },
   });
 
@@ -94,231 +97,11 @@ async function main() {
       passwordHash: recruiterPasswordHash,
       role: 'RECRUITER',
       status: 'ACTIVE',
+      isDemo: false,
     },
   });
 
-  // 5. Seed 10 Demo Developers
-  console.log('👥 Seeding 10 diverse demo developers for multi-user leaderboard...');
-
-  const demoDevsData = [
-    {
-      name: 'Arjun Balaji',
-      username: 'arjun',
-      email: 'arjun@skillproof.dev',
-      bio: 'Full-Stack Engineer with 5+ years experience building distributed backends, microservices, and React frontends.',
-      github: 'https://github.com/arjunbalaji',
-      skills: [
-        { lang: 'JavaScript', score: 88, level: 'Advanced', verifiedDaysAgo: 10 },
-        { lang: 'Python', score: 92, level: 'Expert', verifiedDaysAgo: 12 },
-      ],
-    },
-    {
-      name: 'Priya Sharma',
-      username: 'priyasharma',
-      email: 'priya@skillproof.dev',
-      bio: 'Backend systems engineer specializing in Java, concurrency, and high-throughput streaming pipelines.',
-      github: 'https://github.com/priyasharma',
-      skills: [
-        { lang: 'Java', score: 95, level: 'Expert', verifiedDaysAgo: 15 },
-        { lang: 'Python', score: 85, level: 'Advanced', verifiedDaysAgo: 8 },
-      ],
-    },
-    {
-      name: 'Marcus Vance',
-      username: 'marcus_ml',
-      email: 'marcus@skillproof.dev',
-      bio: 'Machine learning practitioner specializing in PyTorch architectures, transformers, and numerical optimization.',
-      github: 'https://github.com/marcusvance',
-      skills: [
-        { lang: 'Python', score: 94, level: 'Expert', verifiedDaysAgo: 20 },
-      ],
-    },
-    {
-      name: 'Elena Rostova',
-      username: 'elena_ai',
-      email: 'elena@skillproof.dev',
-      bio: 'AI researcher and systems architect building low-latency inference runtimes and distributed model training.',
-      github: 'https://github.com/elenarostova',
-      skills: [
-        { lang: 'Python', score: 98, level: 'Expert', verifiedDaysAgo: 25 },
-        { lang: 'Java', score: 82, level: 'Advanced', verifiedDaysAgo: 14 },
-      ],
-    },
-    {
-      name: 'Alex Chen',
-      username: 'dev_alex',
-      email: 'alex@skillproof.dev',
-      bio: 'Front-end specialist passionate about TypeScript, web performance, and state machines.',
-      github: 'https://github.com/alexchen',
-      skills: [
-        { lang: 'JavaScript', score: 92, level: 'Advanced', verifiedDaysAgo: 18 },
-      ],
-    },
-    {
-      name: 'Sarah Lin',
-      username: 'sarah_code',
-      email: 'sarah.dev@skillproof.dev',
-      bio: 'Software engineer building resilient microservices and full-stack web applications.',
-      github: 'https://github.com/sarahlin',
-      skills: [
-        { lang: 'JavaScript', score: 86, level: 'Intermediate', verifiedDaysAgo: 30 },
-        { lang: 'Python', score: 80, level: 'Intermediate', verifiedDaysAgo: 22 },
-      ],
-    },
-    {
-      name: 'Raj Patel',
-      username: 'raj_systems',
-      email: 'raj@skillproof.dev',
-      bio: 'Distributed infrastructure and Java JVM tuning specialist.',
-      github: 'https://github.com/rajpatel',
-      skills: [
-        { lang: 'Java', score: 89, level: 'Advanced', verifiedDaysAgo: 11 },
-        { lang: 'Python', score: 74, level: 'Intermediate', verifiedDaysAgo: 5 },
-      ],
-    },
-    {
-      name: 'Maya Torres',
-      username: 'maya_fe',
-      email: 'maya@skillproof.dev',
-      bio: 'UI engineer obsessed with micro-interactions, CSS architecture, and browser internals.',
-      github: 'https://github.com/mayatorres',
-      skills: [
-        { lang: 'JavaScript', score: 96, level: 'Expert', verifiedDaysAgo: 3 },
-      ],
-    },
-    {
-      name: 'Kenji Sato',
-      username: 'kenji_core',
-      email: 'kenji@skillproof.dev',
-      bio: 'Core systems programmer with deep expertise in JVM architecture and JavaScript concurrency.',
-      github: 'https://github.com/kenjisato',
-      skills: [
-        { lang: 'Java', score: 91, level: 'Advanced', verifiedDaysAgo: 7 },
-        { lang: 'JavaScript', score: 84, level: 'Intermediate', verifiedDaysAgo: 16 },
-      ],
-    },
-    {
-      name: 'Chloe Bennett',
-      username: 'chloe_dev',
-      email: 'chloe@skillproof.dev',
-      bio: 'Cloud backend engineer building high-availability RESTful APIs and pipeline automations.',
-      github: 'https://github.com/chloebennett',
-      skills: [
-        { lang: 'Python', score: 88, level: 'Advanced', verifiedDaysAgo: 9 },
-        { lang: 'Java', score: 76, level: 'Intermediate', verifiedDaysAgo: 19 },
-      ],
-    },
-  ];
-
-  const createdDevs: any[] = [];
-
-  for (const d of demoDevsData) {
-    const dev = await prisma.user.create({
-      data: {
-        name: d.name,
-        username: d.username,
-        email: d.email,
-        passwordHash: devPasswordHash,
-        role: 'DEVELOPER',
-        status: 'ACTIVE',
-        profile: {
-          create: {
-            bio: d.bio,
-            githubUrl: d.github,
-            publicSlug: d.username,
-            isPublic: true,
-            showOnLeaderboard: true,
-          },
-        },
-      },
-      include: { profile: true },
-    });
-    createdDevs.push(dev);
-
-    // Seed Verified Skills & Assessments
-    for (const s of d.skills) {
-      const catalog = catalogMap[s.lang];
-      const verifiedAt = new Date(Date.now() - s.verifiedDaysAgo * 24 * 60 * 60 * 1000);
-      const expiresAt = new Date(verifiedAt.getTime() + 365 * 24 * 60 * 60 * 1000);
-
-      const skill = await prisma.skill.create({
-        data: {
-          userId: dev.id,
-          skillCatalogId: catalog?.id,
-          language: s.lang,
-          claimedLevel: s.level,
-          status: 'VERIFIED',
-          bestScore: s.score,
-          verifiedAt,
-          expiresAt,
-        },
-      });
-
-      // Create Assessment corresponding to this verification
-      await prisma.assessment.create({
-        data: {
-          userId: dev.id,
-          skillId: skill.id,
-          skillCatalogId: catalog?.id,
-          language: s.lang,
-          startedAt: new Date(verifiedAt.getTime() - 15 * 60 * 1000),
-          submittedAt: verifiedAt,
-          durationSec: 1800,
-          status: 'SUBMITTED',
-          scorePercent: s.score,
-          weightedPercent: s.score,
-          level: s.level,
-          tabSwitchCount: 0,
-          confidence: 'High',
-          coverage: JSON.stringify({ topicsCovered: 5, questionsAnswered: 20, attemptsCount: 3 }),
-        },
-      });
-    }
-  }
-
-  // 6. Create Projects and Claimed Skill for Arjun
-  const arjunUser = createdDevs[0];
-
-  await prisma.skill.create({
-    data: {
-      userId: arjunUser.id,
-      skillCatalogId: catalogMap['React']?.id,
-      language: 'React',
-      claimedLevel: 'Intermediate',
-      certificateUrl: 'https://coursera.org/verify/react-specialization',
-      status: 'CLAIMED',
-    },
-  });
-  await prisma.project.create({
-    data: {
-      userId: arjunUser.id,
-      title: 'SkillProof Assessment Platform',
-      description: 'Distributed test grading engine with server-side timing and randomized anti-cheat evaluation.',
-      repoUrl: 'https://github.com/arjunbalaji/skillproof-engine',
-      techStack: 'TypeScript, Node.js, Express, React, Prisma',
-    },
-  });
-
-  await prisma.project.create({
-    data: {
-      userId: arjunUser.id,
-      title: 'Real-time WebSocket Task Queue',
-      description: 'Concurrency queue processing 40k events/sec with exponential backoff and Redis pub/sub.',
-      repoUrl: 'https://github.com/arjunbalaji/distributed-queue',
-      techStack: 'Node.js, Redis, Docker, TypeScript',
-    },
-  });
-
-  // 7. Create Recruiter Bookmark
-  await prisma.bookmark.create({
-    data: {
-      recruiterId: recruiter.id,
-      developerId: arjunUser.id,
-      note: 'Verified JavaScript (88%) & Python (92%). Strong portfolio candidate for Senior Full-Stack role.',
-    },
-  });
-
-  // 8. Seed Question Pools
+  // 5. Seed Question Pools BEFORE creating demo developer assessments
   const allSeedQuestions = [
     ...javascriptQuestions,
     ...pythonQuestions,
@@ -352,12 +135,335 @@ async function main() {
     });
   }
 
-  // 9. Pre-calculate Leaderboard entries for all scopes
-  console.log('🏆 Calculating and caching initial Leaderboard rankings...');
-  await LeaderboardService.recalculateLeaderboard({ scope: 'global', period: 'all' });
-  await LeaderboardService.recalculateLeaderboard({ scope: 'global', period: 'month' });
+  // 6. Seed 10 Demo Developers with real graded assessments
+  console.log('👥 Seeding 10 diverse demo developers (User.isDemo = true) with real graded assessments...');
 
-  // 10. Audit Log
+  const demoDevsData = [
+    {
+      name: 'Arjun Balaji (Demo)',
+      username: 'arjun',
+      email: 'arjun@skillproof.dev',
+      bio: 'Full-Stack Engineer with 5+ years experience building distributed backends, microservices, and React frontends.',
+      github: 'https://github.com/arjunbalaji',
+      skills: [
+        { lang: 'JavaScript', targetScore: 88, verifiedDaysAgo: 10 },
+        { lang: 'Python', targetScore: 92, verifiedDaysAgo: 12 },
+      ],
+    },
+    {
+      name: 'Priya Sharma',
+      username: 'priyasharma',
+      email: 'priya@skillproof.dev',
+      bio: 'Backend systems engineer specializing in Java, concurrency, and high-throughput streaming pipelines.',
+      github: 'https://github.com/priyasharma',
+      skills: [
+        { lang: 'Java', targetScore: 95, verifiedDaysAgo: 15 },
+        { lang: 'Python', targetScore: 85, verifiedDaysAgo: 8 },
+      ],
+    },
+    {
+      name: 'Marcus Vance',
+      username: 'marcus_ml',
+      email: 'marcus@skillproof.dev',
+      bio: 'Machine learning practitioner specializing in PyTorch architectures, transformers, and numerical optimization.',
+      github: 'https://github.com/marcusvance',
+      skills: [
+        { lang: 'Python', targetScore: 94, verifiedDaysAgo: 20 },
+      ],
+    },
+    {
+      name: 'Elena Rostova',
+      username: 'elena_ai',
+      email: 'elena@skillproof.dev',
+      bio: 'AI researcher and systems architect building low-latency inference runtimes and distributed model training.',
+      github: 'https://github.com/elenarostova',
+      skills: [
+        { lang: 'Python', targetScore: 98, verifiedDaysAgo: 25 },
+        { lang: 'Java', targetScore: 82, verifiedDaysAgo: 14 },
+      ],
+    },
+    {
+      name: 'Alex Chen',
+      username: 'dev_alex',
+      email: 'alex@skillproof.dev',
+      bio: 'Front-end specialist passionate about TypeScript, web performance, and state machines.',
+      github: 'https://github.com/alexchen',
+      skills: [
+        { lang: 'JavaScript', targetScore: 92, verifiedDaysAgo: 18 },
+      ],
+    },
+    {
+      name: 'Sarah Lin',
+      username: 'sarah_code',
+      email: 'sarah.dev@skillproof.dev',
+      bio: 'Software engineer building resilient microservices and full-stack web applications.',
+      github: 'https://github.com/sarahlin',
+      skills: [
+        { lang: 'JavaScript', targetScore: 86, verifiedDaysAgo: 30 },
+        { lang: 'Python', targetScore: 80, verifiedDaysAgo: 22 },
+      ],
+    },
+    {
+      name: 'Raj Patel',
+      username: 'raj_systems',
+      email: 'raj@skillproof.dev',
+      bio: 'Distributed infrastructure and Java JVM tuning specialist.',
+      github: 'https://github.com/rajpatel',
+      skills: [
+        { lang: 'Java', targetScore: 89, verifiedDaysAgo: 11 },
+        { lang: 'Python', targetScore: 74, verifiedDaysAgo: 5 },
+      ],
+    },
+    {
+      name: 'Maya Torres',
+      username: 'maya_fe',
+      email: 'maya@skillproof.dev',
+      bio: 'UI engineer obsessed with micro-interactions, CSS architecture, and browser internals.',
+      github: 'https://github.com/mayatorres',
+      skills: [
+        { lang: 'JavaScript', targetScore: 96, verifiedDaysAgo: 3 },
+      ],
+    },
+    {
+      name: 'Kenji Sato',
+      username: 'kenji_core',
+      email: 'kenji@skillproof.dev',
+      bio: 'Core systems programmer with deep expertise in JVM architecture and JavaScript concurrency.',
+      github: 'https://github.com/kenjisato',
+      skills: [
+        { lang: 'Java', targetScore: 91, verifiedDaysAgo: 7 },
+        { lang: 'JavaScript', targetScore: 84, verifiedDaysAgo: 16 },
+      ],
+    },
+    {
+      name: 'Chloe Bennett',
+      username: 'chloe_dev',
+      email: 'chloe@skillproof.dev',
+      bio: 'Cloud backend engineer building high-availability RESTful APIs and pipeline automations.',
+      github: 'https://github.com/chloebennett',
+      skills: [
+        { lang: 'Python', targetScore: 88, verifiedDaysAgo: 9 },
+        { lang: 'Java', targetScore: 76, verifiedDaysAgo: 19 },
+      ],
+    },
+  ];
+
+  const createdDevs: any[] = [];
+
+  for (const d of demoDevsData) {
+    const dev = await prisma.user.create({
+      data: {
+        name: d.name,
+        username: d.username,
+        email: d.email,
+        passwordHash: devPasswordHash,
+        role: 'DEVELOPER',
+        status: 'ACTIVE',
+        isDemo: true,
+        profile: {
+          create: {
+            bio: d.bio,
+            githubUrl: d.github,
+            publicSlug: d.username,
+            isPublic: true,
+            showOnLeaderboard: true,
+          },
+        },
+      },
+      include: { profile: true },
+    });
+    createdDevs.push(dev);
+
+    // Seed Verified Skills & Assessments using REAL questions and REAL ScoringService
+    for (const s of d.skills) {
+      const catalog = catalogMap[s.lang];
+      const verifiedAt = new Date(Date.now() - s.verifiedDaysAgo * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(verifiedAt.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+      // Query real questions from Question pool for this language
+      const selectedQuestions = await prisma.question.findMany({
+        where: { language: s.lang, status: 'ACTIVE' },
+        take: 20,
+      });
+
+      // Target weighted score calculation
+      let totalMaxWeighted = 0;
+      for (const q of selectedQuestions) {
+        totalMaxWeighted += DIFFICULTY_WEIGHTS[q.difficulty] || 1;
+      }
+      const targetWeighted = (s.targetScore / 100) * totalMaxWeighted;
+      let currentWeighted = 0;
+
+      const questionEvaluations: QuestionScoreInput[] = [];
+      const answersMap: { questionId: string; userAnswer: any; isCorrect: boolean }[] = [];
+
+      for (let i = 0; i < selectedQuestions.length; i++) {
+        const q = selectedQuestions[i];
+        const weight = DIFFICULTY_WEIGHTS[q.difficulty] || 1;
+        let isCorrect = false;
+
+        // Give correct answers until target weighted score is achieved
+        if (currentWeighted + weight <= targetWeighted + 1.5 || (i >= selectedQuestions.length - 2 && currentWeighted < targetWeighted * 0.9)) {
+          isCorrect = true;
+          currentWeighted += weight;
+        }
+
+        let parsedCorrect: string[] = [];
+        try {
+          parsedCorrect = JSON.parse(q.correctAnswer);
+        } catch {
+          parsedCorrect = [q.correctAnswer];
+        }
+
+        const userAnswer = isCorrect ? parsedCorrect : ['__incorrect_choice__'];
+
+        questionEvaluations.push({
+          questionId: q.id,
+          difficulty: q.difficulty,
+          topic: q.topic,
+          userAnswer,
+          correctAnswer: parsedCorrect,
+          isCorrect,
+        });
+
+        answersMap.push({
+          questionId: q.id,
+          userAnswer,
+          isCorrect,
+        });
+      }
+
+      // Grade via real ScoringService
+      const scoreResult = ScoringService.calculateScore(questionEvaluations, 3);
+
+      const skill = await prisma.skill.create({
+        data: {
+          userId: dev.id,
+          skillCatalogId: catalog?.id,
+          language: s.lang,
+          claimedLevel: scoreResult.level,
+          status: 'VERIFIED',
+          bestScore: scoreResult.weightedPercent,
+          verifiedAt,
+          expiresAt,
+        },
+      });
+
+      // Create Assessment corresponding to this verification
+      const assessment = await prisma.assessment.create({
+        data: {
+          userId: dev.id,
+          skillId: skill.id,
+          skillCatalogId: catalog?.id,
+          language: s.lang,
+          startedAt: new Date(verifiedAt.getTime() - 15 * 60 * 1000),
+          submittedAt: verifiedAt,
+          durationSec: 1800,
+          status: 'SUBMITTED',
+          scorePercent: scoreResult.scorePercent,
+          weightedPercent: scoreResult.weightedPercent,
+          level: scoreResult.level,
+          tabSwitchCount: 0,
+          confidence: scoreResult.confidence,
+          coverage: JSON.stringify(scoreResult.coverage),
+          topicBreakdown: JSON.stringify(scoreResult.topicBreakdown),
+        },
+      });
+
+      // Create real AssessmentQuestion rows
+      for (let i = 0; i < answersMap.length; i++) {
+        const item = answersMap[i];
+        await prisma.assessmentQuestion.create({
+          data: {
+            assessmentId: assessment.id,
+            questionId: item.questionId,
+            order: i + 1,
+            userAnswer: JSON.stringify(item.userAnswer),
+            isCorrect: item.isCorrect,
+          },
+        });
+      }
+    }
+  }
+
+  // 7. Create Projects and Claimed Skill for Demo Dev 1
+  const demoDev1 = createdDevs[0];
+
+  await prisma.skill.create({
+    data: {
+      userId: demoDev1.id,
+      skillCatalogId: catalogMap['React']?.id,
+      language: 'React',
+      claimedLevel: 'Intermediate',
+      certificateUrl: 'https://coursera.org/verify/react-specialization',
+      status: 'CLAIMED',
+    },
+  });
+  await prisma.project.create({
+    data: {
+      userId: demoDev1.id,
+      title: 'SkillProof Assessment Platform',
+      description: 'Distributed test grading engine with server-side timing and randomized anti-cheat evaluation.',
+      repoUrl: 'https://github.com/arjunbalaji/skillproof-engine',
+      techStack: 'TypeScript, Node.js, Express, React, Prisma',
+    },
+  });
+
+  await prisma.project.create({
+    data: {
+      userId: demoDev1.id,
+      title: 'Real-time WebSocket Task Queue',
+      description: 'Concurrency queue processing 40k events/sec with exponential backoff and Redis pub/sub.',
+      repoUrl: 'https://github.com/arjunbalaji/distributed-queue',
+      techStack: 'Node.js, Redis, Docker, TypeScript',
+    },
+  });
+
+  // 8. Create Recruiter Bookmark
+  await prisma.bookmark.create({
+    data: {
+      recruiterId: recruiter.id,
+      developerId: demoDev1.id,
+      note: 'Verified JavaScript & Python. Strong portfolio candidate for Senior Full-Stack role.',
+    },
+  });
+
+  // 9. Seed the REAL user "Arjun Balaji S" with 0 verified skills, 0 assessments, isDemo: false
+  console.log('👤 Seeding real user account "Arjun Balaji S" (isDemo = false, 0 skills)...');
+  await prisma.user.create({
+    data: {
+      name: 'Arjun Balaji S',
+      username: 'arjun_balaji_s',
+      email: 'sbalajiarjun@gmail.com',
+      passwordHash: devPasswordHash,
+      role: 'DEVELOPER',
+      status: 'ACTIVE',
+      isDemo: false,
+      profile: {
+        create: {
+          bio: 'Software Engineer',
+          publicSlug: 'arjun_balaji_s',
+          isPublic: true,
+          showOnLeaderboard: true,
+        },
+      },
+    },
+  });
+
+  // 10. Rebuild Leaderboard entries from real Skill & Assessment records
+  console.log('🏆 Calculating and persisting initial Leaderboard rankings...');
+  await LeaderboardService.rebuildAll();
+
+  // Run safety net consistency check
+  console.log('🛡️ Running safety net consistency check...');
+  const consistency = await LeaderboardService.validateConsistency();
+  if (!consistency.valid) {
+    console.warn('⚠️ Safety net issues detected during seed:', consistency.issues);
+  } else {
+    console.log('✅ Safety net verified: 100% database consistency.');
+  }
+
+  // 11. Audit Log
   await prisma.auditLog.create({
     data: {
       actorId: admin.id,
@@ -366,17 +472,18 @@ async function main() {
       metadata: JSON.stringify({
         tracksCount: SEED_TRACKS.length,
         questionsCount: allSeedQuestions.length,
-        developersCount: demoDevsData.length,
+        developersCount: demoDevsData.length + 1,
       }),
     },
   });
 
-  console.log('✅ SkillProof database successfully seeded with 10 developers and live leaderboard!');
+  console.log('✅ SkillProof database successfully seeded with real graded demo developers and real user!');
   console.log('\nDemo Credentials:');
   console.log('  Admin:     admin@skillproof.dev / Admin@123 (username: admin_director)');
   console.log('  Recruiter: recruiter@techcorp.com / Recruiter@123 (username: sarah_jenkins)');
-  console.log('  Developer: arjun@skillproof.dev / Dev@123 (username: arjun)');
-  console.log('  Developer: priya@skillproof.dev / Dev@123 (username: priyasharma)');
+  console.log('  Real User: sbalajiarjun@gmail.com / Dev@123 (username: arjun_balaji_s) [Unranked, 0 skills]');
+  console.log('  Demo Dev:  arjun@skillproof.dev / Dev@123 (username: arjun) [Demo Account, isDemo = true]');
+  console.log('  Demo Dev:  priya@skillproof.dev / Dev@123 (username: priyasharma) [Demo Account, isDemo = true]');
   console.log('  All other developers password: Dev@123');
 }
 

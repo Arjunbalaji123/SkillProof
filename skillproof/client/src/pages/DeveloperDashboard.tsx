@@ -282,14 +282,26 @@ export const DeveloperDashboard: React.FC = () => {
                 ) : null}
               </div>
             ) : (
-              <div className="text-center py-4 bg-white/60 rounded-xl border border-dashed border-amber-200">
-                <p className="text-xs text-[#64748B]">Complete an assessment to get ranked on the leaderboard.</p>
-                <Link
-                  to="/assessments"
-                  className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-800"
-                >
-                  Start assessment <ArrowRight size={12} />
-                </Link>
+              <div className="space-y-3">
+                <div className="flex items-baseline justify-between bg-white/80 rounded-xl p-3 border border-slate-200">
+                  <div>
+                    <span className="text-xs text-[#64748B] font-semibold">Your Rank: </span>
+                    <span className="text-xl font-bold text-slate-500 ml-1">Unranked</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-slate-400">0</span>
+                    <span className="text-[11px] text-[#64748B] ml-1">pts</span>
+                  </div>
+                </div>
+                <div className="text-center py-2.5 bg-white/60 rounded-xl border border-dashed border-amber-200">
+                  <p className="text-xs text-[#64748B]">Complete an assessment to get ranked on the leaderboard.</p>
+                  <Link
+                    to="/assessments"
+                    className="mt-1.5 inline-flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-800"
+                  >
+                    Start assessment <ArrowRight size={12} />
+                  </Link>
+                </div>
               </div>
             )}
           </div>

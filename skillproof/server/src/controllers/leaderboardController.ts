@@ -17,6 +17,7 @@ export const getLeaderboard = async (req: AuthRequest, res: Response) => {
       currentUserId,
     });
 
+    res.setHeader('Cache-Control', 'no-store');
     return sendSuccess(res, 'Leaderboard retrieved successfully', data);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to retrieve leaderboard', 500);

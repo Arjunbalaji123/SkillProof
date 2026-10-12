@@ -15,6 +15,7 @@ model User {
   passwordHash String
   role         String            @default("DEVELOPER") // DEVELOPER, RECRUITER, ADMIN
   status       String            @default("ACTIVE")    // ACTIVE, SUSPENDED
+  isDemo       Boolean           @default(false)
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -43,20 +44,20 @@ model DeveloperProfile {
 }
 
 model LeaderboardEntry {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  trackId    String?
-  skillId    String?  // skillCatalogId or skill language
-  period     String   @default("all") // all | month
-  scope      String   @default("global") // global | track | skill
-  points     Float    @default(0)
-  rank       Int      @default(0)
-  updatedAt  DateTime @updatedAt
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope          String   @default("GLOBAL") // GLOBAL | TRACK | SKILL
+  scopeId        String   @default("")       // trackId or skillId/skillCatalogId or ""
+  period         String   @default("ALL")    // ALL | MONTH
+  periodKey      String   @default("all")    // "all" or "YYYY-MM"
+  points         Float    @default(0)
+  verifiedSkills String   @default("[]")    // JSON array of strings
+  rank           Int      @default(0)
+  updatedAt      DateTime @updatedAt
 
-  @@index([scope, period, rank])
-  @@index([scope, period, trackId, rank])
-  @@index([scope, period, skillId, rank])
+  @@unique([userId, scope, scopeId, period, periodKey])
+  @@index([scope, scopeId, period, periodKey, points])
   @@index([userId])
 }
 

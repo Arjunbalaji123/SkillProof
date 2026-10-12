@@ -182,7 +182,7 @@ export async function runSkillProofTests() {
   // 7. Full HTTP Auth, Cookie Session & Role Guard Verification
   await test('HTTP Auth & RBAC: Cookies, sessions, role guards, and uniform errors', async () => {
     const { default: app } = await import('../app.js');
-    const server = app.listen(0);
+    const server = (app as any).listen(0);
     const port = (server.address() as any).port;
     const API_URL = `http://127.0.0.1:${port}/api`;
 
@@ -194,7 +194,7 @@ export async function runSkillProofTests() {
         body: JSON.stringify({ email: 'arjun@skillproof.dev', password: 'bad' }),
       });
       assert.strictEqual(badRes.status, 401);
-      const badData = await badRes.json();
+      const badData: any = await badRes.json();
       assert.strictEqual(badData.message, 'Invalid email or password credentials');
 
       // Developer login with uppercase and whitespace
@@ -212,7 +212,7 @@ export async function runSkillProofTests() {
         headers: { Cookie: cookie },
       });
       assert.strictEqual(sessionRes.status, 200);
-      const sessionData = await sessionRes.json();
+      const sessionData: any = await sessionRes.json();
       assert.strictEqual(sessionData.data.role, 'DEVELOPER');
 
       // Developer allowed on history, blocked on admin
