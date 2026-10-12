@@ -22,69 +22,59 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-export const updateProfileSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-  headline: z.string().max(255).optional(),
-  bio: z.string().max(2000).optional(),
-  location: z.string().max(150).optional(),
-  github_url: safeUrlSchema,
-  linkedin_url: safeUrlSchema,
-  portfolio_url: safeUrlSchema,
-  years_experience: z.number().min(0).max(60).optional(),
+export const claimSkillSchema = z.object({
+  language: z.string().min(1, 'Language is required'),
+  claimedLevel: z.enum(['Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert']).default('Intermediate'),
+  certificateUrl: safeUrlSchema,
 });
 
-export const userSkillSchema = z.object({
-  skill_id: z.string().uuid('Invalid skill ID').optional(),
-  skill_name: z.string().min(1).optional(),
-  proficiency_level: z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT']).default('INTERMEDIATE'),
+export const updateClaimSkillSchema = z.object({
+  claimedLevel: z.enum(['Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert']).optional(),
+  certificateUrl: safeUrlSchema,
+});
+
+export const startAssessmentSchema = z.object({
+  language: z.string().min(1, 'Language is required'),
+});
+
+export const saveAnswerSchema = z.object({
+  order: z.number().int().min(1),
+  userAnswer: z.any(),
+});
+
+export const flagQuestionSchema = z.object({
+  reason: z.string().min(3, 'Reason must be at least 3 characters'),
 });
 
 export const projectSchema = z.object({
   title: z.string().min(2, 'Title is required'),
   description: z.string().min(10, 'Description must be at least 10 characters'),
-  github_url: safeUrlSchema,
-  live_url: safeUrlSchema,
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-  status: z.enum(['COMPLETED', 'IN_PROGRESS', 'PLANNED']).default('COMPLETED'),
-  technologies: z.array(z.string()).default([]),
+  repoUrl: safeUrlSchema,
+  techStack: z.string().min(1, 'Tech stack is required'),
 });
 
-export const educationSchema = z.object({
-  institution: z.string().min(2, 'Institution is required'),
-  degree: z.string().min(2, 'Degree is required'),
-  field_of_study: z.string().min(2, 'Field of study is required'),
-  start_date: z.string().min(1, 'Start date is required'),
-  end_date: z.string().optional(),
-  grade: z.string().optional(),
-  description: z.string().optional(),
+export const updateProfileSchema = z.object({
+  bio: z.string().max(2000).optional(),
+  githubUrl: safeUrlSchema,
+  isPublic: z.boolean().optional(),
 });
 
-export const certificationSchema = z.object({
-  title: z.string().min(2, 'Title is required'),
-  issuer: z.string().min(2, 'Issuer is required'),
-  issue_date: z.string().min(1, 'Issue date is required'),
-  expiry_date: z.string().optional(),
-  credential_id: z.string().optional(),
-  credential_url: safeUrlSchema,
+export const bookmarkSchema = z.object({
+  developerId: z.string().min(1, 'Developer ID is required'),
+  note: z.string().max(1000).optional(),
 });
 
-export const achievementSchema = z.object({
-  title: z.string().min(2, 'Title is required'),
-  description: z.string().min(5, 'Description must be at least 5 characters'),
-  date: z.string().optional(),
-  issuer: z.string().optional(),
-  url: safeUrlSchema,
+export const adminQuestionSchema = z.object({
+  language: z.string().min(1, 'Language is required'),
+  topic: z.string().min(1, 'Topic is required'),
+  difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
+  type: z.enum(['MCQ', 'MULTI', 'CODE_OUTPUT']).default('MCQ'),
+  prompt: z.string().min(5, 'Prompt must be at least 5 characters'),
+  options: z.any(),
+  correctAnswer: z.any(),
+  explanation: z.string().default(''),
 });
 
-export const verificationRequestSchema = z.object({
-  user_skill_id: z.string().min(1, 'User skill ID is required'),
-  method: z.enum(['ASSESSMENT', 'CERTIFICATION', 'PROJECT', 'DOCUMENT']),
+export const adminUserStatusSchema = z.object({
+  status: z.enum(['ACTIVE', 'SUSPENDED']),
 });
-
-export const adminVerificationReviewSchema = z.object({
-  status: z.enum(['VERIFIED', 'REJECTED']),
-  rejection_reason: z.string().optional(),
-});
-
-

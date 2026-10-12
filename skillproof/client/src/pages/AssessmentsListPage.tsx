@@ -1,119 +1,165 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { PageSkeleton } from '../components/LoadingSkeleton';
-import { Award, Clock, CheckCircle2, Play, AlertCircle } from 'lucide-react';
-import { Assessment, AssessmentAttempt } from '../types';
+import { Play, Award, Clock, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 export const AssessmentsListPage: React.FC = () => {
-  const [assessments, setAssessments] = useState<Assessment[]>([]);
-  const [attempts, setAttempts] = useState<AssessmentAttempt[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const defaultLang = searchParams.get('lang') || 'JavaScript';
+
+  const [selectedLang, setSelectedLang] = useState(defaultLang);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [history, setHistory] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetchAssessmentsData = async () => {
+    const fetchHistory = async () => {
       try {
-        const [assRes, attRes] = await Promise.all([
-          api.get('/assessments'),
-          api.get('/assessments/results'),
-        ]);
-
-        if (assRes.data.success) setAssessments(assRes.data.data);
-        if (attRes.data.success) setAttempts(attRes.data.data);
+        const res = await api.get('/assessments/history');
+        if (res.data.success) {
+          setHistory(res.data.data);
+        }
       } catch (err) {
-        console.error('Failed to load assessments:', err);
-      } finally {
-        setIsLoading(false);
+        console.error('Failed to fetch assessment history:', err);
       }
     };
-    fetchAssessmentsData();
+    fetchHistory();
   }, []);
 
-  const handleStart = async (assessmentId: string) => {
+  const handleStart = async (lang: string) => {
+    setLoading(true);
+    setErrorMsg('');
     try {
-      const res = await api.post(`/assessments/${assessmentId}/start`);
+      const res = await api.post('/assessments/start', { language: lang });
       if (res.data.success) {
-        const attempt = res.data.data;
-        navigate(`/assessments/${assessmentId}/play?attemptId=${attempt.id}`);
+        const { assessmentId } = res.data.data;
+        navigate(`/assessments/${assessmentId}/take`);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to start assessment');
+      setErrorMsg(err.response?.data?.message || 'Failed to start assessment');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (isLoading) return <PageSkeleton />;
+  const languages = [
+    {
+      name: 'JavaScript',
+      desc: 'Closures, Event Loop, Promises, Prototypal Inheritance, Async/Await & Strict ES6+.',
+      questions: 20,
+      duration: '30 mins',
+      easy: 8,
+      med: 8,
+      hard: 4,
+    },
+    {
+      name: 'Python',
+      desc: 'List Comprehensions, GIL & Multiprocessing, Decorators, Generators, Memory & Dunder methods.',
+      questions: 20,
+      duration: '30 mins',
+      easy: 8,
+      med: 8,
+      hard: 4,
+    },
+    {
+      name: 'Java',
+      desc: 'JVM Memory Model, Garbage Collection, CompletableFuture, OOP Polymorphism & Generics.',
+      questions: 20,
+      duration: '30 mins',
+      easy: 8,
+      med: 8,
+      hard: 4,
+    },
+  ];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-          <Award className="text-purple-400" />
-          Technical Skill Assessment Engine
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Take timed multiple-choice assessments. Achieve &gt;= 70% to automatically earn a Verified Skill Badge on your portfolio.
+        <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Technical Assessment Benchmarks</h1>
+        <p className="text-sm text-[#64748B] mt-1">
+          Server-graded, randomized 20-question assessments. Prove your real capability and earn verified status.
         </p>
       </div>
 
-      {/* Assessment Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {assessments.map((ass) => {
-          const pastAttempts = attempts.filter((a) => a.assessment_id === ass.id);
-          const passed = pastAttempts.some((a) => a.status === 'PASSED');
-          const latestAttempt = pastAttempts[0];
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-3">
+          <AlertTriangle size={20} className="text-amber-600 flex-shrink-0" />
+          <div>
+            <p className="font-bold text-sm">Cooldown or Restriction In Effect</p>
+            <p className="mt-0.5">{errorMsg}</p>
+          </div>
+        </div>
+      )}
 
+      {/* Available Language Assessments */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {languages.map((lang) => {
+          const recentForLang = history.find((h) => h.language === lang.name);
           return (
             <div
-              key={ass.id}
-              className="bg-slate-900 border border-slate-800 hover:border-indigo-500/40 rounded-2xl p-6 space-y-4 flex flex-col justify-between transition shadow-xl group"
+              key={lang.name}
+              className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex flex-col justify-between space-y-6 hover:shadow-md transition"
             >
               <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 uppercase">
-                    {ass.skill?.category || 'General'}
-                  </span>
-                  {passed && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
-                      <CheckCircle2 size={13} /> VERIFIED
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-200">
+                  {lang.name.charAt(0)}
+                </div>
+                <h3 className="text-xl font-black text-[#0F172A]">{lang.name}</h3>
+                <p className="text-xs text-[#64748B] leading-relaxed">{lang.desc}</p>
+              </div>
+
+              <div className="space-y-3 pt-3 border-t border-[#E2E8F0] text-xs">
+                <div className="flex items-center justify-between text-[#475569]">
+                  <span className="flex items-center gap-1.5"><Clock size={14} /> Duration:</span>
+                  <span className="font-bold text-[#0F172A]">{lang.duration}</span>
+                </div>
+                <div className="flex items-center justify-between text-[#475569]">
+                  <span className="flex items-center gap-1.5"><Award size={14} /> Question Spread:</span>
+                  <span className="font-bold text-[#0F172A]">{lang.easy}E / {lang.med}M / {lang.hard}H</span>
+                </div>
+                {recentForLang && recentForLang.weightedPercent != null && (
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-[#64748B] flex justify-between items-center">
+                    <span>Best Score:</span>
+                    <span className="font-bold text-blue-600">
+                      {recentForLang.weightedPercent}% ({recentForLang.level || 'Beginner'})
                     </span>
-                  )}
-                </div>
-
-                <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition">
-                  {ass.title}
-                </h3>
-                <p className="text-xs text-slate-300 leading-relaxed">{ass.description}</p>
-
-                <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t border-slate-800">
-                  <span className="flex items-center gap-1">
-                    <Clock size={14} className="text-slate-500" />
-                    {ass.time_limit_minutes} Minutes
-                  </span>
-                  <span>{ass.questions?.length || ass._count?.questions || ass.total_questions} Questions</span>
-                  <span className="text-emerald-400 font-semibold">{ass.passing_percentage}% Passing Score</span>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
-                {latestAttempt && (
-                  <span className="text-xs text-slate-400">
-                    Latest Attempt: <span className={`font-mono font-bold ${latestAttempt.status === 'PASSED' ? 'text-emerald-400' : 'text-rose-400'}`}>{latestAttempt.percentage}%</span>
-                  </span>
+                  </div>
                 )}
-
-                <button
-                  onClick={() => handleStart(ass.id)}
-                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/25 transition inline-flex items-center gap-1.5 ml-auto"
-                >
-                  <Play size={14} /> Start Quiz
-                </button>
               </div>
+
+              <button
+                onClick={() => handleStart(lang.name)}
+                disabled={loading}
+                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition"
+              >
+                <Play size={14} />
+                {loading ? 'Generating Assessment...' : 'Start Assessment'}
+              </button>
             </div>
           );
         })}
       </div>
+
+      {/* Rules Banner */}
+      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white space-y-3">
+        <h4 className="text-sm font-bold flex items-center gap-2 text-blue-400">
+          <ShieldCheck size={18} />
+          Assessment Protocol & Retake Rules
+        </h4>
+        <ul className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-300">
+          <li className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+            <strong>7-Day Cooldown:</strong> Retakes for the same language require 7 days of cooldown to ensure continuous improvement.
+          </li>
+          <li className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+            <strong>3 Attempts / 30 Days:</strong> Strict retake limit protects against brute-forcing random question permutations.
+          </li>
+          <li className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+            <strong>Weighted Scoring:</strong> Easy=1pt, Med=2pts, Hard=3pts. Expert requires 90%+ total score AND ≥60% on hard questions.
+          </li>
+        </ul>
+      </div>
     </div>
   );
 };
-

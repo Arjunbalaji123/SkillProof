@@ -116,15 +116,6 @@ export const Navbar: React.FC = () => {
                         <Award size={15} />
                         Assessments
                       </Link>
-                      <Link
-                        to="/verifications"
-                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                          isActive('/verifications') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
-                        }`}
-                      >
-                        <FileCheck size={15} />
-                        Verifications
-                      </Link>
                     </>
                   )}
 
@@ -197,24 +188,24 @@ export const Navbar: React.FC = () => {
                     className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 border border-[#E2E8F0] transition"
                   >
                     <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs border border-blue-200">
-                      {user?.profile?.name ? user.profile.name.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
+                      {user?.name ? user.name.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
                     </div>
                     <span className="text-xs font-semibold text-[#0F172A] max-w-[120px] truncate">
-                      {user?.profile?.name || user?.email}
+                      {user?.name || user?.email}
                     </span>
                   </button>
 
                   {isUserMenuOpen && (
                     <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-[#E2E8F0] shadow-xl py-1 z-50 divide-y divide-[#E2E8F0]">
                       <div className="px-4 py-3">
-                        <p className="text-xs font-bold text-[#0F172A] truncate">{user?.profile?.name}</p>
+                        <p className="text-xs font-bold text-[#0F172A] truncate">{user?.name}</p>
                         <p className="text-[11px] text-[#64748B] truncate">{user?.email}</p>
                       </div>
 
                       <div className="py-1">
-                        {isDeveloper && user?.profile?.username && (
+                        {isDeveloper && user?.profile?.publicSlug && (
                           <Link
-                            to={`/developer/${user.profile.username}`}
+                            to={`/developer/${user.profile.publicSlug}`}
                             onClick={() => setIsUserMenuOpen(false)}
                             className="px-4 py-2 text-xs font-semibold text-[#2563EB] hover:bg-blue-50 flex items-center gap-2"
                           >
@@ -311,9 +302,9 @@ export const Navbar: React.FC = () => {
                   >
                     Assessments
                   </Link>
-                  {user?.profile?.username && (
+                  {user?.profile?.publicSlug && (
                     <Link
-                      to={`/developer/${user.profile.username}`}
+                      to={`/developer/${user.profile.publicSlug}`}
                       onClick={() => setIsMobileMenuOpen(false)}
                       className="block px-3 py-2 rounded-lg text-xs text-[#2563EB] font-semibold"
                     >

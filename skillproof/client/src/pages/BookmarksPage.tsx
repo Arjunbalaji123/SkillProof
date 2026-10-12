@@ -1,114 +1,179 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
-import { VerifiedBadge } from '../components/VerifiedBadge';
 import { PageSkeleton } from '../components/LoadingSkeleton';
-import { Bookmark, ExternalLink, Trash2, MapPin } from 'lucide-react';
+import { RecruiterBookmarkItem } from '../types';
+import {
+  Bookmark,
+  Trash2,
+  ExternalLink,
+  CheckCircle2,
+  FolderGit2,
+  Edit2,
+  Save,
+} from 'lucide-react';
 
 export const BookmarksPage: React.FC = () => {
-  const [bookmarks, setBookmarks] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [bookmarks, setBookmarks] = useState<RecruiterBookmarkItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
 
-  const fetchBookmarks = async () => {
+  const loadBookmarks = async () => {
     try {
-      const res = await api.get('/recruiters/bookmarks');
+      const res = await api.get('/recruiter/bookmarks');
       if (res.data.success) {
         setBookmarks(res.data.data);
       }
     } catch (err) {
-      console.error('Failed to load bookmarks:', err);
+      console.error('Failed to load recruiter bookmarks:', err);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchBookmarks();
+    loadBookmarks();
   }, []);
 
-  const handleRemove = async (devUserId: string) => {
+  const handleRemove = async (developerId: string) => {
+    if (!confirm('Remove this developer from your saved shortlist?')) return;
     try {
-      await api.delete(`/recruiters/bookmarks/${devUserId}`);
-      setBookmarks((prev) => prev.filter((b) => b.developer_id !== devUserId));
+      await api.delete(`/recruiter/bookmarks/${developerId}`);
+      setBookmarks((prev) => prev.filter((b) => b.developerId !== developerId));
     } catch (err) {
-      console.error('Failed to remove bookmark:', err);
+      alert('Failed to remove bookmark');
     }
   };
 
-  if (isLoading) return <PageSkeleton />;
+  const handleSaveNote = async (developerId: string) => {
+    try {
+      await api.post('/recruiter/bookmarks', {
+        developerId,
+        note: noteText,
+      });
+      setBookmarks((prev) =>
+        prev.map((b) => (b.developerId === developerId ? { ...b, note: noteText } : b))
+      );
+      setEditingId(null);
+    } catch (err) {
+      alert('Failed to save note');
+    }
+  };
+
+  if (loading) return <PageSkeleton />;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-          <Bookmark className="text-amber-400" />
-          Saved Developer Candidates
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Your bookmarked developer profiles for active recruitment pipeline.
+        <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Saved Developers Shortlist</h1>
+        <p className="text-sm text-[#64748B] mt-1">
+          Review candidates bookmarked during talent discovery, organize internal hiring notes, and review verified passports.
         </p>
       </div>
 
       {bookmarks.length === 0 ? (
-        <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
-          <p className="text-slate-400 text-sm">No developers saved in your bookmarks.</p>
+        <div className="p-12 text-center bg-white rounded-2xl border border-[#E2E8F0]">
+          <Bookmark size={36} className="mx-auto text-slate-300 mb-2" />
+          <p className="text-base font-bold text-[#0F172A]">No developers bookmarked yet</p>
+          <p className="text-xs text-[#64748B] mt-1 mb-4">Discover verified developers and bookmark candidates to track them here.</p>
           <Link
             to="/recruiters/developers"
-            className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl inline-block"
+            className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs"
           >
-            Search Talent Catalog
+            Find Developers
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {bookmarks.map((bm) => {
-            const dev = bm.developer?.profile;
-            if (!dev) return null;
-
-            return (
-              <div
-                key={bm.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 flex flex-col justify-between shadow-xl"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-bold text-white text-base">{dev.name}</h3>
-                      <span className="text-xs text-indigo-400 font-mono">@{dev.username}</span>
-                    </div>
-                    <button
-                      onClick={() => handleRemove(bm.developer_id)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 transition"
-                      title="Remove Bookmark"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {bookmarks.map((b) => (
+            <div
+              key={b.bookmarkId}
+              className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex flex-col justify-between space-y-4"
+            >
+              <div className="space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-lg font-black text-[#0F172A]">{b.name}</h3>
+                    <p className="text-xs text-[#64748B]">@{b.publicSlug}</p>
                   </div>
 
-                  <p className="text-xs text-slate-300 line-clamp-2">{dev.headline}</p>
+                  <button
+                    onClick={() => handleRemove(b.developerId)}
+                    className="text-xs text-red-600 hover:text-red-700 font-semibold flex items-center gap-1"
+                  >
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </div>
 
-                  {dev.location && (
-                    <span className="text-xs text-slate-400 flex items-center gap-1">
-                      <MapPin size={12} /> {dev.location}
+                <div className="flex flex-wrap gap-1.5">
+                  {b.verifiedSkills.map((vs, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1"
+                    >
+                      <CheckCircle2 size={12} />
+                      {vs.language}: {vs.score}% ({vs.level})
                     </span>
+                  ))}
+                </div>
+
+                {/* Recruiter Note */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[#475569] uppercase text-[10px]">Recruiter Note:</span>
+                    {editingId === b.developerId ? (
+                      <button
+                        onClick={() => handleSaveNote(b.developerId)}
+                        className="text-blue-600 font-bold flex items-center gap-1"
+                      >
+                        <Save size={12} /> Save
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditingId(b.developerId);
+                          setNoteText(b.note || '');
+                        }}
+                        className="text-blue-600 font-bold flex items-center gap-1"
+                      >
+                        <Edit2 size={12} /> Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {editingId === b.developerId ? (
+                    <textarea
+                      rows={2}
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      className="w-full p-2 rounded-lg border border-[#CBD5E1] bg-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  ) : (
+                    <p className="text-[#334155] italic">
+                      {b.note ? `"${b.note}"` : 'No private notes attached yet.'}
+                    </p>
                   )}
                 </div>
-
-                <div className="pt-4 border-t border-slate-800">
-                  <Link
-                    to={`/developer/${dev.username}`}
-                    target="_blank"
-                    className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-indigo-950/40 text-indigo-400 border border-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition"
-                  >
-                    <ExternalLink size={14} /> View Portfolio Evidence
-                  </Link>
-                </div>
               </div>
-            );
-          })}
+
+              <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
+                <span className="text-xs text-[#64748B] flex items-center gap-1">
+                  <FolderGit2 size={14} /> {b.projectCount} Projects
+                </span>
+
+                <Link
+                  to={`/developer/${b.publicSlug}`}
+                  target="_blank"
+                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition"
+                >
+                  <ExternalLink size={12} /> View Passport
+                </Link>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 };
-

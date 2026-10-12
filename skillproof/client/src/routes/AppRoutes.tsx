@@ -12,10 +12,10 @@ import { SkillsManagerPage } from '../pages/SkillsManagerPage';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { AssessmentsListPage } from '../pages/AssessmentsListPage';
 import { AssessmentPlayerPage } from '../pages/AssessmentPlayerPage';
-import { VerificationsPage } from '../pages/VerificationsPage';
 import { PublicPortfolioPage } from '../pages/PublicPortfolioPage';
 import { BookmarksPage } from '../pages/BookmarksPage';
-import { NotFoundPage, UnauthorizedPage, ForbiddenPage, InternalServerErrorPage } from '../pages/ErrorPages';
+import { NotFoundPage } from '../pages/NotFoundPage';
+import { UnauthorizedPage, ForbiddenPage, InternalServerErrorPage } from '../pages/ErrorPages';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -25,7 +25,11 @@ export const AppRoutes: React.FC = () => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/developer/:username" element={<PublicPortfolioPage />} />
+      <Route path="/u/:username" element={<PublicPortfolioPage />} />
       <Route path="/recruiters/developers" element={<RecruiterDashboard />} />
+
+      {/* Redirect legacy v1 /verifications route to Skills Manager (Certificate Claims & Verification) */}
+      <Route path="/verifications" element={<Navigate to="/skills" replace />} />
 
       {/* Developer Routes */}
       <Route
@@ -69,7 +73,7 @@ export const AppRoutes: React.FC = () => {
         }
       />
       <Route
-        path="/assessments/:id/play"
+        path="/assessments/:id/take"
         element={
           <ProtectedRoute allowedRoles={['DEVELOPER', 'ADMIN']}>
             <AssessmentPlayerPage />
@@ -77,10 +81,10 @@ export const AppRoutes: React.FC = () => {
         }
       />
       <Route
-        path="/verifications"
+        path="/assessments/:id/play"
         element={
           <ProtectedRoute allowedRoles={['DEVELOPER', 'ADMIN']}>
-            <VerificationsPage />
+            <AssessmentPlayerPage />
           </ProtectedRoute>
         }
       />
@@ -110,9 +114,8 @@ export const AppRoutes: React.FC = () => {
       <Route path="/403" element={<ForbiddenPage />} />
       <Route path="/500" element={<InternalServerErrorPage />} />
 
-      {/* Catch-all Fallback */}
+      {/* Catch-all Fallback (404 with Role Dashboard Redirect) */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 };
-

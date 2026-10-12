@@ -1,0 +1,40 @@
+# Node / NPM
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+
+# Build / Output
+dist/
+build/
+out/
+
+# Database / SQLite
+*.db
+*.db-journal
+*.sqlite
+dev.db
+dev.db-journal
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# IDE / System
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+

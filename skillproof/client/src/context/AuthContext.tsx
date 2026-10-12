@@ -8,8 +8,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, role: string) => Promise<void>;
-  logout: () => void;
+  register: (name: string, email: string, password: string, role?: string) => Promise<void>;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isDeveloper: boolean;
   isRecruiter: boolean;
@@ -25,16 +25,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchCurrentUser = async () => {
     try {
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
-      const res = await api.get('/auth/me');
-      if (res.data.success) {
+      // First try /auth/session using httpOnly cookie or stored token
+      const res = await api.get('/auth/session');
+      if (res.data.success && res.data.data) {
         setUser(res.data.data);
+      } else {
+        setUser(null);
       }
-    } catch (err) {
-      console.error('Failed to restore session:', err);
+    } catch {
       localStorage.removeItem('skillproof_token');
       setToken(null);
       setUser(null);
@@ -45,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     fetchCurrentUser();
-  }, [token]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
@@ -53,8 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await api.post('/auth/login', { email, password });
       if (res.data.success) {
         const { token: newToken, user: userData } = res.data.data;
-        localStorage.setItem('skillproof_token', newToken);
-        setToken(newToken);
+        if (newToken) {
+          localStorage.setItem('skillproof_token', newToken);
+          setToken(newToken);
+        }
         setUser(userData);
       }
     } finally {
@@ -62,14 +62,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (name: string, email: string, password: string, role: string) => {
+  const register = async (name: string, email: string, password: string, role: string = 'DEVELOPER') => {
     setIsLoading(true);
     try {
       const res = await api.post('/auth/register', { name, email, password, role });
       if (res.data.success) {
         const { token: newToken, user: userData } = res.data.data;
-        localStorage.setItem('skillproof_token', newToken);
-        setToken(newToken);
+        if (newToken) {
+          localStorage.setItem('skillproof_token', newToken);
+          setToken(newToken);
+        }
         setUser(userData);
       }
     } finally {
@@ -77,17 +79,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('skillproof_token');
-    setToken(null);
-    setUser(null);
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch (_) {
+      // ignore
+    } finally {
+      localStorage.removeItem('skillproof_token');
+      setToken(null);
+      setUser(null);
+    }
   };
 
   const refreshUser = async () => {
     await fetchCurrentUser();
   };
 
-  const isAuthenticated = Boolean(user && token);
+  const isAuthenticated = Boolean(user);
   const isDeveloper = user?.role === 'DEVELOPER';
   const isRecruiter = user?.role === 'RECRUITER';
   const isAdmin = user?.role === 'ADMIN';
@@ -120,4 +128,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

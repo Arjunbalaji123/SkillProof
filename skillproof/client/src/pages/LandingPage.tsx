@@ -85,16 +85,16 @@ export const LandingPage: React.FC = () => {
             <div className="lg:col-span-6 space-y-6 text-left">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-[#2563EB] text-xs font-mono font-semibold">
                 <Sparkles size={14} />
-                <span>SKILLPROOF VERIFICATION ENGINE</span>
+                <span>SKILLPROOF v2 • REAL-SKILL BENCHMARK ENGINE</span>
               </div>
 
               <h1 className="text-5xl sm:text-7xl font-black text-[#0F172A] tracking-tight leading-[1.05]">
-                Prove what you <br />
-                <span className="text-[#2563EB]">can build.</span>
+                Prove real skill, <br />
+                <span className="text-[#2563EB]">not certificates.</span>
               </h1>
 
               <p className="text-lg text-[#475569] max-w-lg leading-relaxed font-normal">
-                Turn skills, projects and assessments into trusted, verifiable evidence.
+                Certificates are just claims. Take randomized, server-graded 20-question assessments to earn tamper-proof Trust Passports discoverable by top recruiters.
               </p>
 
               <div className="flex flex-wrap gap-4 pt-2">
@@ -103,16 +103,16 @@ export const LandingPage: React.FC = () => {
                   className="px-8 py-4 rounded-2xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm shadow-xl shadow-blue-500/25 transition flex items-center gap-2"
                   data-magnetic
                 >
-                  BUILD YOUR SKILL PROFILE
+                  START TESTING NOW
                   <ArrowRight size={16} />
                 </Link>
 
                 <Link
-                  to="/verifications"
+                  to="/recruiters/developers"
                   className="px-8 py-4 rounded-2xl bg-white border border-[#CBD5E1] hover:bg-slate-50 text-[#0F172A] font-bold text-sm shadow-sm transition"
                   data-magnetic
                 >
-                  EXPLORE VERIFICATION
+                  DISCOVER VERIFIED DEVS
                 </Link>
               </div>
 
@@ -129,7 +129,7 @@ export const LandingPage: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[#D97706] font-bold block">Recruiter</span>
-                    <span className="text-[#64748B]">recruiter1@techcorp.com</span>
+                    <span className="text-[#64748B]">recruiter@techcorp.com</span>
                   </div>
                   <div>
                     <span className="text-purple-600 font-bold block">Admin</span>

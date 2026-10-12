@@ -1,14 +1,15 @@
 import { Router } from 'express';
-import { getProfile, updateProfile, uploadAvatar, getPublicProfile } from '../controllers/profileController.js';
+import { getPublicPortfolio, updateProfile } from '../controllers/profileController.js';
 import { requireAuth } from '../middleware/auth.js';
-import { upload } from '../middleware/upload.js';
+import { validateBody } from '../middleware/validate.js';
+import { updateProfileSchema } from '../validators/index.js';
 
 const router = Router();
 
-router.get('/', requireAuth, getProfile);
-router.put('/', requireAuth, updateProfile);
-router.post('/avatar', requireAuth, upload.single('avatar'), uploadAvatar);
-router.get('/developer/:username', getPublicProfile);
+// Public portfolio route
+router.get('/public/:slug', getPublicPortfolio);
+
+// Authenticated profile update
+router.patch('/', requireAuth, validateBody(updateProfileSchema), updateProfile);
 
 export default router;
-

@@ -2,18 +2,22 @@ import { Router } from 'express';
 import {
   searchDevelopers,
   getBookmarks,
-  addBookmark,
+  setBookmark,
   removeBookmark,
 } from '../controllers/recruiterController.js';
-import { requireAuth, optionalAuth } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { requireRecruiter } from '../middleware/role.js';
+import { validateBody } from '../middleware/validate.js';
+import { bookmarkSchema } from '../validators/index.js';
 
 const router = Router();
 
-router.get('/developers', optionalAuth, searchDevelopers);
-router.get('/bookmarks', requireAuth, requireRecruiter, getBookmarks);
-router.post('/bookmarks', requireAuth, requireRecruiter, addBookmark);
-router.delete('/bookmarks/:developerId', requireAuth, requireRecruiter, removeBookmark);
+router.use(requireAuth);
+router.use(requireRecruiter);
+
+router.get('/developers', searchDevelopers);
+router.get('/bookmarks', getBookmarks);
+router.post('/bookmarks', validateBody(bookmarkSchema), setBookmark);
+router.delete('/bookmarks/:developerId', removeBookmark);
 
 export default router;
-
