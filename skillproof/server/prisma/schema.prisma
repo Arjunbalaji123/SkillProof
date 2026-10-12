@@ -9,6 +9,7 @@ datasource db {
 
 model User {
   id           String            @id @default(uuid())
+  username     String            @unique
   name         String
   email        String            @unique
   passwordHash String
@@ -17,26 +18,46 @@ model User {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  profile           DeveloperProfile?
-  skills            Skill[]
-  assessments       Assessment[]
-  projects          Project[]
-  bookmarksCreated  Bookmark[]        @relation("RecruiterBookmarks")
-  bookmarksReceived Bookmark[]        @relation("DeveloperBookmarks")
-  questionFlags     QuestionFlag[]
-  auditLogs         AuditLog[]
+  profile            DeveloperProfile?
+  skills             Skill[]
+  assessments        Assessment[]
+  projects           Project[]
+  bookmarksCreated   Bookmark[]          @relation("RecruiterBookmarks")
+  bookmarksReceived  Bookmark[]          @relation("DeveloperBookmarks")
+  questionFlags      QuestionFlag[]
+  auditLogs          AuditLog[]
+  leaderboardEntries LeaderboardEntry[]
 }
 
 model DeveloperProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio                String?
+  githubUrl          String?
+  publicSlug         String   @unique
+  isPublic           Boolean  @default(true)
+  showOnLeaderboard  Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model LeaderboardEntry {
   id         String   @id @default(uuid())
-  userId     String   @unique
+  userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bio        String?
-  githubUrl  String?
-  publicSlug String   @unique
-  isPublic   Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  trackId    String?
+  skillId    String?  // skillCatalogId or skill language
+  period     String   @default("all") // all | month
+  scope      String   @default("global") // global | track | skill
+  points     Float    @default(0)
+  rank       Int      @default(0)
   updatedAt  DateTime @updatedAt
+
+  @@index([scope, period, rank])
+  @@index([scope, period, trackId, rank])
+  @@index([scope, period, skillId, rank])
+  @@index([userId])
 }
 
 model Track {

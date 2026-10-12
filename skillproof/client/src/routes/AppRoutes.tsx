@@ -13,6 +13,7 @@ import { ProjectsPage } from '../pages/ProjectsPage';
 import { AssessmentsListPage } from '../pages/AssessmentsListPage';
 import { AssessmentPlayerPage } from '../pages/AssessmentPlayerPage';
 import { PublicPortfolioPage } from '../pages/PublicPortfolioPage';
+import { LeaderboardPage } from '../pages/LeaderboardPage';
 import { BookmarksPage } from '../pages/BookmarksPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { UnauthorizedPage, ForbiddenPage, InternalServerErrorPage } from '../pages/ErrorPages';
@@ -24,8 +25,10 @@ export const AppRoutes: React.FC = () => {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/leaderboard" element={<LeaderboardPage />} />
       <Route path="/developer/:username" element={<PublicPortfolioPage />} />
       <Route path="/u/:username" element={<PublicPortfolioPage />} />
+      <Route path="/portfolio/:username" element={<PublicPortfolioPage />} />
       <Route path="/recruiters/developers" element={<RecruiterDashboard />} />
 
       {/* Redirect legacy v1 /verifications route to Skills Manager (Certificate Claims & Verification) */}

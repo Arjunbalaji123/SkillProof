@@ -6,10 +6,14 @@ import assessmentsRoutes from './assessmentsRoutes.js';
 import projectsRoutes from './projectsRoutes.js';
 import recruiterRoutes from './recruiterRoutes.js';
 import adminRoutes from './adminRoutes.js';
+import leaderboardRoutes from './leaderboardRoutes.js';
+import userRoutes from './userRoutes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
+router.use('/leaderboard', leaderboardRoutes);
 router.use('/profile', profileRoutes);
 router.use('/skills', skillsRoutes);
 router.use('/dashboard', skillsRoutes);

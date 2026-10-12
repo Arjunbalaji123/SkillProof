@@ -16,21 +16,29 @@ import {
   BarChart2,
   Flame,
   ArrowRight,
+  Trophy,
 } from 'lucide-react';
-import { SkillItem } from '../types';
+import { SkillItem, UserRankInfo } from '../types';
 
 export const DeveloperDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [summary, setSummary] = useState<any>(null);
+  const [leaderboardRank, setLeaderboardRank] = useState<UserRankInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
-      const res = await api.get('/dashboard/summary');
-      if (res.data.success) {
-        setSummary(res.data.data);
+      const [sumRes, lbRes] = await Promise.all([
+        api.get('/dashboard/summary'),
+        api.get('/leaderboard?limit=1').catch(() => ({ data: { success: false } })),
+      ]);
+      if (sumRes.data.success) {
+        setSummary(sumRes.data.data);
+      }
+      if (lbRes.data.success && lbRes.data.data?.currentUserRank) {
+        setLeaderboardRank(lbRes.data.data.currentUserRank);
       }
     } catch (err) {
       console.error('Failed to load developer dashboard data:', err);
@@ -225,6 +233,67 @@ export const DeveloperDashboard: React.FC = () => {
 
         {/* Right Column: Assessment Attempt History */}
         <div className="space-y-6">
+          {/* Leaderboard Standing Widget */}
+          <div className="bg-gradient-to-br from-amber-500/10 via-white to-blue-500/5 rounded-2xl border border-amber-200/80 p-6 shadow-sm relative overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center font-black">
+                  <Trophy size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-[#0F172A] uppercase tracking-wider">Leaderboard Rank</h3>
+                  <p className="text-[11px] text-[#64748B]">Global verification standing</p>
+                </div>
+              </div>
+              <Link
+                to="/leaderboard"
+                className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 group"
+              >
+                <span>View Full</span>
+                <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+
+            {leaderboardRank && leaderboardRank.rank !== null ? (
+              <div className="space-y-3">
+                <div className="flex items-baseline justify-between bg-white/80 rounded-xl p-3 border border-amber-100">
+                  <div>
+                    <span className="text-xs text-[#64748B] font-semibold">Your Rank: </span>
+                    <span className="text-2xl font-black text-[#0F172A] ml-1">#{leaderboardRank.rank}</span>
+                    <span className="text-xs text-[#64748B]"> of {leaderboardRank.totalParticipants}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-amber-600">{leaderboardRank.points}</span>
+                    <span className="text-[11px] text-[#64748B] ml-1">pts</span>
+                  </div>
+                </div>
+
+                {leaderboardRank.rank === 1 ? (
+                  <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                    👑 You are currently holding the #1 position! Keep it up!
+                  </p>
+                ) : leaderboardRank.nextRankPointsDiff !== null && leaderboardRank.nextRankPointsDiff !== undefined ? (
+                  <div className="text-xs text-[#64748B] flex items-center justify-between pt-1">
+                    <span>Points to reach #{leaderboardRank.rank - 1}:</span>
+                    <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                      +{leaderboardRank.nextRankPointsDiff} pts
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-center py-4 bg-white/60 rounded-xl border border-dashed border-amber-200">
+                <p className="text-xs text-[#64748B]">Complete an assessment to get ranked on the leaderboard.</p>
+                <Link
+                  to="/assessments"
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-800"
+                >
+                  Start assessment <ArrowRight size={12} />
+                </Link>
+              </div>
+            )}
+          </div>
+
           <div className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-[#0F172A] flex items-center gap-2">

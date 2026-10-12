@@ -9,6 +9,7 @@ export type ConfidenceLabel = 'Low' | 'Medium' | 'High';
 
 export interface User {
   id: string;
+  username?: string;
   name: string;
   email: string;
   role: UserRole;
@@ -24,6 +25,48 @@ export interface DeveloperProfile {
   githubUrl?: string | null;
   publicSlug: string;
   isPublic: boolean;
+  showOnLeaderboard?: boolean;
+}
+
+export interface LeaderboardEntryItem {
+  rank: number;
+  userId: string;
+  username: string;
+  name: string;
+  avatar?: string;
+  points: number;
+  level: string;
+  verifiedSkills: string[];
+  isCurrentUser?: boolean;
+}
+
+export interface UserRankInfo {
+  rank: number;
+  points: number;
+  nextRankPointsDiff: number;
+  totalParticipants: number;
+  level: string;
+}
+
+export interface LeaderboardResponse {
+  entries: LeaderboardEntryItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  currentUserRank?: UserRankInfo | null;
+}
+
+export interface UserSearchResult {
+  username: string;
+  name: string;
+  avatar?: string | null;
+  topSkill?: {
+    language: string;
+    level: string;
+    score: number;
+  } | null;
+  points: number;
 }
 
 export interface TopicCatalogItem {

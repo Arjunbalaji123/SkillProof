@@ -12,6 +12,11 @@ const safeUrlSchema = z.string().superRefine((val, ctx) => {
 
 export const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9_]{3,20}$/, 'Username must be 3-20 characters, lowercase alphanumeric or underscore'),
   email: z.string().trim().toLowerCase().pipe(z.string().email('Invalid email address')),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['DEVELOPER', 'RECRUITER']).default('DEVELOPER'),
@@ -57,6 +62,7 @@ export const updateProfileSchema = z.object({
   bio: z.string().max(2000).optional(),
   githubUrl: safeUrlSchema,
   isPublic: z.boolean().optional(),
+  showOnLeaderboard: z.boolean().optional(),
 });
 
 export const bookmarkSchema = z.object({

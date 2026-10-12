@@ -3,7 +3,6 @@ import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { AppRoutes } from './routes/AppRoutes';
 import { Navbar } from './components/Navbar';
-import { Footer } from './components/Footer';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const App: React.FC = () => {
@@ -16,7 +15,6 @@ export const App: React.FC = () => {
             <main className="flex-1">
               <AppRoutes />
             </main>
-            <Footer />
           </div>
         </AuthProvider>
       </BrowserRouter>

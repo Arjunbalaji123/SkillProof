@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { PageSkeleton } from '../components/LoadingSkeleton';
 import {
@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 
 export const PublicPortfolioPage: React.FC = () => {
-  const { username } = useParams<{ username: string }>(); // acts as slug
+  const { username } = useParams<{ username: string }>(); // acts as username or slug
+  const navigate = useNavigate();
   const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -26,6 +27,10 @@ export const PublicPortfolioPage: React.FC = () => {
       try {
         const res = await api.get(`/profile/public/${username}`);
         if (res.data.success) {
+          if (res.data.data.redirectToUsername && res.data.data.redirectToUsername !== username) {
+            navigate(`/u/${res.data.data.redirectToUsername}`, { replace: true });
+            return;
+          }
           setPortfolio(res.data.data);
         }
       } catch (err: any) {
@@ -36,7 +41,7 @@ export const PublicPortfolioPage: React.FC = () => {
     };
 
     fetchPortfolio();
-  }, [username]);
+  }, [username, navigate]);
 
   if (loading) return <PageSkeleton />;
 
@@ -64,7 +69,14 @@ export const PublicPortfolioPage: React.FC = () => {
             <span>Verified Trust Passport</span>
           </div>
 
-          <h1 className="text-3xl font-black text-[#0F172A] tracking-tight">{portfolio.name}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-black text-[#0F172A] tracking-tight">{portfolio.name}</h1>
+            {portfolio.username && (
+              <span className="px-2.5 py-1 rounded-xl bg-slate-100 font-mono text-xs font-bold text-[#475569] border border-slate-200">
+                @{portfolio.username}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-[#475569] max-w-xl leading-relaxed">
             {portfolio.bio || 'Verified developer benchmarked on SkillProof server-graded assessments.'}
           </p>

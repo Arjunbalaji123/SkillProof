@@ -28,6 +28,7 @@ export const register = async (req: AuthRequest, res: Response) => {
       {
         user: {
           id: user.id,
+          username: user.username,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -51,6 +52,7 @@ export const login = async (req: AuthRequest, res: Response) => {
     return sendSuccess(res, 'Login successful', {
       user: {
         id: user.id,
+        username: user.username,
         name: user.name,
         email: user.email,
         role: user.role,

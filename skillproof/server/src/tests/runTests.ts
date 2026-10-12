@@ -4,6 +4,7 @@ import { prisma } from '../config/db.js';
 import { ScoringService } from '../services/scoringService.js';
 import { QuestionService } from '../services/questionService.js';
 import { AuthService } from '../services/authService.js';
+import { runLeaderboardUnitTests } from './leaderboardUnitTests.js';
 
 export async function runSkillProofTests() {
   console.log('🧪 Starting SkillProof v2 Test Suite...');
@@ -268,6 +269,9 @@ export async function runSkillProofTests() {
       server.close();
     }
   });
+
+  // 8. Leaderboard & Points Unit Tests
+  await runLeaderboardUnitTests();
 
   console.log(`\n========================================`);
   console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

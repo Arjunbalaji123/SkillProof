@@ -48,3 +48,8 @@ export const createRateLimiter = (optionsOrMax: number | RateLimitOptions, windo
 
 export const authRateLimiter = createRateLimiter(20, 15 * 60 * 1000); // 20 requests per 15 mins
 export const apiRateLimiter = createRateLimiter(300, 15 * 60 * 1000);  // 300 requests per 15 mins
+export const searchRateLimiter = createRateLimiter({
+  max: 60,
+  windowMs: 60 * 1000,
+  message: 'Search rate limit exceeded, please slow down.',
+});

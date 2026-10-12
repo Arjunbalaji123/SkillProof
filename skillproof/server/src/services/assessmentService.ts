@@ -2,6 +2,7 @@ import { prisma } from '../config/db.js';
 import { logAudit } from '../utils/audit.js';
 import { ScoringService } from './scoringService.js';
 import { QuestionService } from './questionService.js';
+import { LeaderboardService } from './leaderboardService.js';
 
 export class AssessmentService {
   /**
@@ -494,6 +495,9 @@ export class AssessmentService {
       weightedPercent: scoreResult.weightedPercent,
       level: scoreResult.level,
     });
+
+    // Recalculate leaderboard entries asynchronously
+    LeaderboardService.onAssessmentSubmitted(userId, assessment.language);
 
     return this.getAssessmentResult(userId, assessmentId);
   }
