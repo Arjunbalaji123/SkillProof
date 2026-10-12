@@ -302,7 +302,7 @@ export class QuestionService {
         flags: {
           include: {
             reporter: {
-              select: { id: true, name: true, email: true },
+              select: { id: true, name: true, username: true },
             },
           },
         },

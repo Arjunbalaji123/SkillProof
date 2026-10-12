@@ -23,7 +23,7 @@ export class AdminService {
       orderBy: { submittedAt: 'desc' },
       take: 5,
       include: {
-        user: { select: { name: true, email: true } },
+        user: { select: { name: true, username: true } },
       },
     });
 
@@ -251,7 +251,7 @@ export class AdminService {
     if (search) {
       where.OR = [
         { name: { contains: search } },
-        { email: { contains: search } },
+        { username: { contains: search } },
       ];
     }
     if (role && role !== 'ALL') {
@@ -263,7 +263,7 @@ export class AdminService {
       select: {
         id: true,
         name: true,
-        email: true,
+        username: true,
         role: true,
         status: true,
         createdAt: true,
@@ -302,7 +302,7 @@ export class AdminService {
       include: {
         question: true,
         reporter: {
-          select: { id: true, name: true, email: true },
+          select: { id: true, name: true, username: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -355,7 +355,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: {
         actor: {
-          select: { id: true, name: true, email: true, role: true },
+          select: { id: true, name: true, username: true, role: true },
         },
       },
     });

@@ -30,7 +30,6 @@ export const register = async (req: AuthRequest, res: Response) => {
           id: user.id,
           username: user.username,
           name: user.name,
-          email: user.email,
           role: user.role,
           profile: user.profile,
         },
@@ -54,7 +53,6 @@ export const login = async (req: AuthRequest, res: Response) => {
         id: user.id,
         username: user.username,
         name: user.name,
-        email: user.email,
         role: user.role,
         profile: user.profile,
       },
@@ -81,7 +79,8 @@ export const getSession = async (req: AuthRequest, res: Response) => {
       return sendError(res, 'Session invalid or user suspended', 401);
     }
 
-    return sendSuccess(res, 'Current session retrieved', session);
+    const { email: _email, ...sessionWithoutEmail } = session;
+    return sendSuccess(res, 'Current session retrieved', sessionWithoutEmail);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to fetch session', 500);
   }

@@ -74,7 +74,7 @@ export const DeveloperDashboard: React.FC = () => {
               <span>SkillProof v2 Real-Skill Engine</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Welcome back, {user?.name || user?.email}! 👋
+              Welcome back, {user?.name || (user?.username ? `@${user.username}` : 'Developer')}! 👋
             </h1>
             <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
               Certificates are only claims until verified. Take randomized, server-graded assessments to earn verifiable score passports discoverable by top recruiters.

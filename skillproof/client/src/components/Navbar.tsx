@@ -357,10 +357,10 @@ export const Navbar: React.FC = () => {
                     className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 border border-[#E2E8F0] transition"
                   >
                     <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs border border-blue-200">
-                      {user?.name ? user.name.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
+                      {user?.name ? user.name.charAt(0).toUpperCase() : user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
                     </div>
                     <span className="text-xs font-semibold text-[#0F172A] max-w-[120px] truncate">
-                      {user?.name || user?.email}
+                      {user?.name || (user?.username ? `@${user.username}` : 'User')}
                     </span>
                   </button>
 
@@ -371,7 +371,7 @@ export const Navbar: React.FC = () => {
                         {user?.username && (
                           <p className="text-[11px] font-mono text-[#2563EB] truncate">@{user.username}</p>
                         )}
-                        <p className="text-[11px] text-[#64748B] truncate">{user?.email}</p>
+                        <p className="text-[11px] text-[#64748B] uppercase font-bold tracking-wider">{user?.role}</p>
                       </div>
 
                       <div className="py-1">

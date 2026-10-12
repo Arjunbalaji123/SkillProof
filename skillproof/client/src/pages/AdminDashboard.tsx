@@ -413,7 +413,7 @@ export const AdminDashboard: React.FC = () => {
       <div>
         <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Admin Console</h1>
         <p className="text-sm text-[#64748B] mt-1">
-          Role-based skill catalog, blueprint question health, balanced pool curation, and verification operations.
+          Role-based skill catalog, blueprint question health, balanced pool curation, certificate claims, and assessment results.
         </p>
       </div>
 
@@ -1368,7 +1368,7 @@ export const AdminDashboard: React.FC = () => {
                     <strong>Reporter Reason:</strong> {flag.reason}
                   </p>
                   <p className="text-[11px] text-[#64748B] mt-1">
-                    Reported by: {flag.reporter?.name || flag.reporter?.email}
+                    Reported by: {flag.reporter?.name || (flag.reporter?.username ? `@${flag.reporter.username}` : 'User')}
                   </p>
                 </div>
               </div>
@@ -1437,7 +1437,7 @@ export const AdminDashboard: React.FC = () => {
             <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
               <tr>
                 <th className="p-3">Name</th>
-                <th className="p-3">Email</th>
+                <th className="p-3">Username</th>
                 <th className="p-3">Role</th>
                 <th className="p-3">Status</th>
                 <th className="p-3 text-right">Action</th>
@@ -1447,7 +1447,7 @@ export const AdminDashboard: React.FC = () => {
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50/50">
                   <td className="p-3 font-bold text-[#0F172A]">{u.name}</td>
-                  <td className="p-3 text-[#64748B]">{u.email}</td>
+                  <td className="p-3 font-mono text-[#2563EB]">@{u.username}</td>
                   <td className="p-3">
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-[#475569]">
                       {u.role}
@@ -1498,7 +1498,7 @@ export const AdminDashboard: React.FC = () => {
                   <td className="p-3 text-[#64748B]">
                     {new Date(log.createdAt).toLocaleString()}
                   </td>
-                  <td className="p-3 font-bold text-[#0F172A]">{log.actor?.email || 'System'}</td>
+                  <td className="p-3 font-bold text-[#0F172A]">{log.actor?.username ? `@${log.actor.username}` : log.actor?.name || 'System'}</td>
                   <td className="p-3">
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-700">
                       {log.action}

@@ -225,7 +225,7 @@ export class SkillService {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true },
+          select: { id: true, name: true, username: true },
         },
       },
       orderBy: { createdAt: 'desc' },
