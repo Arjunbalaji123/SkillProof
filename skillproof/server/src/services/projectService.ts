@@ -3,6 +3,9 @@ import { logAudit } from '../utils/audit.js';
 
 export class ProjectService {
   static async getUserProjects(userId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to fetch projects');
+    }
     return prisma.project.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -10,6 +13,9 @@ export class ProjectService {
   }
 
   static async createProject(userId: string, data: { title: string; description: string; repoUrl?: string; techStack: string }) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to create a project');
+    }
     const project = await prisma.project.create({
       data: {
         userId,
@@ -25,6 +31,9 @@ export class ProjectService {
   }
 
   static async updateProject(userId: string, projectId: string, data: Partial<{ title: string; description: string; repoUrl?: string; techStack: string }>) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to update a project');
+    }
     const existing = await prisma.project.findUnique({
       where: { id: projectId },
     });
@@ -43,6 +52,9 @@ export class ProjectService {
   }
 
   static async deleteProject(userId: string, projectId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to delete a project');
+    }
     const existing = await prisma.project.findUnique({
       where: { id: projectId },
     });

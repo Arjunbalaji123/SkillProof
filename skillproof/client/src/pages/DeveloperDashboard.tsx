@@ -48,8 +48,16 @@ export const DeveloperDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    if (user?.id) {
+      setSummary(null);
+      setLeaderboardRank(null);
+      setIsLoading(true);
+      fetchDashboardData();
+    } else {
+      setSummary(null);
+      setLeaderboardRank(null);
+    }
+  }, [user?.id]);
 
   if (isLoading || !summary) return <PageSkeleton />;
 
@@ -131,7 +139,7 @@ export const DeveloperDashboard: React.FC = () => {
           </div>
           <div>
             <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Average Verified Score</p>
-            <p className="text-2xl font-black text-[#0F172A]">{avgScore}%</p>
+            <p className="text-2xl font-black text-[#0F172A]">{verifiedCount > 0 ? `${avgScore}%` : '-'}</p>
           </div>
         </div>
 
@@ -174,9 +182,9 @@ export const DeveloperDashboard: React.FC = () => {
                 <p className="text-xs text-[#64748B] mt-1 mb-4">Add your programming languages to start testing</p>
                 <Link
                   to="/skills"
-                  className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700"
+                  className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 inline-block"
                 >
-                  Claim First Skill
+                  Claim your first skill
                 </Link>
               </div>
             ) : (
@@ -294,7 +302,7 @@ export const DeveloperDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div className="text-center py-2.5 bg-white/60 rounded-xl border border-dashed border-amber-200">
-                  <p className="text-xs text-[#64748B]">Complete an assessment to get ranked on the leaderboard.</p>
+                  <p className="text-xs text-[#64748B]">Completing a verified assessment is required to enter the leaderboard.</p>
                   <Link
                     to="/assessments"
                     className="mt-1.5 inline-flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-800"

@@ -5,7 +5,7 @@ import { sendSuccess, sendError } from '../utils/response.js';
 
 export const listNotifications = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : 20;
     const data = await NotificationService.listNotifications(userId, cursor, limit);
@@ -17,7 +17,7 @@ export const listNotifications = async (req: AuthRequest, res: Response) => {
 
 export const getUnreadCount = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const data = await NotificationService.getUnreadCount(userId);
     return sendSuccess(res, 'Unread notification count retrieved', data);
   } catch (err: any) {
@@ -27,7 +27,7 @@ export const getUnreadCount = async (req: AuthRequest, res: Response) => {
 
 export const markNotificationRead = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const notificationId = req.params.id as string;
     const updated = await NotificationService.markRead(userId, notificationId);
     return sendSuccess(res, 'Notification marked as read', updated);
@@ -43,7 +43,7 @@ export const markNotificationRead = async (req: AuthRequest, res: Response) => {
 
 export const markAllNotificationsRead = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const data = await NotificationService.markAllRead(userId);
     return sendSuccess(res, 'All notifications marked as read', data);
   } catch (err: any) {

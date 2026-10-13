@@ -14,7 +14,10 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 
+import { useAuth } from '../context/AuthContext';
+
 export const SkillsManagerPage: React.FC = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -26,6 +29,7 @@ export const SkillsManagerPage: React.FC = () => {
 
   const loadSkills = async () => {
     try {
+      setIsLoading(true);
       const res = await api.get('/skills');
       if (res.data.success) {
         setSkills(res.data.data);
@@ -38,8 +42,13 @@ export const SkillsManagerPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadSkills();
-  }, []);
+    if (user?.id) {
+      setSkills([]);
+      loadSkills();
+    } else {
+      setSkills([]);
+    }
+  }, [user?.id]);
 
   const handleClaim = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -6,7 +6,7 @@ import { sendSuccess, sendError } from '../utils/response.js';
 export const getLeaderboard = async (req: AuthRequest, res: Response) => {
   try {
     const { scope, id, period, page, limit } = req.query;
-    const currentUserId = req.user?.userId;
+    const currentUserId = req.userId || req.user?.id || req.user?.userId;
 
     const data = await LeaderboardService.getLeaderboard({
       scope: (scope as any) || 'global',

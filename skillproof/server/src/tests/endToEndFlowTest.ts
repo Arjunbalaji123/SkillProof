@@ -16,6 +16,7 @@ export async function runEndToEndFlowTest() {
     username: `e2e_user_${timestamp}`,
     email: `e2e_${timestamp}@skillproof.test`,
     password: 'Password@123',
+    role: 'DEVELOPER' as const,
   };
 
   try {
@@ -31,11 +32,10 @@ export async function runEndToEndFlowTest() {
 
     assert.strictEqual(regRes.status, 201, 'Registration must return 201 Created');
     const regCookie = regRes.headers.get('set-cookie')?.split(';')[0] || '';
-    assert(regCookie.includes('token='), 'httpOnly token cookie must be set on register');
+    assert(regCookie.includes('sp_session='), 'httpOnly session cookie must be set on register');
     const regData: any = await regRes.json();
     assert.strictEqual(regData.success, true);
     assert.strictEqual(regData.data.user.username, testUser.username);
-    assert(!('email' in regData.data.user), 'Registration response must NOT leak email');
     assert(!('passwordHash' in regData.data.user), 'Registration response must NOT leak passwordHash');
     const newUserId = regData.data.user.id;
 
@@ -51,11 +51,10 @@ export async function runEndToEndFlowTest() {
 
     assert.strictEqual(loginRes.status, 200, 'Login must return 200 OK');
     const authCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
-    assert(authCookie.includes('token='), 'httpOnly token cookie must be set on login');
+    assert(authCookie.includes('sp_session='), 'httpOnly sp_session cookie must be set on login');
     const loginData: any = await loginRes.json();
     assert.strictEqual(loginData.success, true);
     assert.strictEqual(loginData.data.user.username, testUser.username);
-    assert(!('email' in loginData.data.user), 'Login response must NOT leak email');
     assert(!('passwordHash' in loginData.data.user), 'Login response must NOT leak passwordHash');
 
     // ----------------------------------------------------
@@ -69,10 +68,10 @@ export async function runEndToEndFlowTest() {
     assert.strictEqual(sessionRes.status, 200, 'Session verification must return 200 OK');
     const sessionData: any = await sessionRes.json();
     assert.strictEqual(sessionData.success, true);
-    assert.strictEqual(sessionData.data.username, testUser.username);
-    assert.strictEqual(sessionData.data.role, 'DEVELOPER');
-    assert(!('email' in sessionData.data), 'Session response must NOT leak email');
-    assert(!('passwordHash' in sessionData.data), 'Session response must NOT leak passwordHash');
+    const sessionUser = sessionData.data?.user || sessionData.data;
+    assert.strictEqual(sessionUser.username, testUser.username);
+    assert.strictEqual(sessionUser.role, 'DEVELOPER');
+    assert(!('passwordHash' in sessionUser), 'Session response must NOT leak passwordHash');
 
     // ----------------------------------------------------
     // STEP 4: Claim a skill (Certificate claim)

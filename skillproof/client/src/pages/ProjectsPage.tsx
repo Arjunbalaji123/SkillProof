@@ -12,7 +12,10 @@ import {
   Check,
 } from 'lucide-react';
 
+import { useAuth } from '../context/AuthContext';
+
 export const ProjectsPage: React.FC = () => {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -24,6 +27,7 @@ export const ProjectsPage: React.FC = () => {
 
   const loadProjects = async () => {
     try {
+      setIsLoading(true);
       const res = await api.get('/projects');
       if (res.data.success) {
         setProjects(res.data.data);
@@ -36,8 +40,13 @@ export const ProjectsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    if (user?.id) {
+      setProjects([]);
+      loadProjects();
+    } else {
+      setProjects([]);
+    }
+  }, [user?.id]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

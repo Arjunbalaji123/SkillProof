@@ -6,7 +6,7 @@ import { sendSuccess, sendError } from '../utils/response.js';
 export const getPublicPortfolio = async (req: AuthRequest, res: Response) => {
   try {
     const slug = req.params.slug as string;
-    const viewerId = req.user?.userId;
+    const viewerId = req.userId || req.user?.id || req.user?.userId;
     const portfolio = await PortfolioService.getPublicPortfolioBySlug(slug, viewerId);
 
     if (!portfolio) {
@@ -21,7 +21,7 @@ export const getPublicPortfolio = async (req: AuthRequest, res: Response) => {
 
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const profile = await PortfolioService.updateProfile(userId, req.body);
     return sendSuccess(res, 'Profile updated successfully', profile);
   } catch (err: any) {
@@ -31,7 +31,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
 export const getInterests = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const data = await PortfolioService.getInterests(userId);
     return sendSuccess(res, 'Interests retrieved', data);
   } catch (err: any) {
@@ -41,7 +41,7 @@ export const getInterests = async (req: AuthRequest, res: Response) => {
 
 export const updateInterests = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const { trackIds, skillIds } = req.body;
     const data = await PortfolioService.updateInterests(userId, trackIds || [], skillIds || []);
     return sendSuccess(res, 'Interests updated successfully', data);
@@ -52,7 +52,7 @@ export const updateInterests = async (req: AuthRequest, res: Response) => {
 
 export const updateMessagingSettings = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const { allowRecruiterMessages } = req.body;
     const data = await PortfolioService.updateMessagingSettings(userId, Boolean(allowRecruiterMessages));
     return sendSuccess(res, 'Messaging settings updated', data);
@@ -63,7 +63,7 @@ export const updateMessagingSettings = async (req: AuthRequest, res: Response) =
 
 export const updateNotificationSettings = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const { notificationsPaused } = req.body;
     const data = await PortfolioService.updateNotificationSettings(userId, Boolean(notificationsPaused));
     return sendSuccess(res, 'Notification settings updated', data);

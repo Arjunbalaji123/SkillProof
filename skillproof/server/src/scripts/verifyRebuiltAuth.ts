@@ -17,7 +17,7 @@ async function runVerification() {
   console.log('▶ STEP 1: GET /api/health');
   const healthRes = await fetch(`${API_BASE}/health`);
   const healthStatus = healthRes.status;
-  const healthBody = await healthRes.json();
+  const healthBody = await healthRes.json() as any;
   console.log('  Status:', healthStatus);
   console.log('  Body:', JSON.stringify(healthBody));
   assert.strictEqual(healthStatus, 200);
@@ -30,7 +30,7 @@ async function runVerification() {
   console.log('▶ STEP 2: GET /api/auth/session (Public, unauthenticated)');
   const sessLoggedOutRes = await fetch(`${API_BASE}/auth/session`);
   const sessLoggedOutStatus = sessLoggedOutRes.status;
-  const sessLoggedOutBody = await sessLoggedOutRes.json();
+  const sessLoggedOutBody = await sessLoggedOutRes.json() as any;
   console.log('  Status:', sessLoggedOutStatus);
   console.log('  Body:', JSON.stringify(sessLoggedOutBody));
   assert.strictEqual(sessLoggedOutStatus, 200, 'Session endpoint must return 200 when logged out');
@@ -43,7 +43,7 @@ async function runVerification() {
   // -------------------------------------------------------------------------
   console.log('▶ STEP 3: GET /api/auth/check-username?u=');
   const checkFree = await fetch(`${API_BASE}/auth/check-username?u=new_user_${ts}`);
-  const checkFreeBody = await checkFree.json();
+  const checkFreeBody = await checkFree.json() as any;
   console.log('  Free username:', JSON.stringify(checkFreeBody));
   assert.strictEqual(checkFree.status, 200);
   assert.strictEqual(checkFreeBody.data.available, true);
@@ -71,7 +71,7 @@ async function runVerification() {
 
   const devRegStatus = devRegRes.status;
   const devRegCookie = devRegRes.headers.get('set-cookie') || '';
-  const devRegBody = await devRegRes.json();
+  const devRegBody = await devRegRes.json() as any;
   console.log('  Status:', devRegStatus);
   console.log('  Body:', JSON.stringify(devRegBody, null, 2));
   console.log('  Set-Cookie Header:', devRegCookie);
@@ -107,7 +107,7 @@ async function runVerification() {
     headers: { Cookie: sessCookiePart },
   });
   const sessLoggedInStatus = sessLoggedInRes.status;
-  const sessLoggedInBody = await sessLoggedInRes.json();
+  const sessLoggedInBody = await sessLoggedInRes.json() as any;
   console.log('  Status:', sessLoggedInStatus);
   console.log('  Body:', JSON.stringify(sessLoggedInBody, null, 2));
   assert.strictEqual(sessLoggedInStatus, 200);
@@ -140,7 +140,7 @@ async function runVerification() {
 
   const recRegStatus = recRegRes.status;
   const recRegCookie = recRegRes.headers.get('set-cookie') || '';
-  const recRegBody = await recRegRes.json();
+  const recRegBody = await recRegRes.json() as any;
   console.log('  Status:', recRegStatus);
   console.log('  Body:', JSON.stringify(recRegBody, null, 2));
   assert.strictEqual(recRegStatus, 201);
@@ -167,7 +167,7 @@ async function runVerification() {
       role: 'DEVELOPER',
     }),
   });
-  const dupEmailBody = await dupEmailRes.json();
+  const dupEmailBody = await dupEmailRes.json() as any;
   console.log('  Duplicate Email Status:', dupEmailRes.status, dupEmailBody);
   assert.strictEqual(dupEmailRes.status, 409);
   assert.strictEqual(dupEmailBody.error, 'Email already in use. Please sign in.');
@@ -184,7 +184,7 @@ async function runVerification() {
       role: 'DEVELOPER',
     }),
   });
-  const dupUserBody = await dupUserRes.json();
+  const dupUserBody = await dupUserRes.json() as any;
   console.log('  Duplicate Username Status:', dupUserRes.status, dupUserBody);
   assert.strictEqual(dupUserRes.status, 409);
   assert.strictEqual(dupUserBody.error, 'Username already taken');
@@ -215,7 +215,7 @@ async function runVerification() {
       role: 'RECRUITER',
     }),
   });
-  const missingRecBody = await missingRecRes.json();
+  const missingRecBody = await missingRecRes.json() as any;
   console.log('  Missing Recruiter Fields Status:', missingRecRes.status, missingRecBody);
   assert.strictEqual(missingRecRes.status, 400);
   assert(missingRecBody.errors.some((e: any) => e.field === 'companyName'));
@@ -247,7 +247,7 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: devEmail, password: 'WrongPassword123!' }),
   });
-  const badPassBody = await badPassRes.json();
+  const badPassBody = await badPassRes.json() as any;
   console.log('  Bad Password Status:', badPassRes.status, badPassBody);
   assert.strictEqual(badPassRes.status, 401);
   assert.strictEqual(badPassBody.error, 'Incorrect email or password');
@@ -258,7 +258,7 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'nonexistent_ghost@cit.edu.in', password: 'Password123!' }),
   });
-  const nonExistBody = await nonExistRes.json();
+  const nonExistBody = await nonExistRes.json() as any;
   console.log('  Non-existent User Status:', nonExistRes.status, nonExistBody);
   assert.strictEqual(nonExistRes.status, 401);
   assert.strictEqual(nonExistBody.error, 'Incorrect email or password');
@@ -269,7 +269,7 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: devEmail, password: devPassword }),
   });
-  const goodLoginBody = await goodLoginRes.json();
+  const goodLoginBody = await goodLoginRes.json() as any;
   console.log('  Valid Login Status:', goodLoginRes.status, goodLoginBody);
   assert.strictEqual(goodLoginRes.status, 200);
   assert.strictEqual(goodLoginBody.data.user.username, devUsername);
@@ -311,7 +311,7 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: victimEmail, password: 'BadPassword!' }),
   });
-  const fifthBody = await fifthRes.json();
+  const fifthBody = await fifthRes.json() as any;
   console.log('  5th attempt Status:', fifthRes.status, fifthBody);
   assert.strictEqual(fifthRes.status, 423);
   assert(fifthBody.error.includes('Too many failed attempts'));
@@ -322,7 +322,7 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: victimEmail, password: victimPass }),
   });
-  const lockedBody = await lockedRes.json();
+  const lockedBody = await lockedRes.json() as any;
   console.log('  Locked user attempt Status:', lockedRes.status, lockedBody);
   assert.strictEqual(lockedRes.status, 423);
   console.log('  ✅ PASS: 5 failed attempts triggered 423 account lockout\n');
@@ -358,7 +358,7 @@ async function runVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: suspEmail, password: suspPass }),
   });
-  const suspLoginBody = await suspLoginRes.json();
+  const suspLoginBody = await suspLoginRes.json() as any;
   console.log('  Suspended Login Status:', suspLoginRes.status, suspLoginBody);
   assert.strictEqual(suspLoginRes.status, 403);
   assert.strictEqual(suspLoginBody.error, 'This account is suspended');
@@ -383,7 +383,7 @@ async function runVerification() {
   // -------------------------------------------------------------------------
   console.log('▶ STEP 12: Route Protection (Public vs Protected)');
   const protRes = await fetch(`${API_BASE}/me`);
-  const protBody = await protRes.json();
+  const protBody = await protRes.json() as any;
   console.log('  Protected /api/me without cookie Status:', protRes.status, protBody);
   assert.strictEqual(protRes.status, 401);
   assert.strictEqual(protBody.error, 'Authentication required');

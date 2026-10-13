@@ -5,7 +5,7 @@ import { sendSuccess, sendError } from '../utils/response.js';
 
 export const getDashboardSummary = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const summary = await SkillService.getDashboardSummary(userId);
     return sendSuccess(res, 'Dashboard summary retrieved', summary);
   } catch (err: any) {
@@ -15,7 +15,7 @@ export const getDashboardSummary = async (req: AuthRequest, res: Response) => {
 
 export const getUserSkills = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const skills = await SkillService.getUserSkills(userId);
     return sendSuccess(res, 'User skills retrieved', skills);
   } catch (err: any) {
@@ -25,7 +25,7 @@ export const getUserSkills = async (req: AuthRequest, res: Response) => {
 
 export const claimSkill = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const skill = await SkillService.claimSkill(userId, req.body);
     return sendSuccess(res, 'Skill claimed successfully. Pass assessment to verify.', skill, 201);
   } catch (err: any) {
@@ -35,7 +35,7 @@ export const claimSkill = async (req: AuthRequest, res: Response) => {
 
 export const updateClaimedSkill = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const skillId = req.params.id as string;
     const updated = await SkillService.updateClaimedSkill(userId, skillId, req.body);
     return sendSuccess(res, 'Claimed skill updated', updated);
@@ -46,7 +46,7 @@ export const updateClaimedSkill = async (req: AuthRequest, res: Response) => {
 
 export const deleteSkill = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = req.userId || req.user?.id || req.user?.userId;
     const skillId = req.params.id as string;
     await SkillService.deleteSkill(userId, skillId);
     return sendSuccess(res, 'Skill removed successfully');

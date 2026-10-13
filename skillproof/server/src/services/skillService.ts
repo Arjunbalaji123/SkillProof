@@ -7,6 +7,9 @@ export class SkillService {
    * Retrieves all skills for a user, labeling status clearly as CLAIMED or VERIFIED.
    */
   static async getUserSkills(userId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to fetch skills');
+    }
     const skills = await prisma.skill.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -52,6 +55,9 @@ export class SkillService {
    * - recentAttempts: last 5 SUBMITTED assessments with language, scorePercent, weightedPercent, level, submittedAt
    */
   static async getDashboardSummary(userId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required for dashboard summary');
+    }
     const [skillsRaw, projectsCount, recentAttemptsRaw] = await Promise.all([
       prisma.skill.findMany({
         where: { userId },
@@ -137,6 +143,9 @@ export class SkillService {
    * Adds or claims a skill. Status is ALWAYS initialized as 'CLAIMED' even with a certificate URL.
    */
   static async claimSkill(userId: string, data: { language: string; claimedLevel?: string; certificateUrl?: string }) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to claim skill');
+    }
     const existing = await prisma.skill.findUnique({
       where: {
         userId_language: {
@@ -173,6 +182,9 @@ export class SkillService {
    * Note: Cannot set status to VERIFIED via this route; verification requires passing assessment.
    */
   static async updateClaimedSkill(userId: string, skillId: string, data: { claimedLevel?: string; certificateUrl?: string }) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to update skill');
+    }
     const skill = await prisma.skill.findUnique({
       where: { id: skillId },
     });
@@ -197,6 +209,9 @@ export class SkillService {
    * Deletes a skill.
    */
   static async deleteSkill(userId: string, skillId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to delete skill');
+    }
     const skill = await prisma.skill.findUnique({
       where: { id: skillId },
     });

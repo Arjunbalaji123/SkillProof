@@ -169,11 +169,18 @@ export const RegisterPage: React.FC = () => {
         setFieldErrors(newFieldErrors);
       }
 
-      const msg =
-        respData?.error ||
-        respData?.message ||
-        err?.message ||
-        'Registration failed. Please try again.';
+      const isUnreachable =
+        !err?.response ||
+        err?.code === 'ERR_NETWORK' ||
+        err?.message === 'Network Error' ||
+        err?.message?.includes('Cannot reach the server');
+
+      const msg = isUnreachable
+        ? 'Cannot reach the server. Please make sure the backend is running.'
+        : respData?.error ||
+          respData?.message ||
+          err?.message ||
+          'Registration failed. Please try again.';
       setGlobalError(msg);
     } finally {
       setSubmitting(false);

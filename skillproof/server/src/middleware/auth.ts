@@ -62,8 +62,16 @@ export const requireAuth = async (
       });
     }
 
+    (user as any).userId = user.id;
     req.user = user;
+    (req.user as any).userId = user.id;
     req.userId = user.id;
+
+    // Send Cache-Control: no-store on all authenticated responses
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     next();
   } catch (error: any) {
     console.error('[Auth Middleware Error]:', error);
@@ -102,7 +110,9 @@ export const optionalAuth = async (
       });
 
       if (user && user.status !== 'SUSPENDED') {
+        (user as any).userId = user.id;
         req.user = user;
+        (req.user as any).userId = user.id;
         req.userId = user.id;
       }
     } catch {

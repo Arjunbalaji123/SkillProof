@@ -44,11 +44,18 @@ export const LoginPage: React.FC = () => {
         navigate('/dashboard');
       }
     } catch (err: any) {
-      const serverMsg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        err?.message ||
-        'Login failed. Please check your network and credentials.';
+      const isUnreachable =
+        !err?.response ||
+        err?.code === 'ERR_NETWORK' ||
+        err?.message === 'Network Error' ||
+        err?.message?.includes('Cannot reach the server');
+
+      const serverMsg = isUnreachable
+        ? 'Cannot reach the server. Please make sure the backend is running.'
+        : err?.response?.data?.error ||
+          err?.response?.data?.message ||
+          err?.message ||
+          'Login failed. Please check your network and credentials.';
       setErrorMessage(serverMsg);
     } finally {
       setSubmitting(false);

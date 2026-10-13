@@ -202,7 +202,7 @@ export async function runSkillProofTests() {
       });
       assert.strictEqual(badRes.status, 401);
       const badData: any = await badRes.json();
-      assert.strictEqual(badData.message, 'Invalid email or password credentials');
+      assert.strictEqual(badData.message, 'Incorrect email or password');
 
       // Developer login with uppercase and whitespace
       const devRes = await fetch(`${API_URL}/auth/login`, {
@@ -212,7 +212,7 @@ export async function runSkillProofTests() {
       });
       assert.strictEqual(devRes.status, 200);
       const cookie = devRes.headers.get('set-cookie')?.split(';')[0] || '';
-      assert(cookie.includes('token='), 'httpOnly cookie set');
+      assert(cookie.includes('sp_session='), 'httpOnly cookie set');
 
       // Session persistence via cookie
       const sessionRes = await fetch(`${API_URL}/auth/session`, {
@@ -220,7 +220,7 @@ export async function runSkillProofTests() {
       });
       assert.strictEqual(sessionRes.status, 200);
       const sessionData: any = await sessionRes.json();
-      assert.strictEqual(sessionData.data.role, 'DEVELOPER');
+      assert.strictEqual(sessionData.data.user.role, 'DEVELOPER');
 
       // Developer allowed on history, blocked on admin
       const histRes = await fetch(`${API_URL}/assessments/history`, {

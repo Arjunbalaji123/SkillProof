@@ -22,6 +22,7 @@ const router = Router();
 // ============================================================================
 router.use('/auth', authRoutes);
 router.get('/public/portfolio/:username', optionalAuth, getPublicPortfolio);
+router.get('/profile/public/:slug', optionalAuth, getPublicPortfolio);
 
 // ============================================================================
 // Protected Routes: Everything else strictly requires login

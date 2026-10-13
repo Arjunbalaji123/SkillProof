@@ -36,18 +36,9 @@ const serverUploadsDir = path.resolve(process.cwd(), 'uploads');
 // Helmet & Security Headers
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-// HTTP Caching Policy
+// HTTP Caching Policy: send Cache-Control: no-store on all API routes
 app.use((req, res, next) => {
-  // Disable caching for dynamic developer, skills, dashboard, assessment, openings, notifications, and messaging routes
-  if (
-    req.path.startsWith('/api/dashboard') ||
-    req.path.startsWith('/api/skills') ||
-    req.path.startsWith('/api/assessments') ||
-    req.path.startsWith('/api/openings') ||
-    req.path.startsWith('/api/notifications') ||
-    req.path.startsWith('/api/messages') ||
-    req.path.startsWith('/api/admin')
-  ) {
+  if (req.path.startsWith('/api')) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -134,8 +125,8 @@ if (process.env.NODE_ENV !== 'test') {
     ProctorService.monitorActiveHeartbeats().catch(() => {});
   }, 10 * 1000); // every 10 seconds
 
-  httpServer.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 SKILLPROOF Server & Socket.IO running at http://0.0.0.0:${PORT}`);
+  httpServer.listen(Number(PORT), () => {
+    console.log(`🚀 SKILLPROOF Server & Socket.IO running on port ${PORT}`);
     console.log(`📁 Static Uploads directory: ${uploadDir}`);
   });
 }

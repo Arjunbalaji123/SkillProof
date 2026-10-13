@@ -1,11 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_URL ||
-  (typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? `http://${window.location.hostname}:5001/api`
-    : '/api');
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || '/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -27,10 +22,36 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Interceptor to handle unauthenticated 401 response
+// Interceptor to handle unauthenticated 401 response and server unreachable messages
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (
+      !error.response ||
+      error.code === 'ERR_NETWORK' ||
+      error.code === 'ECONNABORTED' ||
+      error.message === 'Network Error'
+    ) {
+      const unreachableMsg = 'Cannot reach the server. Please make sure the backend is running.';
+      error.message = unreachableMsg;
+      if (!error.response) {
+        error.response = {
+          data: {
+            success: false,
+            error: unreachableMsg,
+            message: unreachableMsg,
+          },
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: {},
+          config: error.config,
+        };
+      } else if (error.response.data) {
+        error.response.data.error = unreachableMsg;
+        error.response.data.message = unreachableMsg;
+      }
+    }
+
     if (error.response && error.response.status === 401) {
       if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
         localStorage.removeItem('skillproof_token');

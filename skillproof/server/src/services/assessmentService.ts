@@ -11,6 +11,9 @@ export class AssessmentService {
    * Enforces SkillLockout, 7-day cooldown, and max 3 attempts per 30 days (the longer one wins).
    */
   static async startAssessment(userId: string, language: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to start assessment');
+    }
     // Resolve catalog
     const catalog = await prisma.skillCatalog.findFirst({
       where: {
@@ -256,6 +259,11 @@ export class AssessmentService {
    * Retrieves active assessment details with sanitized questions and proctoring warning state.
    */
   static async getAssessmentDetails(userId: string, assessmentId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      const err: any = new Error('Valid userId is required');
+      err.statusCode = 401;
+      throw err;
+    }
     const assessment = await prisma.assessment.findUnique({
       where: { id: assessmentId },
       include: {
@@ -276,8 +284,11 @@ export class AssessmentService {
       },
     });
 
-    if (!assessment) throw new Error('Assessment not found');
-    if (assessment.userId !== userId) throw new Error('Unauthorized');
+    if (!assessment || assessment.userId !== userId) {
+      const err: any = new Error('Assessment not found');
+      err.statusCode = 404;
+      throw err;
+    }
 
     const warningNumber = assessment.proctorEvents.length;
     const remainingWarnings = Math.max(0, 2 - warningNumber);
@@ -338,12 +349,20 @@ export class AssessmentService {
    * Records an answer for a specific question in an ongoing assessment.
    */
   static async saveAnswer(userId: string, assessmentId: string, questionOrderId: number, userAnswer: any) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      const err: any = new Error('Valid userId is required');
+      err.statusCode = 401;
+      throw err;
+    }
     const assessment = await prisma.assessment.findUnique({
       where: { id: assessmentId },
     });
 
-    if (!assessment) throw new Error('Assessment not found');
-    if (assessment.userId !== userId) throw new Error('Unauthorized access to assessment');
+    if (!assessment || assessment.userId !== userId) {
+      const err: any = new Error('Assessment not found');
+      err.statusCode = 404;
+      throw err;
+    }
     if (assessment.status !== 'IN_PROGRESS') throw new Error('Assessment is no longer in progress');
 
     // Check timer expiration
@@ -388,12 +407,19 @@ export class AssessmentService {
    * Tracks tab switch/blur event
    */
   static async recordTabSwitch(userId: string, assessmentId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      const err: any = new Error('Valid userId is required');
+      err.statusCode = 401;
+      throw err;
+    }
     const assessment = await prisma.assessment.findUnique({
       where: { id: assessmentId },
     });
 
     if (!assessment || assessment.userId !== userId) {
-      throw new Error('Assessment not found or unauthorized');
+      const err: any = new Error('Assessment not found');
+      err.statusCode = 404;
+      throw err;
     }
 
     const updated = await prisma.assessment.update({
@@ -412,6 +438,11 @@ export class AssessmentService {
    * If weightedPercent >= 40, sets Skill status to VERIFIED for 12 months.
    */
   static async submitAssessment(userId: string, assessmentId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      const err: any = new Error('Valid userId is required');
+      err.statusCode = 401;
+      throw err;
+    }
     const assessment = await prisma.assessment.findUnique({
       where: { id: assessmentId },
       include: {
@@ -424,8 +455,11 @@ export class AssessmentService {
       },
     });
 
-    if (!assessment) throw new Error('Assessment not found');
-    if (assessment.userId !== userId) throw new Error('Unauthorized');
+    if (!assessment || assessment.userId !== userId) {
+      const err: any = new Error('Assessment not found');
+      err.statusCode = 404;
+      throw err;
+    }
     if (assessment.status === 'TERMINATED') {
       throw new Error('Assessment was terminated due to proctoring violations and cannot be submitted.');
     }
@@ -576,6 +610,11 @@ export class AssessmentService {
    * Retrieves full result with explanations for review.
    */
   static async getAssessmentResult(userId: string, assessmentId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      const err: any = new Error('Valid userId is required');
+      err.statusCode = 401;
+      throw err;
+    }
     const assessment = await prisma.assessment.findUnique({
       where: { id: assessmentId },
       include: {
@@ -588,8 +627,11 @@ export class AssessmentService {
       },
     });
 
-    if (!assessment) throw new Error('Assessment not found');
-    if (assessment.userId !== userId) throw new Error('Unauthorized');
+    if (!assessment || assessment.userId !== userId) {
+      const err: any = new Error('Assessment not found');
+      err.statusCode = 404;
+      throw err;
+    }
 
     let parsedBreakdown = {};
     if (assessment.topicBreakdown) {
@@ -732,6 +774,9 @@ export class AssessmentService {
    * User's past assessment history
    */
   static async getUserAssessmentHistory(userId: string) {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Valid userId is required to fetch assessment history');
+    }
     return prisma.assessment.findMany({
       where: {
         userId,
