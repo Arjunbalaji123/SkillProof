@@ -184,10 +184,23 @@ export const updateOpeningSchema = z.object({
   status: z.enum(['ACTIVE', 'PAUSED', 'CLOSED', 'EXPIRED', 'PENDING_REVIEW', 'REJECTED']).optional(),
 });
 
-export const adminReviewOpeningSchema = z.object({
-  decision: z.enum(['APPROVE', 'REJECT']),
-  reason: z.string().max(1000).optional(),
-});
+export const adminReviewOpeningSchema = z
+  .object({
+    decision: z.enum(['APPROVE', 'REJECT']),
+    reason: z.string().trim().max(1000).optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.decision === 'REJECT') {
+        return !!data.reason && data.reason.trim().length >= 3;
+      }
+      return true;
+    },
+    {
+      message: 'A rejection reason of at least 3 characters is required when rejecting an opening',
+      path: ['reason'],
+    }
+  );
 
 export const approachOpeningSchema = z.object({
   message: z.string().min(1, 'Approach message cannot be empty').max(500, 'Approach message cannot exceed 500 characters'),

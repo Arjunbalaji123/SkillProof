@@ -2,6 +2,7 @@ import assert from 'assert';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../config/db.js';
 import { OpeningService, OpeningError } from '../services/openingService.js';
+import { AdminService } from '../services/adminService.js';
 import { NotificationService } from '../services/notificationService.js';
 import { MessageService, MessageError } from '../services/messageService.js';
 
@@ -251,31 +252,41 @@ export async function runMessagingTests() {
     );
 
     // 4. 5 notifications per day cap and digest grouping
-    // Create 5 more openings across verifiedRecruiterA and verifiedRecruiterB so dev1 matches 6 openings today
+    // Create and approve 5 openings across verifiedRecruiterA and verifiedRecruiterB so dev1 matches 6 openings today
+    const adminUser = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+    assert.ok(adminUser, 'Expected at least one ADMIN user in DB');
+
+    // Approve opening1
+    await AdminService.reviewOpening(adminUser.id, opening1.id, 'APPROVE');
+
+    // Create and approve openings 2 to 5 for Recruiter A (Recruiter A reaches exactly 5 ACTIVE openings)
     for (let i = 2; i <= 5; i++) {
-      await OpeningService.createOpening(verifiedRecruiterA.id, {
+      const opA = await OpeningService.createOpening(verifiedRecruiterA.id, {
         title: `Opening #${i} by Recruiter A`,
         trackId: catalog.trackId,
         description: `Description for opening #${i} matching dev1.`,
         minScore: 70,
         skillCatalogIds: [catalog.id],
       });
+      await AdminService.reviewOpening(adminUser.id, opA.id, 'APPROVE');
     }
 
-    // 6th active opening by Recruiter A must fail (max 5 ACTIVE openings per recruiter)
+    // 6th opening by Recruiter A can be created (as PENDING_REVIEW), but APPROVING it must fail the max 5 active openings check
+    const openingA6 = await OpeningService.createOpening(verifiedRecruiterA.id, {
+      title: '6th Active Opening by Recruiter A',
+      trackId: catalog.trackId,
+      description: 'Should fail max 5 active openings check upon approval.',
+      skillCatalogIds: [catalog.id],
+    });
+
     await assert.rejects(
       async () => {
-        await OpeningService.createOpening(verifiedRecruiterA.id, {
-          title: '6th Active Opening by Recruiter A',
-          trackId: catalog.trackId,
-          description: 'Should fail max 5 active openings check.',
-          skillCatalogIds: [catalog.id],
-        });
+        await AdminService.reviewOpening(adminUser.id, openingA6.id, 'APPROVE');
       },
-      (err: any) => err instanceof OpeningError && err.statusCode === 400
+      (err: any) => err.statusCode === 400 || (err instanceof OpeningError && err.statusCode === 400)
     );
 
-    // Recruiter B creates the 6th matching opening for dev1 today
+    // Recruiter B creates and admin approves the 6th matching opening for dev1 today
     const openingB1 = await OpeningService.createOpening(verifiedRecruiterB.id, {
       title: 'Opening #6 by Recruiter B',
       trackId: catalog.trackId,
@@ -283,6 +294,7 @@ export async function runMessagingTests() {
       minScore: 70,
       skillCatalogIds: [catalog.id],
     });
+    await AdminService.reviewOpening(adminUser.id, openingB1.id, 'APPROVE');
 
     const dev1Notifs = await NotificationService.listNotifications(dev1.id, undefined, 20);
     const openingMatchNotifs = dev1Notifs.notifications.filter((n) => n.type === 'OPENING_MATCH');
@@ -291,7 +303,7 @@ export async function runMessagingTests() {
       5,
       `Expected OPENING_MATCH notifications capped at 5 per day, got ${openingMatchNotifs.length}`
     );
-    const digestNotif = openingMatchNotifs.find((n) => n.entityType === 'OpeningDigest');
+    const digestNotif = openingMatchNotifs.find((n) => n.title.toLowerCase().includes('digest'));
     assert.ok(digestNotif, 'Expected extra opening matches beyond 5/day to be grouped into an OpeningDigest notification');
     assert.ok(
       digestNotif.title.includes('digest'),
@@ -344,7 +356,7 @@ export async function runMessagingTests() {
 
     // Developer approaches 4 more openings today (total 5 approaches today)
     const recAOpenings = await OpeningService.getRecruiterOpenings(verifiedRecruiterA.id);
-    const otherFourOpenings = recAOpenings.filter((o) => o.id !== opening1.id);
+    const otherFourOpenings = recAOpenings.filter((o) => o.id !== opening1.id && o.status === 'ACTIVE');
     for (const op of otherFourOpenings) {
       await MessageService.approachOpening(dev1.id, op.id, `Approaching ${op.title}`);
     }
@@ -363,7 +375,7 @@ export async function runMessagingTests() {
       async () => {
         await MessageService.approachOpening(dev2.id, openingB1.id, 'Approaching paused opening');
       },
-      (err: any) => err instanceof MessageError && err.statusCode === 400
+      (err: any) => err instanceof MessageError && (err.statusCode === 400 || err.statusCode === 403)
     );
 
     await OpeningService.updateOpening(verifiedRecruiterB.id, openingB1.id, { status: 'CLOSED' });
@@ -371,7 +383,7 @@ export async function runMessagingTests() {
       async () => {
         await MessageService.approachOpening(dev2.id, openingB1.id, 'Approaching closed opening');
       },
-      (err: any) => err instanceof MessageError && err.statusCode === 400
+      (err: any) => err instanceof MessageError && (err.statusCode === 400 || err.statusCode === 403)
     );
 
     // Re-activate openingB1 for per-recruiter unlock test

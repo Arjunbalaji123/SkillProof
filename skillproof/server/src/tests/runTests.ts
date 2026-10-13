@@ -176,14 +176,14 @@ export async function runSkillProofTests() {
   // 6. Auth Service test
   await test('AuthService: Login and session check', async () => {
     const loginRes = await AuthService.login({
-      email: 'recruiter@techcorp.com',
-      password: 'Recruiter@123',
+      email: 'recruiter01@seed.skillproof.test',
+      password: 'Password123!',
     });
     assert.strictEqual(loginRes.user.role, 'RECRUITER');
     assert(loginRes.token.length > 20, 'JWT token generated');
 
     const session = await AuthService.getSession(loginRes.user.id);
-    assert.strictEqual(session?.email, 'recruiter@techcorp.com');
+    assert.strictEqual(session?.email, 'recruiter01@seed.skillproof.test');
   });
 
   // 7. Full HTTP Auth, Cookie Session & Role Guard Verification
@@ -237,7 +237,7 @@ export async function runSkillProofTests() {
       const recRes = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'recruiter@techcorp.com', password: 'Recruiter@123' }),
+        body: JSON.stringify({ email: 'recruiter01@seed.skillproof.test', password: 'Password123!' }),
       });
       assert.strictEqual(recRes.status, 200);
       const recCookie = recRes.headers.get('set-cookie')?.split(';')[0] || '';
