@@ -22,6 +22,10 @@ import { PublicPortfolioPage } from '../pages/PublicPortfolioPage';
 import { LeaderboardPage } from '../pages/LeaderboardPage';
 import { BookmarksPage } from '../pages/BookmarksPage';
 import { MessagesPage } from '../pages/MessagesPage';
+import { NotificationsPage } from '../pages/NotificationsPage';
+import { DeveloperOpeningsPage } from '../pages/DeveloperOpeningsPage';
+import { RecruiterOpeningsPage } from '../pages/RecruiterOpeningsPage';
+import { RecruiterProfilePage } from '../pages/RecruiterProfilePage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { UnauthorizedPage, ForbiddenPage, InternalServerErrorPage } from '../pages/ErrorPages';
 
@@ -76,6 +80,7 @@ export const AppRoutes: React.FC = () => {
           }
         />
         <Route path="/profile" element={<EditProfilePage />} />
+        <Route path="/profile/edit" element={<EditProfilePage />} />
         <Route
           path="/skills"
           element={
@@ -117,7 +122,43 @@ export const AppRoutes: React.FC = () => {
           }
         />
 
-        {/* Direct Messaging Routes (ProtectedRoute + AppLayout) */}
+        {/* Hiring Openings Routes (ProtectedRoute + AppLayout) */}
+        <Route
+          path="/openings"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'ADMIN']}>
+              <DeveloperOpeningsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/openings/manage"
+          element={
+            <RoleRoute allowedRoles={['RECRUITER', 'ADMIN']}>
+              <RecruiterOpeningsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/openings/:id"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
+              <DeveloperOpeningsPage />
+            </RoleRoute>
+          }
+        />
+
+        {/* Notifications Route (ProtectedRoute + AppLayout) */}
+        <Route
+          path="/notifications"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
+              <NotificationsPage />
+            </RoleRoute>
+          }
+        />
+
+        {/* Direct & Opening Messaging Routes (ProtectedRoute + AppLayout) */}
         <Route
           path="/messages"
           element={
@@ -135,12 +176,36 @@ export const AppRoutes: React.FC = () => {
           }
         />
 
-        {/* Recruiter & Saved Developers Routes */}
+        {/* Recruiter Discovery, Bookmarks & Profile Routes */}
+        <Route
+          path="/recruiter"
+          element={
+            <RoleRoute allowedRoles={['RECRUITER', 'ADMIN']}>
+              <RecruiterDashboard />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/recruiter/bookmarks"
+          element={
+            <RoleRoute allowedRoles={['RECRUITER', 'ADMIN']}>
+              <BookmarksPage />
+            </RoleRoute>
+          }
+        />
         <Route
           path="/recruiters/bookmarks"
           element={
             <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
               <BookmarksPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/recruiters/:username"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
+              <RecruiterProfilePage />
             </RoleRoute>
           }
         />

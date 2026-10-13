@@ -26,6 +26,10 @@ import {
   liftLockout,
   confirmViolation,
   serveProctorSnapshot,
+  listRecruiters,
+  verifyRecruiter,
+  listAdminOpenings,
+  moderateAdminOpening,
   getMessageReports,
   resolveMessageReport,
 } from '../controllers/adminController.js';
@@ -38,6 +42,8 @@ import {
   liftLockoutSchema,
   confirmViolationSchema,
   adminResolveMessageReportSchema,
+  adminVerifyRecruiterSchema,
+  updateOpeningSchema,
 } from '../validators/index.js';
 
 const router = Router();
@@ -79,11 +85,21 @@ router.post('/proctoring/lockouts/:id/lift', validateBody(liftLockoutSchema), li
 router.post('/proctoring/lockouts/:id/confirm', validateBody(confirmViolationSchema), confirmViolation);
 router.get('/proctor/snapshots/:filename', serveProctorSnapshot);
 
-// Direct message report moderation
+// Recruiter verification
+router.get('/recruiters', listRecruiters);
+router.patch('/recruiters/:id', validateBody(adminVerifyRecruiterSchema), verifyRecruiter);
+router.patch('/recruiters', validateBody(adminVerifyRecruiterSchema), verifyRecruiter);
+
+// Opening moderation
+router.get('/openings', listAdminOpenings);
+router.patch('/openings/:id', validateBody(updateOpeningSchema), moderateAdminOpening);
+router.patch('/openings', validateBody(updateOpeningSchema), moderateAdminOpening);
+
+// Message report moderation
 router.get('/message-reports', getMessageReports);
 router.patch('/message-reports/:id', validateBody(adminResolveMessageReportSchema), resolveMessageReport);
+router.patch('/message-reports', validateBody(adminResolveMessageReportSchema), resolveMessageReport);
 
 router.get('/audit', getAuditLogs);
 
 export default router;
-

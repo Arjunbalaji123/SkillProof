@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/LoadingSkeleton';
+import { DirectMessageModal } from '../components/DirectMessageModal';
 import { VerifiedDeveloperCard } from '../types';
 import {
   Search,
@@ -12,16 +13,26 @@ import {
   ExternalLink,
   FolderGit2,
   MessageSquare,
+  AlertCircle,
+  Briefcase,
 } from 'lucide-react';
 
 export const RecruiterDashboard: React.FC = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const [developers, setDevelopers] = useState<VerifiedDeveloperCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState('ALL');
   const [minScore, setMinScore] = useState<number>(0);
   const [search, setSearch] = useState('');
   const [bookmarkingId, setBookmarkingId] = useState<string | null>(null);
+  const [dmTarget, setDmTarget] = useState<{
+    name: string;
+    username: string;
+    topSkill?: { language: string; score: number } | null;
+  } | null>(null);
+
+  const isVerifiedRecruiter =
+    user?.role === 'RECRUITER' && Boolean(user?.recruiterProfile?.isVerified);
 
   const fetchDevelopers = async () => {
     setLoading(true);
@@ -82,12 +93,31 @@ export const RecruiterDashboard: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Verified Developer Discovery</h1>
-        <p className="text-sm text-[#64748B] mt-1">
-          Hire candidates based on server-verified test scores, not unverified certificate claims or resumes.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Verified Developer Discovery</h1>
+          <p className="text-sm text-[#64748B] mt-1">
+            Hire candidates based on server-verified test scores, not unverified certificate claims or resumes.
+          </p>
+        </div>
+
+        <Link
+          to="/openings/manage"
+          className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition"
+        >
+          <Briefcase size={15} />
+          Manage Hiring Openings
+        </Link>
       </div>
+
+      {user?.role === 'RECRUITER' && !user?.recruiterProfile?.isVerified && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-2.5">
+          <AlertCircle size={18} className="text-amber-600 shrink-0" />
+          <span>
+            Your recruiter account is pending approval. Once verified by an admin, you can publish openings and message eligible developers directly.
+          </span>
+        </div>
+      )}
 
       {/* Filter & Search Bar */}
       <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4">
@@ -150,7 +180,12 @@ export const RecruiterDashboard: React.FC = () => {
                 (user?.username &&
                   devUsername &&
                   user.username.toLowerCase() === devUsername.toLowerCase()));
-            const canMessage = !isSelf && !dev.isDemo;
+            const canMessage =
+              isVerifiedRecruiter &&
+              !isSelf &&
+              !dev.isDemo &&
+              dev.canDirectMessage !== false &&
+              dev.verifiedSkills.length > 0;
 
             return (
               <div
@@ -248,25 +283,24 @@ export const RecruiterDashboard: React.FC = () => {
 
                   <div className="flex items-center gap-2">
                     {canMessage && devUsername && (
-                      isAuthenticated ? (
-                        <Link
-                          to={`/messages?to=${encodeURIComponent(devUsername)}${
-                            dev.verifiedSkills[0]?.language
-                              ? `&skill=${encodeURIComponent(dev.verifiedSkills[0].language)}`
-                              : ''
-                          }`}
-                          className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 font-bold text-xs flex items-center gap-1 transition"
-                        >
-                          <MessageSquare size={12} /> Message
-                        </Link>
-                      ) : (
-                        <Link
-                          to="/login"
-                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#475569] font-semibold text-xs flex items-center gap-1 transition"
-                        >
-                          <MessageSquare size={12} /> Sign in to message
-                        </Link>
-                      )
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDmTarget({
+                            name: dev.name,
+                            username: devUsername,
+                            topSkill: dev.verifiedSkills[0]
+                              ? {
+                                  language: dev.verifiedSkills[0].language,
+                                  score: dev.verifiedSkills[0].score || 0,
+                                }
+                              : null,
+                          })
+                        }
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 font-bold text-xs flex items-center gap-1 transition"
+                      >
+                        <MessageSquare size={12} /> Message
+                      </button>
                     )}
                     <Link
                       to={`/u/${devUsername}`}
@@ -282,6 +316,12 @@ export const RecruiterDashboard: React.FC = () => {
           })}
         </div>
       )}
+
+      <DirectMessageModal
+        isOpen={Boolean(dmTarget)}
+        onClose={() => setDmTarget(null)}
+        developer={dmTarget}
+      />
     </div>
   );
 };

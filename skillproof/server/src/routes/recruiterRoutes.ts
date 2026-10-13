@@ -4,6 +4,7 @@ import {
   getBookmarks,
   setBookmark,
   removeBookmark,
+  getRecruiterProfile,
 } from '../controllers/recruiterController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRecruiter, requireRole } from '../middleware/role.js';
@@ -18,5 +19,8 @@ router.get('/developers', requireRecruiter, searchDevelopers);
 router.get('/bookmarks', requireRole('DEVELOPER', 'RECRUITER', 'ADMIN'), getBookmarks);
 router.post('/bookmarks', requireRole('DEVELOPER', 'RECRUITER', 'ADMIN'), validateBody(bookmarkSchema), setBookmark);
 router.delete('/bookmarks/:developerId', requireRole('DEVELOPER', 'RECRUITER', 'ADMIN'), removeBookmark);
+
+// GET /api/recruiters/:username (mounted at /api/recruiters and /api/recruiter)
+router.get('/:username', getRecruiterProfile);
 
 export default router;

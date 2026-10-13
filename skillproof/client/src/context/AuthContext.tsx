@@ -10,7 +10,20 @@ interface AuthContextType {
   isLoading: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, role?: string, username?: string) => Promise<void>;
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    role?: string,
+    username?: string,
+    extra?: {
+      companyName?: string;
+      jobTitle?: string;
+      companyWebsite?: string;
+      linkedinUrl?: string;
+      bio?: string;
+    }
+  ) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isDeveloper: boolean;
@@ -65,10 +78,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: string,
     password: string,
     role: string = 'DEVELOPER',
-    username?: string
+    username?: string,
+    extra?: {
+      companyName?: string;
+      jobTitle?: string;
+      companyWebsite?: string;
+      linkedinUrl?: string;
+      bio?: string;
+    }
   ) => {
     const normalizedEmail = email.trim().toLowerCase();
-    const res = await api.post('/auth/register', { name: name.trim(), email: normalizedEmail, password, role, username });
+    const res = await api.post('/auth/register', {
+      name: name.trim(),
+      email: normalizedEmail,
+      password,
+      role,
+      username,
+      ...(extra || {}),
+    });
     if (res.data.success) {
       const { token: newToken, user: userData } = res.data.data;
       if (newToken) {

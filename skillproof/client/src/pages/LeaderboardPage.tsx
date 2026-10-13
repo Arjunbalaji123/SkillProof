@@ -3,23 +3,18 @@ import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/LoadingSkeleton';
+import { DirectMessageModal } from '../components/DirectMessageModal';
 import {
   LeaderboardResponse,
-  LeaderboardEntryItem,
   TrackCatalogItem,
-  SkillCatalogItem,
 } from '../types';
 import {
   Trophy,
-  Medal,
   Award,
   ChevronLeft,
   ChevronRight,
-  TrendingUp,
   Flame,
   Layers,
-  Sparkles,
-  ExternalLink,
   MessageSquare,
 } from 'lucide-react';
 
@@ -32,6 +27,14 @@ export const LeaderboardPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dmTarget, setDmTarget] = useState<{
+    name: string;
+    username: string;
+    topSkill?: { language: string; score: number } | null;
+  } | null>(null);
+
+  const isVerifiedRecruiter =
+    user?.role === 'RECRUITER' && Boolean(user?.recruiterProfile?.isVerified);
 
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -418,7 +421,12 @@ export const LeaderboardPage: React.FC = () => {
                         (user.username &&
                           item.username &&
                           user.username.toLowerCase() === item.username.toLowerCase())));
-                  const canMessage = !isSelf && !item.isDemo;
+                  const canRecruiterMessage =
+                    isVerifiedRecruiter &&
+                    !isSelf &&
+                    !item.isDemo &&
+                    item.canDirectMessage !== false &&
+                    item.verifiedSkills.length > 0;
 
                   return (
                     <tr
@@ -484,26 +492,35 @@ export const LeaderboardPage: React.FC = () => {
                         <span className="text-[10px] text-[#64748B] font-semibold">pts</span>
                       </td>
                       <td className="p-3.5 text-right">
-                        {canMessage && item.username ? (
+                        {!isSelf && !item.isDemo && item.username ? (
                           isAuthenticated ? (
-                            <Link
-                              to={`/messages?to=${encodeURIComponent(item.username)}${
-                                item.verifiedSkills[0]
-                                  ? `&skill=${encodeURIComponent(item.verifiedSkills[0])}`
-                                  : ''
-                              }`}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 text-[11px] font-bold transition"
-                            >
-                              <MessageSquare size={12} />
-                              <span>Message</span>
-                            </Link>
+                            canRecruiterMessage ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDmTarget({
+                                    name: item.name,
+                                    username: item.username,
+                                    topSkill: item.verifiedSkills[0]
+                                      ? { language: item.verifiedSkills[0], score: 85 }
+                                      : null,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 text-[11px] font-bold transition"
+                              >
+                                <MessageSquare size={12} />
+                                <span>Message</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">—</span>
+                            )
                           ) : (
                             <Link
                               to="/login"
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[#475569] text-[11px] font-semibold transition"
                             >
                               <MessageSquare size={12} />
-                              <span>Sign in to message</span>
+                              <span>Sign in</span>
                             </Link>
                           )
                         ) : (
@@ -571,6 +588,12 @@ export const LeaderboardPage: React.FC = () => {
           )}
         </div>
       )}
+
+      <DirectMessageModal
+        isOpen={Boolean(dmTarget)}
+        onClose={() => setDmTarget(null)}
+        developer={dmTarget}
+      />
     </div>
   );
 };

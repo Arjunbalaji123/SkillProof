@@ -11,6 +11,8 @@ import { generateAllCatalogQuestions } from './data/catalogQuestions.js';
 import { LeaderboardService } from './services/leaderboardService.js';
 import { ScoringService, QuestionScoreInput } from './services/scoringService.js';
 import { QuestionService } from './services/questionService.js';
+import { OpeningService } from './services/openingService.js';
+import { NotificationService } from './services/notificationService.js';
 
 export const EXPERTS = 10;
 export const INTERMEDIATE = 20;
@@ -454,7 +456,6 @@ async function createAndGradeAssessment(params: {
   // 1. Select 20 questions using the REAL QuestionService
   const selectedQuestions = await QuestionService.selectQuestionsForAssessment({
     userId: params.userId,
-    skillCatalogId: params.skillCatalogId,
     language: params.language,
   });
 
@@ -930,12 +931,276 @@ async function main() {
   await LeaderboardService.rebuildAll();
   const consistency = await LeaderboardService.validateConsistency();
   if (!consistency.valid) {
-    throw new Error(`Leaderboard consistency check failed: ${consistency.discrepancies.join('; ')}`);
+    throw new Error(`Leaderboard consistency check failed: ${consistency.issues.join('; ')}`);
   }
+
+  // 6b. Backfill DeveloperInterest rows from all VERIFIED skills
+  const backfillRes = await OpeningService.backfillInterestsFromVerifiedSkills();
+  console.log(
+    `🎯 DeveloperInterests backfilled from verified skills (${backfillRes.createdInterests} new interests created).`
+  );
+
+  // 6c. Ensure non-demo recruiter (Sarah Jenkins) has a verified RecruiterProfile
+  const sarahRecruiter = await prisma.user.findUnique({
+    where: { email: 'recruiter@techcorp.com' },
+  });
+  if (sarahRecruiter) {
+    await prisma.recruiterProfile.upsert({
+      where: { userId: sarahRecruiter.id },
+      update: { isVerified: true, verifiedAt: now },
+      create: {
+        userId: sarahRecruiter.id,
+        companyName: 'TechCorp Global',
+        jobTitle: 'VP of Engineering Talent',
+        companyWebsite: 'https://techcorp.example.com',
+        linkedinUrl: 'https://linkedin.com/in/sarah-jenkins',
+        bio: 'Leading technical recruiting for distributed systems, AI, and frontend platform teams.',
+        isVerified: true,
+        verifiedAt: now,
+      },
+    });
+  }
+
+  // 6d. Seed 5 Demo Recruiters (isVerified = true, isDemo = true) and 9 Hiring Openings across tracks
+  const demoRecruitersSpec = [
+    {
+      name: 'Claire Vance',
+      username: 'claire_stripe',
+      email: 'rec001@demo.skillproof.test',
+      companyName: 'Stripe FinTech Labs',
+      jobTitle: 'Staff Technical Recruiter',
+      companyWebsite: 'https://stripe.example.com',
+      linkedinUrl: 'https://linkedin.com/in/claire-vance-recruiter',
+      bio: 'Recruiting backend, core Java, and distributed payment engineers.',
+    },
+    {
+      name: 'David Chen',
+      username: 'david_anthropic',
+      email: 'rec002@demo.skillproof.test',
+      companyName: 'Nexus AI Research',
+      jobTitle: 'Head of AI Talent',
+      companyWebsite: 'https://nexus-ai.example.com',
+      linkedinUrl: 'https://linkedin.com/in/david-chen-ai',
+      bio: 'Hiring LLM Prompting, RAG, and GenAI systems engineers.',
+    },
+    {
+      name: 'Elena Martinez',
+      username: 'elena_databricks',
+      email: 'rec003@demo.skillproof.test',
+      companyName: 'DataScale Cloud',
+      jobTitle: 'Principal ML Recruiter',
+      companyWebsite: 'https://datascale.example.com',
+      linkedinUrl: 'https://linkedin.com/in/elena-martinez-ml',
+      bio: 'Building world-class Python and Data Engineering pipelines teams.',
+    },
+    {
+      name: 'Marcus Sterling',
+      username: 'marcus_vercel',
+      email: 'rec004@demo.skillproof.test',
+      companyName: 'PixelCraft UI',
+      jobTitle: 'Frontend Talent Partner',
+      companyWebsite: 'https://pixelcraft.example.com',
+      linkedinUrl: 'https://linkedin.com/in/marcus-sterling-ui',
+      bio: 'Hiring design-obsessed React, JavaScript, and CSS Architecture engineers.',
+    },
+    {
+      name: 'Sonia Kapoor',
+      username: 'sonia_cloudflare',
+      email: 'rec005@demo.skillproof.test',
+      companyName: 'EdgeNet Systems',
+      jobTitle: 'Senior Engineering Recruiter',
+      companyWebsite: 'https://edgenet.example.com',
+      linkedinUrl: 'https://linkedin.com/in/sonia-kapoor-edge',
+      bio: 'Recruiting Core Algorithms, Java, and Full-Stack infrastructure engineers.',
+    },
+  ];
+
+  const createdDemoRecruiters = [];
+  for (const rSpec of demoRecruitersSpec) {
+    const recUser = await prisma.user.create({
+      data: {
+        name: rSpec.name,
+        username: rSpec.username,
+        email: rSpec.email,
+        passwordHash: sharedDemoPasswordHash,
+        role: 'RECRUITER',
+        status: 'ACTIVE',
+        isDemo: true,
+        recruiterProfile: {
+          create: {
+            companyName: rSpec.companyName,
+            jobTitle: rSpec.jobTitle,
+            companyWebsite: rSpec.companyWebsite,
+            linkedinUrl: rSpec.linkedinUrl,
+            bio: rSpec.bio,
+            isVerified: true,
+            verifiedAt: now,
+          },
+        },
+      },
+    });
+    createdDemoRecruiters.push(recUser);
+  }
+
+  const allTracks = await prisma.track.findMany();
+  const trackByName = new Map(allTracks.map((t) => [t.name, t]));
+
+  const demoOpeningsSpec = [
+    {
+      recruiterIdx: 0,
+      title: 'Senior Distributed Systems Engineer (Java)',
+      description:
+        'Architect low-latency settlement services and high-availability ledger infrastructure with strict correctness guarantees.',
+      trackName: 'Core',
+      locationType: 'REMOTE' as const,
+      location: 'San Francisco, CA / Remote',
+      minLevel: 'Intermediate',
+      skills: [
+        { name: 'Java', minScore: 60 },
+        { name: 'Algorithms & Data Structures', minScore: 60 },
+      ],
+    },
+    {
+      recruiterIdx: 0,
+      title: 'Full-Stack Payments Engineer (JavaScript & React)',
+      description:
+        'Build merchant checkout experiences and real-time billing dashboards used by millions of businesses globally.',
+      trackName: 'UI/Frontend',
+      locationType: 'HYBRID' as const,
+      location: 'New York, NY',
+      minLevel: 'Basic',
+      skills: [
+        { name: 'JavaScript', minScore: 50 },
+        { name: 'React', minScore: 50 },
+      ],
+    },
+    {
+      recruiterIdx: 1,
+      title: 'Staff Applied AI Engineer (RAG & Agents)',
+      description:
+        'Design production retrieval-augmented generation pipelines, evaluation harnesses, and multi-step tool-use agents.',
+      trackName: 'AI Engineer',
+      locationType: 'REMOTE' as const,
+      location: 'Remote (Global)',
+      minLevel: 'Intermediate',
+      skills: [
+        { name: 'LLM Prompting & RAG', minScore: 60 },
+        { name: 'GenAI Engineering', minScore: 60 },
+      ],
+    },
+    {
+      recruiterIdx: 1,
+      title: 'AI Platform Python Engineer',
+      description:
+        'Scale asynchronous inference gateways, vector indexing workers, and model telemetry services in Python.',
+      trackName: 'AI Engineer',
+      locationType: 'HYBRID' as const,
+      location: 'San Francisco, CA',
+      minLevel: 'Basic',
+      skills: [
+        { name: 'Python', minScore: 50 },
+        { name: 'LLM Prompting & RAG', minScore: 45 },
+      ],
+    },
+    {
+      recruiterIdx: 2,
+      title: 'Principal Data & ML Platform Engineer',
+      description:
+        'Build petabyte-scale lakehouse ingestion engines, feature stores, and distributed Python data pipelines.',
+      trackName: 'ML Engineer',
+      locationType: 'REMOTE' as const,
+      location: 'Seattle, WA / Remote',
+      minLevel: 'Intermediate',
+      skills: [
+        { name: 'Python', minScore: 65 },
+        { name: 'Data Engineering', minScore: 60 },
+      ],
+    },
+    {
+      recruiterIdx: 2,
+      title: 'Analytics & ETL Pipeline Engineer',
+      description:
+        'Develop reliable streaming ETL jobs, data quality monitors, and warehouse modeling workflows.',
+      trackName: 'ML Engineer',
+      locationType: 'REMOTE' as const,
+      location: 'Austin, TX / Remote',
+      minLevel: 'Basic',
+      skills: [{ name: 'Data Engineering', minScore: 45 }],
+    },
+    {
+      recruiterIdx: 3,
+      title: 'Lead Design Systems & React Architect',
+      description:
+        'Own our component library, accessibility standards, CSS token architecture, and zero-runtime styling performance.',
+      trackName: 'UI/Frontend',
+      locationType: 'REMOTE' as const,
+      location: 'Remote',
+      minLevel: 'Intermediate',
+      skills: [
+        { name: 'React', minScore: 65 },
+        { name: 'CSS Architecture', minScore: 60 },
+      ],
+    },
+    {
+      recruiterIdx: 3,
+      title: 'Frontend Performance Engineer (JavaScript)',
+      description:
+        'Optimize Core Web Vitals, bundle splitting, state synchronization, and browser rendering pipelines.',
+      trackName: 'UI/Frontend',
+      locationType: 'HYBRID' as const,
+      location: 'London, UK',
+      minLevel: 'Basic',
+      skills: [{ name: 'JavaScript', minScore: 55 }],
+    },
+    {
+      recruiterIdx: 4,
+      title: 'Core Runtime & Algorithms Engineer',
+      description:
+        'Implement high-performance routing algorithms, concurrent caching structures, and edge compute primitives.',
+      trackName: 'Core',
+      locationType: 'REMOTE' as const,
+      location: 'Bengaluru / Remote',
+      minLevel: 'Intermediate',
+      skills: [{ name: 'Algorithms & Data Structures', minScore: 60 }],
+    },
+  ];
+
+  let totalMatchedNotifications = 0;
+  for (const opSpec of demoOpeningsSpec) {
+    const recUser = createdDemoRecruiters[opSpec.recruiterIdx];
+    const track = trackByName.get(opSpec.trackName);
+    const expiresAt = new Date(now.getTime() + 45 * 24 * 60 * 60 * 1000);
+
+    const opening = await prisma.opening.create({
+      data: {
+        recruiterId: recUser.id,
+        title: opSpec.title,
+        description: opSpec.description,
+        trackId: track!.id,
+        minLevel: opSpec.minLevel,
+        minScore: opSpec.skills[0]?.minScore ?? 55,
+        positions: 2,
+        status: 'ACTIVE',
+        expiresAt,
+        skills: {
+          create: opSpec.skills.map((s) => ({
+            skillCatalogId: catalogMap[s.name].id,
+          })),
+        },
+      },
+    });
+
+    const notifyRes = await NotificationService.notifyMatches(opening.id);
+    totalMatchedNotifications += notifyRes.notifiedCount;
+  }
+
+  console.log(
+    `📢 Seeded ${createdDemoRecruiters.length} verified demo recruiters and ${demoOpeningsSpec.length} active openings (${totalMatchedNotifications} developer match notifications generated from real DB query).`
+  );
 
   // 7. Print summary table
   const demoUsers = await prisma.user.findMany({
-    where: { isDemo: true },
+    where: { isDemo: true, role: 'DEVELOPER' },
     include: {
       skills: { include: { assessments: { where: { status: 'SUBMITTED' } } } },
       projects: true,

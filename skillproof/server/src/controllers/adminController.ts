@@ -292,7 +292,67 @@ export const serveProctorSnapshot = async (req: AuthRequest, res: Response) => {
 };
 
 // ==========================================
-// Direct Message Reports Moderation
+// Recruiter Verification & Opening Moderation
+// ==========================================
+export const listRecruiters = async (req: AuthRequest, res: Response) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const recruiters = await AdminService.listRecruitersForVerification(status);
+    return sendSuccess(res, 'Recruiters retrieved', recruiters);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve recruiters', 500);
+  }
+};
+
+export const verifyRecruiter = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const targetId = String(req.params.id || req.body.recruiterId || req.body.userId || '');
+    const isVerified = Boolean(req.body.isVerified);
+    const note = req.body.note;
+
+    if (!targetId) {
+      return sendError(res, 'Recruiter ID is required', 400);
+    }
+
+    const updated = await AdminService.verifyRecruiter(adminId, targetId, isVerified, note);
+    return sendSuccess(
+      res,
+      isVerified ? 'Recruiter verified successfully' : 'Recruiter verification revoked',
+      updated
+    );
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update recruiter verification', 400);
+  }
+};
+
+export const listAdminOpenings = async (req: AuthRequest, res: Response) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const openings = await AdminService.listAllOpeningsForAdmin(status);
+    return sendSuccess(res, 'Openings retrieved', openings);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve openings', 500);
+  }
+};
+
+export const moderateAdminOpening = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const openingId = String(req.params.id || req.body.openingId || '');
+    if (!openingId) {
+      return sendError(res, 'Opening ID is required', 400);
+    }
+    const { OpeningService } = await import('../services/openingService.js');
+    const updated = await OpeningService.updateOpening(adminId, openingId, req.body, true);
+    return sendSuccess(res, 'Opening moderated successfully', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to moderate opening', err.statusCode || 400);
+  }
+};
+
+// ==========================================
+// Message Reports Moderation
 // ==========================================
 export const getMessageReports = async (req: AuthRequest, res: Response) => {
   try {
@@ -309,19 +369,21 @@ export const getMessageReports = async (req: AuthRequest, res: Response) => {
 export const resolveMessageReport = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    const reportId = String(req.params.id || '');
-    const action = (req.body.action || 'resolve') as 'resolve' | 'warn' | 'suspend';
-    const note = req.body.note;
-    const updated = await MessageService.resolveAdminMessageReport(
-      adminId,
-      reportId,
-      action,
-      note
-    );
-    return sendSuccess(res, `Message report processed (${action})`, updated);
+    const reportId = String(req.params.id || req.body.reportId || '');
+    const action = req.body.action as string | undefined;
+
+    const options = {
+      deleteMessage: Boolean(req.body.deleteMessage || action === 'delete' || action === 'suspend'),
+      warnSender: Boolean(req.body.warnSender || action === 'warn'),
+      suspendSender: Boolean(req.body.suspendSender || action === 'suspend'),
+    };
+
+    const updated = await MessageService.resolveAdminMessageReport(adminId, reportId, options);
+    return sendSuccess(res, `Message report processed`, updated);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to resolve message report', err.statusCode || 400);
   }
 };
+
 
 

@@ -12,6 +12,7 @@ export class RecruiterService {
   /**
    * Discovers developers who have at least one VERIFIED skill.
    * Recruiter can filter by language, minScore, level, or name/slug.
+   * Never returns emails!
    */
   static async searchVerifiedDevelopers(recruiterId: string, filter: RecruiterSearchFilter) {
     const skillWhere: any = {
@@ -64,6 +65,15 @@ export class RecruiterService {
       },
     });
 
+    const blocks = await prisma.userBlock.findMany({
+      where: {
+        OR: [{ blockerId: recruiterId }, { blockedId: recruiterId }],
+      },
+    });
+    const blockedDevIds = new Set(
+      blocks.map((b) => (b.blockerId === recruiterId ? b.blockedId : b.blockerId))
+    );
+
     // Format developer discovery cards
     return developers.map((dev) => {
       const verifiedSkills = dev.skills
@@ -96,12 +106,24 @@ export class RecruiterService {
           verified: false,
         }));
 
+      const allowRecruiterMessages = Boolean(dev.profile?.allowRecruiterMessages ?? true);
+      const canDirectMessage = Boolean(
+        dev.profile?.isPublic &&
+          allowRecruiterMessages &&
+          !dev.isDemo &&
+          dev.status === 'ACTIVE' &&
+          verifiedSkills.length > 0 &&
+          !blockedDevIds.has(dev.id)
+      );
+
       return {
         id: dev.id,
         name: dev.name,
         username: dev.username,
         publicSlug: dev.username,
         isDemo: Boolean(dev.isDemo),
+        allowRecruiterMessages,
+        canDirectMessage,
         bio: dev.profile?.bio,
         githubUrl: dev.profile?.githubUrl,
         verifiedSkills,
@@ -116,6 +138,7 @@ export class RecruiterService {
 
   /**
    * Retrieves all bookmarked developers for a recruiter with personal notes.
+   * Never returns emails!
    */
   static async getBookmarks(recruiterId: string) {
     const bookmarks = await prisma.bookmark.findMany({
@@ -141,24 +164,47 @@ export class RecruiterService {
       orderBy: { updatedAt: 'desc' },
     });
 
-    return bookmarks.map((b) => ({
-      bookmarkId: b.id,
-      developerId: b.developerId,
-      name: b.developer.name,
-      username: b.developer.username,
-      publicSlug: b.developer.username,
-      isDemo: Boolean(b.developer.isDemo),
-      bio: b.developer.profile?.bio,
-      githubUrl: b.developer.profile?.githubUrl,
-      note: b.note,
-      updatedAt: b.updatedAt,
-      verifiedSkills: b.developer.skills.map((s) => ({
-        language: s.language,
-        score: s.bestScore,
-        level: s.assessments[0]?.level || 'Basic',
-      })),
-      projectCount: b.developer.projects.length,
-    }));
+    const blocks = await prisma.userBlock.findMany({
+      where: {
+        OR: [{ blockerId: recruiterId }, { blockedId: recruiterId }],
+      },
+    });
+    const blockedDevIds = new Set(
+      blocks.map((b) => (b.blockerId === recruiterId ? b.blockedId : b.blockerId))
+    );
+
+    return bookmarks.map((b) => {
+      const allowRecruiterMessages = Boolean(b.developer.profile?.allowRecruiterMessages ?? true);
+      const canDirectMessage = Boolean(
+        b.developer.profile?.isPublic &&
+          allowRecruiterMessages &&
+          !b.developer.isDemo &&
+          b.developer.status === 'ACTIVE' &&
+          b.developer.skills.length > 0 &&
+          !blockedDevIds.has(b.developerId)
+      );
+
+      return {
+        bookmarkId: b.id,
+        developerId: b.developerId,
+        name: b.developer.name,
+        username: b.developer.username,
+        publicSlug: b.developer.username,
+        isDemo: Boolean(b.developer.isDemo),
+        allowRecruiterMessages,
+        canDirectMessage,
+        bio: b.developer.profile?.bio,
+        githubUrl: b.developer.profile?.githubUrl,
+        note: b.note,
+        updatedAt: b.updatedAt,
+        verifiedSkills: b.developer.skills.map((s) => ({
+          language: s.language,
+          score: s.bestScore,
+          level: s.assessments[0]?.level || 'Basic',
+        })),
+        projectCount: b.developer.projects.length,
+      };
+    });
   }
 
   /**
@@ -219,5 +265,99 @@ export class RecruiterService {
 
     return { success: true };
   }
-}
 
+  /**
+   * GET /api/recruiters/:username
+   * Returns recruiter profile (name, company, job title, verified badge, bio, counts; no email).
+   */
+  static async getRecruiterProfileByUsername(username: string, viewerId?: string) {
+    const cleanUsername = String(username || '').trim().toLowerCase();
+    if (!cleanUsername) return null;
+
+    const recruiter = await prisma.user.findUnique({
+      where: { username: cleanUsername },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        status: true,
+        isDemo: true,
+        createdAt: true,
+        recruiterProfile: true,
+        openingsCreated: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            track: true,
+            skills: {
+              include: {
+                skillCatalog: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!recruiter || recruiter.role !== 'RECRUITER' || recruiter.status !== 'ACTIVE') {
+      return null;
+    }
+
+    const now = new Date();
+    const activeOpenings = recruiter.openingsCreated
+      .filter((o) => o.status === 'ACTIVE' && new Date(o.expiresAt) > now)
+      .map((o) => ({
+        id: o.id,
+        title: o.title,
+        track: o.track ? { id: o.track.id, name: o.track.name, title: o.track.name } : null,
+        minLevel: o.minLevel,
+        minScore: o.minScore,
+        positions: o.positions,
+        expiresAt: o.expiresAt,
+        createdAt: o.createdAt,
+        skills: o.skills.map((s) => ({
+          id: s.skillCatalogId,
+          name: s.skillCatalog.name,
+        })),
+      }));
+
+    let existingConversation: { id: string; status: string; origin: string } | null = null;
+    if (viewerId && viewerId !== recruiter.id) {
+      const conv = await prisma.conversation.findUnique({
+        where: {
+          recruiterId_developerId: {
+            recruiterId: recruiter.id,
+            developerId: viewerId,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+          origin: true,
+        },
+      });
+      existingConversation = conv;
+    }
+
+    return {
+      id: recruiter.id,
+      name: recruiter.name,
+      username: recruiter.username,
+      isDemo: Boolean(recruiter.isDemo),
+      companyName: recruiter.recruiterProfile?.companyName || 'Organization',
+      jobTitle: recruiter.recruiterProfile?.jobTitle || 'Recruiter',
+      companyWebsite: recruiter.recruiterProfile?.companyWebsite || null,
+      linkedinUrl: recruiter.recruiterProfile?.linkedinUrl || null,
+      bio: recruiter.recruiterProfile?.bio || null,
+      isVerified: Boolean(recruiter.recruiterProfile?.isVerified),
+      verifiedAt: recruiter.recruiterProfile?.verifiedAt || null,
+      createdAt: recruiter.createdAt,
+      counts: {
+        activeOpenings: activeOpenings.length,
+        totalOpenings: recruiter.openingsCreated.length,
+      },
+      activeOpenings,
+      existingConversation,
+    };
+  }
+}

@@ -7,16 +7,38 @@ export type QuestionType = 'MCQ' | 'MULTI' | 'CODE_OUTPUT' | 'SCENARIO';
 export type SkillLevel = 'Beginner' | 'Basic' | 'Intermediate' | 'Advanced' | 'Expert';
 export type ConfidenceLabel = 'Low' | 'Medium' | 'High';
 
+export interface RecruiterProfile {
+  id?: string;
+  userId?: string;
+  companyName: string;
+  jobTitle: string;
+  companyWebsite?: string | null;
+  linkedinUrl?: string | null;
+  bio?: string | null;
+  isVerified: boolean;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+}
+
+export interface DeveloperInterestItem {
+  id: string;
+  userId: string;
+  trackId?: string | null;
+  skillCatalogId?: string | null;
+}
+
 export interface User {
   id: string;
   username?: string;
   name: string;
-  email: string;
+  email?: string;
   role: UserRole;
   status?: UserStatus;
   isDemo?: boolean;
   createdAt?: string;
   profile?: DeveloperProfile;
+  recruiterProfile?: RecruiterProfile | null;
+  interests?: DeveloperInterestItem[];
 }
 
 export interface DeveloperProfile {
@@ -27,6 +49,8 @@ export interface DeveloperProfile {
   publicSlug: string;
   isPublic: boolean;
   showOnLeaderboard?: boolean;
+  allowRecruiterMessages?: boolean;
+  notificationsPaused?: boolean;
 }
 
 export interface LeaderboardEntryItem {
@@ -35,10 +59,17 @@ export interface LeaderboardEntryItem {
   username: string;
   name: string;
   isDemo?: boolean;
+  allowRecruiterMessages?: boolean;
+  canDirectMessage?: boolean;
   avatar?: string;
   points: number;
   level: string;
   verifiedSkills: string[];
+  topSkill?: {
+    language: string;
+    level: string;
+    score: number;
+  } | null;
   isCurrentUser?: boolean;
 }
 
@@ -216,6 +247,8 @@ export interface VerifiedDeveloperCard {
   isBookmarked?: boolean;
   bookmarkNote?: string | null;
   bookmarkId?: string | null;
+  canDirectMessage?: boolean;
+  allowRecruiterMessages?: boolean;
 }
 
 export interface RecruiterBookmarkItem {
@@ -229,6 +262,8 @@ export interface RecruiterBookmarkItem {
   githubUrl?: string | null;
   note?: string;
   updatedAt: string;
+  canDirectMessage?: boolean;
+  allowRecruiterMessages?: boolean;
   verifiedSkills: {
     language: string;
     score: number;

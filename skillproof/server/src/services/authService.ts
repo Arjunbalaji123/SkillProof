@@ -4,7 +4,18 @@ import { logAudit } from '../utils/audit.js';
 import { signToken } from '../utils/jwt.js';
 
 export class AuthService {
-  static async register(data: { name: string; username?: string; email: string; password: string; role?: string }) {
+  static async register(data: {
+    name: string;
+    username?: string;
+    email: string;
+    password: string;
+    role?: string;
+    companyName?: string;
+    jobTitle?: string;
+    companyWebsite?: string;
+    linkedinUrl?: string;
+    bio?: string;
+  }) {
     const emailNormalized = (data.email || '').trim().toLowerCase();
 
     // Do NOT generate username or publicSlug from data.name. Require explicit username.
@@ -12,9 +23,26 @@ export class AuthService {
 
     // Validate regex: 3-20 chars, ^[a-z0-9_]+$
     if (!/^[a-z0-9_]{3,20}$/.test(usernameNormalized)) {
-      const err: any = new Error('Username must be 3-20 characters long, containing only lowercase letters, numbers, and underscores.');
+      const err: any = new Error(
+        'Username must be 3-20 characters long, containing only lowercase letters, numbers, and underscores.'
+      );
       err.statusCode = 400;
       throw err;
+    }
+
+    const assignedRole =
+      data.role && ['DEVELOPER', 'RECRUITER'].includes(data.role.toUpperCase())
+        ? data.role.toUpperCase()
+        : 'DEVELOPER';
+
+    if (assignedRole === 'RECRUITER') {
+      if (!data.companyName || data.companyName.trim().length < 2 || !data.jobTitle || data.jobTitle.trim().length < 2) {
+        const err: any = new Error(
+          'Registration as RECRUITER requires companyName and jobTitle.'
+        );
+        err.statusCode = 400;
+        throw err;
+      }
     }
 
     const existingEmail = await prisma.user.findFirst({
@@ -36,11 +64,6 @@ export class AuthService {
       throw err;
     }
 
-    // Default role is DEVELOPER; prevent self-assigning ADMIN unless specified
-    const assignedRole = data.role && ['DEVELOPER', 'RECRUITER'].includes(data.role.toUpperCase())
-      ? data.role.toUpperCase()
-      : 'DEVELOPER';
-
     const passwordHash = await bcrypt.hash(data.password, 10);
 
     const createAccountInTx = async (slugToUse: string) => {
@@ -56,14 +79,30 @@ export class AuthService {
         });
 
         let createdProfile = null;
+        let createdRecruiterProfile = null;
+
         if (assignedRole === 'DEVELOPER') {
           createdProfile = await tx.developerProfile.create({
             data: {
               userId: createdUser.id,
               publicSlug: slugToUse,
-              bio: 'Software developer exploring verified skill benchmarks.',
+              bio: data.bio?.trim() || 'Software developer exploring verified skill benchmarks.',
               isPublic: true,
               showOnLeaderboard: true,
+              allowRecruiterMessages: true,
+              notificationsPaused: false,
+            },
+          });
+        } else if (assignedRole === 'RECRUITER') {
+          createdRecruiterProfile = await tx.recruiterProfile.create({
+            data: {
+              userId: createdUser.id,
+              companyName: data.companyName!.trim(),
+              jobTitle: data.jobTitle!.trim(),
+              companyWebsite: data.companyWebsite?.trim() || null,
+              linkedinUrl: data.linkedinUrl?.trim() || null,
+              bio: data.bio?.trim() || null,
+              isVerified: false,
             },
           });
         }
@@ -71,23 +110,24 @@ export class AuthService {
         return {
           ...createdUser,
           profile: createdProfile,
+          recruiterProfile: createdRecruiterProfile,
         };
       });
     };
 
     let user;
     try {
-      // Set publicSlug = username (already validated unique)
       user = await createAccountInTx(usernameNormalized);
     } catch (err: any) {
-      const isP2002 = err?.code === 'P2002' || (typeof err?.message === 'string' && err.message.includes('Unique constraint failed'));
+      const isP2002 =
+        err?.code === 'P2002' ||
+        (typeof err?.message === 'string' && err.message.includes('Unique constraint failed'));
       if (isP2002) {
         const target = Array.isArray(err?.meta?.target)
           ? err.meta.target.join(',')
           : String(err?.meta?.target || err?.message || '');
 
         if (target.includes('publicSlug')) {
-          // Retry once with a numeric suffix and also sync any stale DeveloperProfile row that was holding usernameNormalized
           const staleProfile = await prisma.developerProfile.findUnique({
             where: { publicSlug: usernameNormalized },
             include: { user: true },
@@ -124,7 +164,10 @@ export class AuthService {
       }
     }
 
-    await logAudit(user.id, 'USER_REGISTER', 'User', user.id, { role: user.role, username: user.username });
+    await logAudit(user.id, 'USER_REGISTER', 'User', user.id, {
+      role: user.role,
+      username: user.username,
+    });
 
     const token = signToken({
       userId: user.id,
@@ -143,13 +186,14 @@ export class AuthService {
       where: { email: emailNormalized },
       include: {
         profile: true,
+        recruiterProfile: true,
+        interests: true,
       },
     });
 
     if (!user) {
-      // Fallback case-insensitive / trimmed lookup in case an older row wasn't normalized
       const allMatching = await prisma.user.findMany({
-        include: { profile: true },
+        include: { profile: true, recruiterProfile: true, interests: true },
       });
       user = allMatching.find((u) => u.email.trim().toLowerCase() === emailNormalized) || null;
     }
@@ -173,9 +217,9 @@ export class AuthService {
       throw err;
     }
 
-    // Ensure DeveloperProfile exists if missing for a DEVELOPER account
     if (user.role === 'DEVELOPER' && !user.profile) {
-      const fallbackSlug = user.username || emailNormalized.split('@')[0].replace(/[^a-z0-9_]/g, '_');
+      const fallbackSlug =
+        user.username || emailNormalized.split('@')[0].replace(/[^a-z0-9_]/g, '_');
       const createdProfile = await prisma.developerProfile.create({
         data: {
           userId: user.id,
@@ -183,9 +227,22 @@ export class AuthService {
           publicSlug: fallbackSlug,
           isPublic: true,
           showOnLeaderboard: true,
+          allowRecruiterMessages: true,
+          notificationsPaused: false,
         },
       });
       user = { ...user, profile: createdProfile };
+    } else if (user.role === 'RECRUITER' && !user.recruiterProfile) {
+      const createdRecProfile = await prisma.recruiterProfile.create({
+        data: {
+          userId: user.id,
+          companyName: 'SkillProof Partner',
+          jobTitle: 'Technical Recruiter',
+          isVerified: true,
+          verifiedAt: new Date(),
+        },
+      });
+      user = { ...user, recruiterProfile: createdRecProfile };
     }
 
     await logAudit(user.id, 'USER_LOGIN', 'User', user.id);
@@ -205,6 +262,8 @@ export class AuthService {
       where: { id: userId },
       include: {
         profile: true,
+        recruiterProfile: true,
+        interests: true,
       },
     });
 
@@ -219,7 +278,10 @@ export class AuthService {
       email: user.email,
       role: user.role,
       status: user.status,
+      isDemo: user.isDemo,
       profile: user.profile,
+      recruiterProfile: user.recruiterProfile,
+      interests: user.interests,
     };
   }
 }

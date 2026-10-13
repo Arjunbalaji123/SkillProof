@@ -52,3 +52,19 @@ export const removeBookmark = async (req: AuthRequest, res: Response) => {
     return sendError(res, err.message || 'Failed to remove bookmark', 400);
   }
 };
+
+export const getRecruiterProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    const username = req.params.username as string;
+    const viewerId = req.user?.userId;
+    const profile = await RecruiterService.getRecruiterProfileByUsername(username, viewerId);
+
+    if (!profile) {
+      return sendError(res, 'Recruiter profile not found', 404);
+    }
+
+    return sendSuccess(res, 'Recruiter profile retrieved', profile);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve recruiter profile', 500);
+  }
+};

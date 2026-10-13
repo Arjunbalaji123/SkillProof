@@ -154,18 +154,28 @@ export const searchRateLimiter = createRateLimiter({
   message: 'Search rate limit exceeded, please slow down.',
 });
 
-// Separate rate limiters for direct messaging (never reusing login or global limiters)
+// Separate rate limiters for messaging and openings (never reusing login or global limiters)
 export const messageSendRateLimiter = createUserRateLimiter({
   max: 30,
   windowMs: 60 * 1000, // 30 messages / minute per user
   message: 'Message rate limit exceeded (max 30 messages per minute). Please slow down.',
 });
 
-export const conversationStartRateLimiter = createUserRateLimiter({
+export const directConversationRateLimiter = createUserRateLimiter({
   max: 10,
-  windowMs: 24 * 60 * 60 * 1000, // 10 new conversations / day per user
-  message: 'Daily limit reached: You can start at most 10 new conversations per day.',
+  windowMs: 24 * 60 * 60 * 1000, // 10 direct conversations / day per recruiter
+  message: 'Daily limit of 10 new direct conversations per day reached.',
   countOnlyStatus: 201,
 });
+
+export const conversationStartRateLimiter = directConversationRateLimiter;
+
+export const approachRateLimiter = createUserRateLimiter({
+  max: 5,
+  windowMs: 24 * 60 * 60 * 1000, // 5 approaches / day per developer
+  message: 'Daily limit of 5 approaches per day reached.',
+  countOnlyStatus: 201,
+});
+
 
 

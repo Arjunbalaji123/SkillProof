@@ -631,6 +631,12 @@ export class LeaderboardService {
             username: true,
             name: true,
             isDemo: true,
+            profile: {
+              select: {
+                isPublic: true,
+                allowRecruiterMessages: true,
+              },
+            },
             skills: {
               where: { status: 'VERIFIED' },
               orderBy: { bestScore: 'desc' },
@@ -662,12 +668,17 @@ export class LeaderboardService {
 
       const top = e.user.skills[0];
       const earnedTopLevel = top?.assessments?.[0]?.level || top?.claimedLevel || 'Basic';
+      const allowRecruiterMessages = Boolean(e.user.profile?.allowRecruiterMessages ?? true);
+      const isPublic = Boolean(e.user.profile?.isPublic ?? true);
+
       return {
         rank: e.rank,
         userId: e.user.id,
         username: e.user.username,
         name: e.user.name,
         isDemo: Boolean(e.user.isDemo),
+        allowRecruiterMessages,
+        canDirectMessage: Boolean(!e.user.isDemo && isPublic && allowRecruiterMessages && top),
         avatar: undefined,
         verifiedSkills: parsedSkills,
         points: e.points,

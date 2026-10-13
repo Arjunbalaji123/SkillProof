@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/LoadingSkeleton';
+import { DirectMessageModal } from '../components/DirectMessageModal';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -26,6 +27,10 @@ export const PublicPortfolioPage: React.FC = () => {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [savingBookmark, setSavingBookmark] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [dmOpen, setDmOpen] = useState(false);
+
+  const isVerifiedRecruiter =
+    user?.role === 'RECRUITER' && Boolean(user?.recruiterProfile?.isVerified);
 
   useEffect(() => {
     const fetchPortfolio = async () => {
@@ -102,7 +107,13 @@ export const PublicPortfolioPage: React.FC = () => {
       (user?.username &&
         portfolio.username &&
         user.username.toLowerCase() === portfolio.username.toLowerCase()));
-  const canMessage = !isSelf && !portfolio.isDemo;
+
+  const canRecruiterMessage =
+    isVerifiedRecruiter &&
+    !isSelf &&
+    !portfolio.isDemo &&
+    portfolio.canDirectMessage !== false &&
+    verifiedSkills.length > 0;
 
   const resolveCertUrl = (url?: string | null) => {
     if (!url) return '';
@@ -161,8 +172,8 @@ export const PublicPortfolioPage: React.FC = () => {
               </a>
             )}
 
-            {/* Save (Bookmark) Button inside Developer Page */}
-            {!isSelf && (
+            {/* Save (Bookmark) Button inside Developer Page (for Recruiters or Visitors) */}
+            {!isSelf && (!isAuthenticated || user?.role === 'RECRUITER') && (
               <button
                 type="button"
                 onClick={handleToggleSave}
@@ -184,27 +195,26 @@ export const PublicPortfolioPage: React.FC = () => {
               </button>
             )}
 
-            {/* Direct Message Button (Hidden for yourself and demo accounts) */}
-            {canMessage && portfolio.username && (
+            {/* Direct Message Button: ONLY for verified recruiters when developer is eligible, or Sign in for logged-out visitors */}
+            {!isSelf && !portfolio.isDemo && portfolio.username && (
               isAuthenticated ? (
-                <Link
-                  to={`/messages?to=${encodeURIComponent(portfolio.username)}${
-                    verifiedSkills[0]?.language
-                      ? `&skill=${encodeURIComponent(verifiedSkills[0].language)}`
-                      : ''
-                  }`}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-sm shadow-blue-500/20 transition"
-                >
-                  <MessageSquare size={14} />
-                  <span>Message</span>
-                </Link>
+                canRecruiterMessage ? (
+                  <button
+                    type="button"
+                    onClick={() => setDmOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-sm shadow-blue-500/20 transition"
+                  >
+                    <MessageSquare size={14} />
+                    <span>Message</span>
+                  </button>
+                ) : null
               ) : (
                 <Link
                   to="/login"
                   className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 text-xs font-bold transition"
                 >
                   <MessageSquare size={14} />
-                  <span>Sign in to message</span>
+                  <span>Sign in</span>
                 </Link>
               )
             )}
@@ -417,6 +427,24 @@ export const PublicPortfolioPage: React.FC = () => {
           </div>
         )}
       </div>
+      <DirectMessageModal
+        isOpen={dmOpen}
+        onClose={() => setDmOpen(false)}
+        developer={
+          portfolio
+            ? {
+                name: portfolio.name,
+                username: portfolio.username,
+                topSkill: verifiedSkills[0]
+                  ? {
+                      language: verifiedSkills[0].language,
+                      score: verifiedSkills[0].score || 0,
+                    }
+                  : null,
+              }
+            : null
+        }
+      />
     </div>
   );
 };

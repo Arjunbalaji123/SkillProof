@@ -32,6 +32,7 @@ export const register = async (req: AuthRequest, res: Response) => {
           name: user.name,
           role: user.role,
           profile: user.profile,
+          recruiterProfile: (user as any).recruiterProfile || null,
         },
         token, // also return token for mobile/bearer compatibility
       },
@@ -56,6 +57,8 @@ export const login = async (req: AuthRequest, res: Response) => {
         name: user.name,
         role: user.role,
         profile: user.profile,
+        recruiterProfile: (user as any).recruiterProfile || null,
+        interests: (user as any).interests || [],
       },
       token,
     });

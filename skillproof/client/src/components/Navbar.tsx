@@ -23,6 +23,7 @@ import {
   Loader2,
   RefreshCw,
   MessageSquare,
+  Briefcase,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -42,6 +43,11 @@ export const Navbar: React.FC = () => {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const isPublicLandingOrAuth =
+    location.pathname === '/' ||
+    location.pathname === '/login' ||
+    location.pathname === '/register';
+
   // Fetch unread message count & subscribe to Socket.IO / 30s fallback polling
   useEffect(() => {
     if (!isAuthenticated) {
@@ -54,7 +60,9 @@ export const Navbar: React.FC = () => {
       try {
         const res = await api.get('/messages/unread-count');
         if (res.data?.success) {
-          setUnreadMessageCount(res.data.data.total || 0);
+          setUnreadMessageCount(
+            Number(res.data.data?.count ?? res.data.data?.total ?? 0)
+          );
         }
       } catch {
         // ignore
@@ -64,23 +72,30 @@ export const Navbar: React.FC = () => {
     fetchUnread();
 
     const socket = getSocket();
-    const handleUpdate = () => {
+    const handleMessageUpdate = () => {
       fetchUnread();
     };
+    const handleNotificationNew = (payload: any) => {
+      window.dispatchEvent(new CustomEvent('skillproof:notification-new', { detail: payload }));
+    };
 
-    socket.on('message:new', handleUpdate);
-    socket.on('conversation:updated', handleUpdate);
+    socket.on('message:new', handleMessageUpdate);
+    socket.on('conversation:updated', handleMessageUpdate);
+    socket.on('notification:new', handleNotificationNew);
 
-    // Fall back to polling /api/messages/unread-count every 30 seconds if socket is not connected
+    const handleManualRefresh = () => fetchUnread();
+    window.addEventListener('skillproof:messages-refresh', handleManualRefresh);
+
+    // Fallback: poll unread-count every 30 seconds
     const timer = setInterval(() => {
-      if (!socket.connected) {
-        fetchUnread();
-      }
+      fetchUnread();
     }, 30000);
 
     return () => {
-      socket.off('message:new', handleUpdate);
-      socket.off('conversation:updated', handleUpdate);
+      socket.off('message:new', handleMessageUpdate);
+      socket.off('conversation:updated', handleMessageUpdate);
+      socket.off('notification:new', handleNotificationNew);
+      window.removeEventListener('skillproof:messages-refresh', handleManualRefresh);
       clearInterval(timer);
     };
   }, [isAuthenticated, location.pathname]);
@@ -161,23 +176,6 @@ export const Navbar: React.FC = () => {
     navigate(`/u/${username}`);
   };
 
-  const handleMessageUserFromSearch = (
-    e: React.MouseEvent,
-    username: string,
-    topSkill?: string
-  ) => {
-    e.stopPropagation();
-    setIsSearchOpen(false);
-    setSearchQuery('');
-    setSelectedIndex(-1);
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-    const skillQuery = topSkill ? `&skill=${encodeURIComponent(topSkill)}` : '';
-    navigate(`/messages?to=${encodeURIComponent(username)}${skillQuery}`);
-  };
-
   const handleLogout = async () => {
     disconnectSocket();
     await logout();
@@ -192,7 +190,11 @@ export const Navbar: React.FC = () => {
   };
 
   const isActive = (path: string) =>
-    location.pathname === path || (path === '/messages' && location.pathname.startsWith('/messages'));
+    location.pathname === path ||
+    (path === '/messages' && location.pathname.startsWith('/messages')) ||
+    (path === '/openings' && location.pathname === '/openings') ||
+    (path === '/openings/manage' && location.pathname.startsWith('/openings/manage'));
+
   const isHomePage = location.pathname === '/';
 
   return (
@@ -237,7 +239,7 @@ export const Navbar: React.FC = () => {
               )}
             </div>
 
-            {/* Live Search Results Dropdown */}
+            {/* Live Search Results Dropdown (No Message button on search results) */}
             {isSearchOpen && (
               <div className="absolute left-0 right-0 mt-1.5 bg-white border border-[#E2E8F0] rounded-2xl shadow-xl overflow-hidden z-50 divide-y divide-[#E2E8F0]">
                 {searchResults.length === 0 ? (
@@ -245,61 +247,44 @@ export const Navbar: React.FC = () => {
                     No users found matching "{searchQuery}"
                   </div>
                 ) : (
-                  searchResults.map((u, idx) => {
-                    const isSelf = user?.username?.toLowerCase() === u.username.toLowerCase();
-                    const canMessage = !isSelf && !u.isDemo;
-                    return (
-                      <div
-                        key={u.username}
-                        onClick={() => handleSelectUser(u.username)}
-                        onMouseEnter={() => setSelectedIndex(idx)}
-                        className={`w-full p-3 text-left flex items-center justify-between gap-2 cursor-pointer transition ${
-                          selectedIndex === idx ? 'bg-blue-50/80' : 'hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
-                            {u.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold text-[#0F172A] truncate">{u.name}</p>
-                              {u.isDemo && (
-                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                                  Demo
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] font-mono text-slate-500 truncate">@{u.username}</p>
-                          </div>
+                  searchResults.map((u, idx) => (
+                    <div
+                      key={u.username}
+                      onClick={() => handleSelectUser(u.username)}
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                      className={`w-full p-3 text-left flex items-center justify-between gap-2 cursor-pointer transition ${
+                        selectedIndex === idx ? 'bg-blue-50/80' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
+                          {u.name.charAt(0).toUpperCase()}
                         </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div className="text-right">
-                            <span className="text-xs font-black text-blue-600">{u.points} pts</span>
-                            {u.topSkill && (
-                              <p className="text-[10px] text-slate-500">
-                                {u.topSkill.language} ({u.topSkill.level})
-                              </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold text-[#0F172A] truncate">{u.name}</p>
+                            {u.isDemo && (
+                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                                Demo
+                              </span>
                             )}
                           </div>
-                          {canMessage && (
-                            <button
-                              type="button"
-                              onClick={(e) =>
-                                handleMessageUserFromSearch(e, u.username, u.topSkill?.language)
-                              }
-                              title={isAuthenticated ? `Message @${u.username}` : 'Sign in to message'}
-                              className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#2563EB] text-[10px] font-bold flex items-center gap-1 border border-blue-200 transition"
-                            >
-                              <MessageSquare size={11} />
-                              <span>Message</span>
-                            </button>
+                          <p className="text-[11px] font-mono text-slate-500 truncate">@{u.username}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <span className="text-xs font-black text-blue-600">{u.points} pts</span>
+                          {u.topSkill && (
+                            <p className="text-[10px] text-slate-500">
+                              {u.topSkill.language} ({u.topSkill.level})
+                            </p>
                           )}
                         </div>
                       </div>
-                    );
-                  })
+                    </div>
+                  ))
                 )}
               </div>
             )}
@@ -323,7 +308,6 @@ export const Navbar: React.FC = () => {
             </div>
           ) : (
             <div className="hidden md:flex items-center gap-1">
-              {/* Leaderboard Link always available in app */}
               <Link
                 to="/leaderboard"
                 className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
@@ -360,15 +344,6 @@ export const Navbar: React.FC = () => {
                         Skills
                       </Link>
                       <Link
-                        to="/projects"
-                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                          isActive('/projects') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
-                        }`}
-                      >
-                        <FolderGit2 size={15} />
-                        Projects
-                      </Link>
-                      <Link
                         to="/assessments"
                         className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
                           isActive('/assessments') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
@@ -377,12 +352,43 @@ export const Navbar: React.FC = () => {
                         <Award size={15} />
                         Assessments
                       </Link>
+                      <Link
+                        to="/openings"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/openings')
+                            ? 'bg-blue-50 text-[#2563EB] font-bold'
+                            : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Briefcase size={15} />
+                        Openings
+                      </Link>
+                      <Link
+                        to="/projects"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/projects') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <FolderGit2 size={15} />
+                        Projects
+                      </Link>
                     </>
                   )}
 
                   {/* RECRUITER NAV */}
                   {isRecruiter && (
                     <>
+                      <Link
+                        to="/openings/manage"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/openings/manage')
+                            ? 'bg-blue-50 text-[#2563EB] font-bold'
+                            : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Briefcase size={15} />
+                        Openings
+                      </Link>
                       <Link
                         to="/recruiters/developers"
                         className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
@@ -404,10 +410,11 @@ export const Navbar: React.FC = () => {
                     </>
                   )}
 
-                  {/* MESSAGES NAV ITEM (For Developer and Recruiter, not on Login/Register/Landing) */}
-                  {(isDeveloper || isRecruiter) && (
+                  {/* MESSAGES NAV ITEM (For Developer and Recruiter, not on Login/Register/Public Landing) */}
+                  {(isDeveloper || isRecruiter) && !isPublicLandingOrAuth && (
                     <Link
                       to="/messages"
+                      data-testid="navbar-messages-link"
                       className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
                         isActive('/messages')
                           ? 'bg-blue-50 text-[#2563EB] font-bold'
@@ -417,7 +424,10 @@ export const Navbar: React.FC = () => {
                       <MessageSquare size={15} />
                       <span>Messages</span>
                       {unreadMessageCount > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-[#2563EB] text-white text-[10px] font-extrabold leading-tight">
+                        <span
+                          data-testid="messages-unread-badge"
+                          className="px-1.5 py-0.2 rounded-full bg-[#2563EB] text-white text-[10px] font-extrabold leading-tight"
+                        >
                           {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
                         </span>
                       )}
@@ -453,7 +463,9 @@ export const Navbar: React.FC = () => {
           <div className="hidden md:flex items-center gap-3 shrink-0">
             {isAuthenticated ? (
               <>
-                <NotificationBell />
+                {!isPublicLandingOrAuth && (isDeveloper || isRecruiter || isAdmin) && (
+                  <NotificationBell />
+                )}
 
                 {/* Role Badge */}
                 <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] uppercase tracking-wider">
@@ -495,18 +507,27 @@ export const Navbar: React.FC = () => {
                             View Public Portfolio
                           </Link>
                         )}
+                        {isRecruiter && user?.username && (
+                          <Link
+                            to={`/recruiters/${user.username}`}
+                            onClick={() => setIsUserMenuOpen(false)}
+                            className="px-4 py-2 text-xs font-semibold text-[#2563EB] hover:bg-blue-50 flex items-center gap-2"
+                          >
+                            <ExternalLink size={14} />
+                            View Recruiter Profile
+                          </Link>
+                        )}
                         <Link
                           to="/profile"
                           onClick={() => setIsUserMenuOpen(false)}
                           className="px-4 py-2 text-xs font-semibold text-[#475569] hover:bg-slate-100 flex items-center gap-2"
                         >
                           <UserIcon size={14} />
-                          Manage Profile
+                          Settings & Profile
                         </Link>
                       </div>
 
                       <div className="py-1">
-                        {/* Requirement 4: Switch Account Option */}
                         <button
                           onClick={handleSwitchAccount}
                           className="w-full text-left px-4 py-2 text-xs font-semibold text-[#475569] hover:bg-slate-100 flex items-center gap-2"
@@ -546,7 +567,7 @@ export const Navbar: React.FC = () => {
 
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center gap-2">
-            {isAuthenticated && <NotificationBell />}
+            {isAuthenticated && !isPublicLandingOrAuth && <NotificationBell />}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="p-2 text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 rounded-lg"
@@ -560,7 +581,6 @@ export const Navbar: React.FC = () => {
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
         <div className="md:hidden border-b border-[#E2E8F0] bg-white p-4 space-y-3 shadow-lg">
-          {/* Mobile Search Input */}
           <div className="relative mb-2">
             <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
             <input
@@ -599,18 +619,25 @@ export const Navbar: React.FC = () => {
                     Skills
                   </Link>
                   <Link
-                    to="/projects"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
-                  >
-                    Projects
-                  </Link>
-                  <Link
                     to="/assessments"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Assessments
+                  </Link>
+                  <Link
+                    to="/openings"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                  >
+                    Openings for You
+                  </Link>
+                  <Link
+                    to="/projects"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                  >
+                    Projects
                   </Link>
                   <Link
                     to={`/u/${user?.username || user?.profile?.publicSlug || 'arjun'}`}
@@ -624,6 +651,13 @@ export const Navbar: React.FC = () => {
 
               {isRecruiter && (
                 <>
+                  <Link
+                    to="/openings/manage"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                  >
+                    Manage Openings
+                  </Link>
                   <Link
                     to="/recruiters/developers"
                     onClick={() => setIsMobileMenuOpen(false)}

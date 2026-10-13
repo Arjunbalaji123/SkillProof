@@ -112,22 +112,20 @@ export class SocketService {
           if (!conversationId) return;
 
           // Verify participant on every socket event
-          const participants = await prisma.conversationParticipant.findMany({
-            where: { conversationId },
-            select: { userId: true, status: true },
+          const conv = await prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: { recruiterId: true, developerId: true, status: true },
           });
 
-          const self = participants.find((p) => p.userId === userId);
-          if (!self || self.status !== 'ACTIVE') return;
+          if (!conv || conv.status !== 'ACTIVE') return;
+          if (userId !== conv.recruiterId && userId !== conv.developerId) return;
 
-          const other = participants.find((p) => p.userId !== userId);
-          if (other && other.status === 'ACTIVE') {
-            io.to(`user:${other.userId}`).emit('conversation:typing', {
-              conversationId,
-              userId,
-              isTyping: Boolean(payload?.isTyping),
-            });
-          }
+          const otherUserId = userId === conv.recruiterId ? conv.developerId : conv.recruiterId;
+          io.to(`user:${otherUserId}`).emit('conversation:typing', {
+            conversationId,
+            userId,
+            isTyping: Boolean(payload?.isTyping),
+          });
         } catch {
           // ignore
         }
@@ -138,7 +136,7 @@ export class SocketService {
     return io;
   }
 
-  static emitToUser(userId: string, event: 'message:new' | 'conversation:updated', data: any) {
+  static emitToUser(userId: string, event: 'message:new' | 'conversation:updated' | 'notification:new', data: any) {
     if (!this.io || !userId) return;
     this.io.to(`user:${userId}`).emit(event, data);
   }

@@ -19,38 +19,76 @@ model User {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  profile            DeveloperProfile?
-  skills             Skill[]
-  assessments        Assessment[]
-  projects           Project[]
-  bookmarksCreated   Bookmark[]          @relation("RecruiterBookmarks")
-  bookmarksReceived  Bookmark[]          @relation("DeveloperBookmarks")
-  questionFlags      QuestionFlag[]
-  auditLogs          AuditLog[]
+  profile                  DeveloperProfile?
+  recruiterProfile         RecruiterProfile?
+  interests                DeveloperInterest[]
+  skills                   Skill[]
+  assessments              Assessment[]
+  projects                 Project[]
+  bookmarksCreated         Bookmark[]                @relation("RecruiterBookmarks")
+  bookmarksReceived        Bookmark[]                @relation("DeveloperBookmarks")
+  questionFlags            QuestionFlag[]
+  auditLogs                AuditLog[]
   leaderboardEntries       LeaderboardEntry[]
   proctorEvents            ProctorEvent[]
   skillLockouts            SkillLockout[]
-  conversationsAsA         Conversation[]            @relation("ConversationUserA")
-  conversationsAsB         Conversation[]            @relation("ConversationUserB")
+  openingsCreated          Opening[]                 @relation("RecruiterOpenings")
+  approachesSent           Approach[]                @relation("DeveloperApproaches")
+  conversationsAsRecruiter Conversation[]            @relation("ConversationRecruiter")
+  conversationsAsDeveloper Conversation[]            @relation("ConversationDeveloper")
   conversationParticipants ConversationParticipant[]
   messagesSent             Message[]
   blocksCreated            UserBlock[]               @relation("UserBlocker")
   blocksReceived           UserBlock[]               @relation("UserBlocked")
   messageReportsCreated    MessageReport[]           @relation("MessageReporter")
   messageReportsResolved   MessageReport[]           @relation("MessageReportResolver")
+  notifications            Notification[]
 }
 
 model DeveloperProfile {
-  id                 String   @id @default(uuid())
-  userId             String   @unique
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bio                String?
-  githubUrl          String?
-  publicSlug         String   @unique
-  isPublic           Boolean  @default(true)
-  showOnLeaderboard  Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                     String   @id @default(uuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio                    String?
+  githubUrl              String?
+  publicSlug             String   @unique
+  isPublic               Boolean  @default(true)
+  showOnLeaderboard      Boolean  @default(true)
+  allowRecruiterMessages Boolean  @default(true)
+  notificationsPaused    Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model RecruiterProfile {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName    String
+  jobTitle       String
+  companyWebsite String?
+  linkedinUrl    String?
+  bio            String?
+  isVerified     Boolean   @default(false)
+  verifiedBy     String?
+  verifiedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model DeveloperInterest {
+  id             String        @id @default(uuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackId        String?
+  track          Track?        @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  skillCatalogId String?
+  skillCatalog   SkillCatalog? @relation(fields: [skillCatalogId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@index([userId])
+  @@index([trackId])
+  @@index([skillCatalogId])
 }
 
 model LeaderboardEntry {
@@ -72,32 +110,36 @@ model LeaderboardEntry {
 }
 
 model Track {
-  id          String         @id @default(uuid())
-  name        String         @unique
+  id          String              @id @default(uuid())
+  name        String              @unique
   description String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
   skills      SkillCatalog[]
+  openings    Opening[]
+  interests   DeveloperInterest[]
 }
 
 model SkillCatalog {
-  id            String       @id @default(uuid())
+  id            String              @id @default(uuid())
   trackId       String
-  track         Track        @relation(fields: [trackId], references: [id], onDelete: Cascade)
-  name          String       @unique
-  slug          String       @unique
+  track         Track               @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  name          String              @unique
+  slug          String              @unique
   description   String?
-  durationSec   Int          @default(1800)
-  questionCount Int          @default(20)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  durationSec   Int                 @default(1800)
+  questionCount Int                 @default(20)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   topics        Topic[]
   skills        Skill[]
   questions     Question[]
   assessments   Assessment[]
   lockouts      SkillLockout[]
+  openingSkills OpeningSkill[]
+  interests     DeveloperInterest[]
 
   @@index([trackId])
 }
@@ -307,22 +349,81 @@ model AuditLog {
   @@index([entity, entityId])
 }
 
+model Opening {
+  id          String         @id @default(uuid())
+  recruiterId String
+  recruiter   User           @relation("RecruiterOpenings", fields: [recruiterId], references: [id], onDelete: Cascade)
+  title       String
+  trackId     String
+  track       Track          @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  description String
+  minLevel    String?        // Basic | Intermediate | Advanced | Expert
+  minScore    Float?
+  positions   Int            @default(1)
+  status      String         @default("ACTIVE") // ACTIVE | PAUSED | CLOSED | EXPIRED
+  expiresAt   DateTime
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  skills        OpeningSkill[]
+  approaches    Approach[]
+  conversations Conversation[]
+
+  @@index([recruiterId, status])
+  @@index([trackId, status])
+  @@index([status, expiresAt])
+}
+
+model OpeningSkill {
+  id             String       @id @default(uuid())
+  openingId      String
+  opening        Opening      @relation(fields: [openingId], references: [id], onDelete: Cascade)
+  skillCatalogId String
+  skillCatalog   SkillCatalog @relation(fields: [skillCatalogId], references: [id], onDelete: Cascade)
+
+  @@unique([openingId, skillCatalogId])
+  @@index([skillCatalogId])
+}
+
+model Approach {
+  id          String    @id @default(uuid())
+  openingId   String
+  opening     Opening   @relation(fields: [openingId], references: [id], onDelete: Cascade)
+  developerId String
+  developer   User      @relation("DeveloperApproaches", fields: [developerId], references: [id], onDelete: Cascade)
+  message     String    // max 500
+  status      String    @default("PENDING") // PENDING | ACCEPTED | DECLINED | SAVED
+  createdAt   DateTime  @default(now())
+  decidedAt   DateTime?
+
+  @@unique([openingId, developerId])
+  @@index([developerId, createdAt])
+  @@index([openingId, status])
+}
+
 model Conversation {
-  id            String                    @id @default(uuid())
-  userAId       String
-  userA         User                      @relation("ConversationUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userBId       String
-  userB         User                      @relation("ConversationUserB", fields: [userBId], references: [id], onDelete: Cascade)
-  createdAt     DateTime                  @default(now())
-  lastMessageAt DateTime                  @default(now())
+  id                     String                    @id @default(uuid())
+  recruiterId            String
+  recruiter              User                      @relation("ConversationRecruiter", fields: [recruiterId], references: [id], onDelete: Cascade)
+  developerId            String
+  developer              User                      @relation("ConversationDeveloper", fields: [developerId], references: [id], onDelete: Cascade)
+  origin                 String                    @default("OPENING") // OPENING | DIRECT
+  openingId              String?
+  opening                Opening?                  @relation(fields: [openingId], references: [id], onDelete: SetNull)
+  initiatedByRecruiterId String?
+  directReason           String?
+  status                 String                    @default("PENDING_APPROVAL") // PENDING_APPROVAL | ACTIVE | CLOSED | BLOCKED
+  unlockedAt             DateTime?
+  lastMessageAt          DateTime                  @default(now())
+  createdAt              DateTime                  @default(now())
 
-  participants  ConversationParticipant[]
-  messages      Message[]
+  participants ConversationParticipant[]
+  messages     Message[]
 
-  @@unique([userAId, userBId])
-  @@index([userAId])
-  @@index([userBId])
-  @@index([lastMessageAt])
+  @@unique([recruiterId, developerId])
+  @@index([recruiterId, lastMessageAt])
+  @@index([developerId, lastMessageAt])
+  @@index([openingId])
 }
 
 model ConversationParticipant {
@@ -331,14 +432,14 @@ model ConversationParticipant {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   userId         String
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status         String       @default("ACTIVE") // ACTIVE | REQUEST | DECLINED | ARCHIVED
   lastReadAt     DateTime?
   muted          Boolean      @default(false)
+  archived       Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@unique([conversationId, userId])
-  @@index([userId, status])
+  @@index([userId, archived])
 }
 
 model Message {
@@ -386,4 +487,20 @@ model MessageReport {
   @@index([reporterId])
   @@index([resolved])
 }
+
+model Notification {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String    // OPENING_MATCH | APPROACH_ACCEPTED | APPROACH_DECLINED | NEW_MESSAGE | SYSTEM
+  title      String
+  body       String
+  entityType String
+  entityId   String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
 

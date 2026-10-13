@@ -286,12 +286,202 @@ export class AdminService {
     const user = await prisma.user.update({
       where: { id: userId },
       data: { status },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+      },
     });
 
     await LeaderboardService.recalculateUser(userId);
 
     await logAudit(adminId, 'USER_STATUS_UPDATED', 'User', userId, { newStatus: status });
     return user;
+  }
+
+  /**
+   * Recruiter verification queue (never exposes emails)
+   */
+  static async listRecruitersForVerification(statusFilter?: string) {
+    const recruiters = await prisma.user.findMany({
+      where: {
+        role: 'RECRUITER',
+        ...(statusFilter === 'PENDING'
+          ? { recruiterProfile: { isVerified: false } }
+          : statusFilter === 'VERIFIED'
+          ? { recruiterProfile: { isVerified: true } }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        status: true,
+        isDemo: true,
+        createdAt: true,
+        recruiterProfile: true,
+        _count: {
+          select: {
+            openingsCreated: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return recruiters.map((r) => ({
+      id: r.id,
+      recruiterProfileId: r.recruiterProfile?.id || null,
+      name: r.name,
+      username: r.username,
+      status: r.status,
+      isDemo: Boolean(r.isDemo),
+      createdAt: r.createdAt,
+      companyName: r.recruiterProfile?.companyName || '',
+      jobTitle: r.recruiterProfile?.jobTitle || '',
+      companyWebsite: r.recruiterProfile?.companyWebsite || null,
+      linkedinUrl: r.recruiterProfile?.linkedinUrl || null,
+      bio: r.recruiterProfile?.bio || null,
+      isVerified: Boolean(r.recruiterProfile?.isVerified),
+      verifiedBy: r.recruiterProfile?.verifiedBy || null,
+      verifiedAt: r.recruiterProfile?.verifiedAt || null,
+      openingsCount: r._count.openingsCreated,
+    }));
+  }
+
+  /**
+   * Approve or reject recruiter verification
+   */
+  static async verifyRecruiter(
+    adminId: string,
+    targetId: string,
+    isVerified: boolean,
+    note?: string
+  ) {
+    // targetId may be user.id or recruiterProfile.id
+    let recProfile = await prisma.recruiterProfile.findFirst({
+      where: {
+        OR: [{ userId: targetId }, { id: targetId }],
+      },
+    });
+
+    if (!recProfile) {
+      const user = await prisma.user.findUnique({ where: { id: targetId } });
+      if (!user || user.role !== 'RECRUITER') {
+        throw new Error('Recruiter not found');
+      }
+      recProfile = await prisma.recruiterProfile.create({
+        data: {
+          userId: user.id,
+          companyName: 'Organization',
+          jobTitle: 'Recruiter',
+          isVerified,
+          verifiedBy: isVerified ? adminId : null,
+          verifiedAt: isVerified ? new Date() : null,
+        },
+      });
+    } else {
+      recProfile = await prisma.recruiterProfile.update({
+        where: { id: recProfile.id },
+        data: {
+          isVerified,
+          verifiedBy: isVerified ? adminId : null,
+          verifiedAt: isVerified ? new Date() : null,
+        },
+      });
+    }
+
+    await prisma.notification.create({
+      data: {
+        userId: recProfile.userId,
+        type: 'SYSTEM',
+        title: isVerified ? 'Recruiter Account Verified' : 'Recruiter Verification Updated',
+        body: isVerified
+          ? 'Your recruiter account has been verified! You can now publish openings and message eligible developers.'
+          : `Your recruiter verification status is currently unverified.${note ? ` Note: ${note}` : ''}`,
+        entityType: 'RecruiterProfile',
+        entityId: recProfile.id,
+      },
+    });
+
+    await logAudit(adminId, 'RECRUITER_VERIFICATION_UPDATED', 'RecruiterProfile', recProfile.id, {
+      recruiterUserId: recProfile.userId,
+      isVerified,
+      note: note || null,
+    });
+
+    return recProfile;
+  }
+
+  /**
+   * List all openings across the platform for admin moderation (never exposes emails)
+   */
+  static async listAllOpeningsForAdmin(statusFilter?: string) {
+    const openings = await prisma.opening.findMany({
+      where:
+        statusFilter && statusFilter !== 'ALL'
+          ? { status: statusFilter }
+          : {},
+      include: {
+        track: true,
+        skills: {
+          include: {
+            skillCatalog: true,
+          },
+        },
+        recruiter: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            isDemo: true,
+            recruiterProfile: {
+              select: {
+                companyName: true,
+                jobTitle: true,
+                isVerified: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            approaches: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return openings.map((o) => ({
+      id: o.id,
+      title: o.title,
+      description: o.description,
+      status: o.status,
+      minLevel: o.minLevel,
+      minScore: o.minScore,
+      positions: o.positions,
+      expiresAt: o.expiresAt,
+      createdAt: o.createdAt,
+      track: o.track ? { id: o.track.id, name: o.track.name, title: o.track.name } : null,
+      skills: o.skills.map((s) => ({
+        id: s.skillCatalogId,
+        name: s.skillCatalog.name,
+      })),
+      recruiter: {
+        id: o.recruiter.id,
+        name: o.recruiter.name,
+        username: o.recruiter.username,
+        isDemo: Boolean(o.recruiter.isDemo),
+        companyName: o.recruiter.recruiterProfile?.companyName || '',
+        jobTitle: o.recruiter.recruiterProfile?.jobTitle || '',
+        isVerified: Boolean(o.recruiter.recruiterProfile?.isVerified),
+      },
+      approachCount: o._count.approaches,
+    }));
   }
 
   /**

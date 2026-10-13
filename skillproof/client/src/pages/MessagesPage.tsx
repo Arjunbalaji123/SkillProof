@@ -18,45 +18,65 @@ import {
   CheckCheck,
   Clock,
   ChevronLeft,
-  Sparkles,
   ShieldAlert,
-  UserPlus,
   Loader2,
   X,
-  Inbox,
-  MailQuestion,
   CheckCircle2,
+  Briefcase,
+  Lock,
   XCircle,
 } from 'lucide-react';
 
-interface PeerUser {
+interface OtherParticipantUser {
   id: string;
-  username: string | null;
   name: string;
+  username: string | null;
   role: string;
   isDemo: boolean;
+  companyName?: string;
+  jobTitle?: string;
+  isVerified?: boolean;
   bio: string | null;
-  githubUrl: string | null;
-  topSkill?: {
+  verifiedSkills: Array<{
     language: string;
-    level: string;
-    score: number;
-  } | null;
+    score: number | null;
+    level: string | null;
+  }>;
+}
+
+interface ComposerState {
+  canSend: boolean;
+  reason: string | null;
 }
 
 interface ConversationSummary {
   id: string;
-  createdAt: string;
+  origin: 'OPENING' | 'DIRECT';
+  status: 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'BLOCKED';
+  unlockedAt: string | null;
+  directReason: string | null;
   lastMessageAt: string;
-  myStatus: 'ACTIVE' | 'REQUEST' | 'DECLINED' | 'ARCHIVED';
-   peerStatus: 'ACTIVE' | 'REQUEST' | 'DECLINED' | 'ARCHIVED';
-  isPending: boolean;
+  createdAt: string;
+  label: string;
+  opening: {
+    id: string;
+    title: string;
+    status: string;
+  } | null;
+  approach: {
+    id: string;
+    status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'SAVED';
+    openingId: string;
+  } | null;
   muted: boolean;
+  archived: boolean;
   lastReadAt: string | null;
-  peerLastReadAt: string | null;
+  otherLastReadAt: string | null;
   unreadCount: number;
   isBlockedByMe: boolean;
-  otherUser: PeerUser;
+  isBlocked: boolean;
+  composerState: ComposerState;
+  otherUser: OtherParticipantUser;
   lastMessage: {
     id: string;
     senderId: string;
@@ -69,74 +89,38 @@ interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
-  sender?: {
-    id: string;
-    username: string | null;
-    name: string;
-    role: string;
-  };
+  senderName?: string;
+  senderUsername?: string | null;
   body: string;
   createdAt: string;
-  readByRecipient: boolean;
 }
 
-interface ConversationDetail {
-  id: string;
-  createdAt: string;
-  lastMessageAt: string;
-  myParticipant: {
-    userId: string;
-    status: 'ACTIVE' | 'REQUEST' | 'DECLINED' | 'ARCHIVED';
-    muted: boolean;
-    lastReadAt: string | null;
-  };
-  otherParticipant: {
-    userId: string;
-    status: 'ACTIVE' | 'REQUEST' | 'DECLINED' | 'ARCHIVED';
-    lastReadAt: string | null;
-    user: PeerUser;
-  };
-  isPending: boolean;
-  pendingMessagesSent: number;
-  pendingMessageLimit: number;
-  isBlockedByMe: boolean;
-  isBlockedByPeer: boolean;
-  canSend: boolean;
+interface ConversationDetailResponse {
+  conversation: Omit<ConversationSummary, 'unreadCount' | 'lastMessage'>;
   messages: ChatMessage[];
   nextCursor: string | null;
-  hasMore: boolean;
 }
-
-type TabType = 'inbox' | 'requests' | 'archived';
 
 export const MessagesPage: React.FC = () => {
   const { conversationId: routeConvId } = useParams<{ conversationId?: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const targetUsernameParam = searchParams.get('to');
-  const targetSkillParam = searchParams.get('skill');
+  const [searchParams] = useSearchParams();
+  const queryConvId = searchParams.get('conversationId');
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  const initialConvId = routeConvId || queryConvId || null;
+
   // Left panel state
-  const [activeTab, setActiveTab] = useState<TabType>('inbox');
   const [searchQuery, setSearchQuery] = useState('');
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
-  const [unreadCounts, setUnreadCounts] = useState({ inboxUnread: 0, requestsCount: 0, total: 0 });
+  const [totalUnread, setTotalUnread] = useState(0);
 
   // Right panel state
-  const [selectedConvId, setSelectedConvId] = useState<string | null>(routeConvId || null);
-  const [activeConv, setActiveConv] = useState<ConversationDetail | null>(null);
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(initialConvId);
+  const [activeConv, setActiveConv] = useState<ConversationDetailResponse | null>(null);
   const [loadingConv, setLoadingConv] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-
-  // New conversation draft state (when ?to=<username> or user picks someone not yet messaged)
-  const [draftRecipient, setDraftRecipient] = useState<{
-    username: string;
-    name: string;
-    role: string;
-    topSkill?: string | null;
-  } | null>(null);
 
   // Composer state
   const [messageBody, setMessageBody] = useState('');
@@ -150,8 +134,8 @@ export const MessagesPage: React.FC = () => {
   const [reportReason, setReportReason] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
 
-  // Mobile responsive toggle: if true, show chat panel on mobile
-  const [mobileShowChat, setMobileShowChat] = useState<boolean>(Boolean(routeConvId || targetUsernameParam));
+  // Mobile responsive toggle
+  const [mobileShowChat, setMobileShowChat] = useState<boolean>(Boolean(initialConvId));
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
@@ -167,62 +151,54 @@ export const MessagesPage: React.FC = () => {
     }, 60);
   };
 
-  // Fetch unread counts
-  const fetchUnreadCounts = useCallback(async () => {
+  const fetchUnreadCount = useCallback(async () => {
     try {
       const res = await api.get('/messages/unread-count');
-      if (res.data?.success) {
-        setUnreadCounts(res.data.data);
+      if (res.data?.success && res.data.data) {
+        const count =
+          typeof res.data.data.unreadCount === 'number'
+            ? res.data.data.unreadCount
+            : typeof res.data.data.total === 'number'
+            ? res.data.data.total
+            : 0;
+        setTotalUnread(count);
       }
     } catch {
       // ignore
     }
   }, []);
 
-  // Fetch conversation list for current tab & search
-  const fetchConversations = useCallback(
-    async (silent = false) => {
-      if (!silent) setLoadingList(true);
-      try {
-        const params = new URLSearchParams({ tab: activeTab });
-        if (searchQuery.trim()) {
-          params.set('search', searchQuery.trim());
-        }
-        const res = await api.get(`/messages/conversations?${params.toString()}`);
-        if (res.data?.success) {
-          setConversations(res.data.data || []);
-        }
-      } catch (err: any) {
-        console.error('Failed to load conversations:', err);
-      } finally {
-        if (!silent) setLoadingList(false);
+  const fetchConversations = useCallback(async (silent = false) => {
+    if (!silent) setLoadingList(true);
+    try {
+      const res = await api.get('/messages/conversations');
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setConversations(res.data.data);
       }
-    },
-    [activeTab, searchQuery]
-  );
+    } catch (err) {
+      console.error('Failed to load conversations:', err);
+    } finally {
+      if (!silent) setLoadingList(false);
+    }
+  }, []);
 
-  // Fetch single conversation detail
   const fetchConversationDetail = useCallback(
     async (convId: string, silent = false) => {
       if (!silent) setLoadingConv(true);
       setErrorBanner(null);
       try {
-        const res = await api.get(`/messages/conversations/${convId}`);
-        if (res.data?.success) {
-          const detail: ConversationDetail = res.data.data;
+        const res = await api.get(`/messages/conversations/${convId}/messages`);
+        if (res.data?.success && res.data.data) {
+          const detail: ConversationDetailResponse = res.data.data;
           setActiveConv(detail);
-          setDraftRecipient(null);
           if (!silent) {
             scrollToBottom('auto');
           }
-          // Mark read if we have unread messages and status is ACTIVE
-          if (detail.myParticipant.status === 'ACTIVE') {
-            await api.post(`/messages/conversations/${convId}/read`).catch(() => {});
-            fetchUnreadCounts();
-            setConversations((prev) =>
-              prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
-            );
-          }
+          await api.post(`/messages/conversations/${convId}/read`).catch(() => {});
+          fetchUnreadCount();
+          setConversations((prev) =>
+            prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
+          );
         }
       } catch (err: any) {
         setErrorBanner(err.response?.data?.message || 'Unable to load conversation.');
@@ -230,24 +206,23 @@ export const MessagesPage: React.FC = () => {
         if (!silent) setLoadingConv(false);
       }
     },
-    [fetchUnreadCounts]
+    [fetchUnreadCount]
   );
 
-  // Sync route param with selectedConvId
+  // Sync route / query param with selectedConvId
   useEffect(() => {
-    if (routeConvId && routeConvId !== selectedConvId) {
-      setSelectedConvId(routeConvId);
+    const nextId = routeConvId || queryConvId || null;
+    if (nextId && nextId !== selectedConvId) {
+      setSelectedConvId(nextId);
       setMobileShowChat(true);
     }
-  }, [routeConvId, selectedConvId]);
+  }, [routeConvId, queryConvId, selectedConvId]);
 
-  // Load conversations when tab or search changes
   useEffect(() => {
     fetchConversations();
-    fetchUnreadCounts();
-  }, [fetchConversations, fetchUnreadCounts]);
+    fetchUnreadCount();
+  }, [fetchConversations, fetchUnreadCount]);
 
-  // Load selected conversation details
   useEffect(() => {
     if (selectedConvId) {
       fetchConversationDetail(selectedConvId);
@@ -256,79 +231,13 @@ export const MessagesPage: React.FC = () => {
     }
   }, [selectedConvId, fetchConversationDetail]);
 
-  // Handle ?to=<username> query parameter to open existing or draft conversation
-  useEffect(() => {
-    if (!targetUsernameParam) return;
-    const cleanTarget = targetUsernameParam.trim().toLowerCase().replace(/^@/, '');
-    if (!cleanTarget) return;
-
-    const resolveRecipient = async () => {
-      try {
-        // First check if we already have a conversation with this username across inbox/requests
-        const [inboxRes, reqRes] = await Promise.all([
-          api.get('/messages/conversations?tab=inbox'),
-          api.get('/messages/conversations?tab=requests'),
-        ]);
-        const allConvs: ConversationSummary[] = [
-          ...(inboxRes.data?.data || []),
-          ...(reqRes.data?.data || []),
-        ];
-        const existing = allConvs.find(
-          (c) => c.otherUser.username?.toLowerCase() === cleanTarget
-        );
-
-        if (existing) {
-          setSelectedConvId(existing.id);
-          setDraftRecipient(null);
-          setMobileShowChat(true);
-          navigate(`/messages/${existing.id}`, { replace: true });
-          return;
-        }
-
-        // Otherwise fetch public profile or search user info to show new message composer
-        try {
-          const profRes = await api.get(`/profile/public/${encodeURIComponent(cleanTarget)}`);
-          if (profRes.data?.success && profRes.data.data) {
-            const p = profRes.data.data;
-            const topSkill = p.verifiedSkills?.[0]?.language || targetSkillParam || null;
-            setSelectedConvId(null);
-            setActiveConv(null);
-            setDraftRecipient({
-              username: p.username || cleanTarget,
-              name: p.name || cleanTarget,
-              role: p.role || 'DEVELOPER',
-              topSkill,
-            });
-            setMobileShowChat(true);
-            return;
-          }
-        } catch {
-          // fallback if recruiter without public developer profile
-          setSelectedConvId(null);
-          setActiveConv(null);
-          setDraftRecipient({
-            username: cleanTarget,
-            name: `@${cleanTarget}`,
-            role: 'USER',
-            topSkill: targetSkillParam || null,
-          });
-          setMobileShowChat(true);
-        }
-      } catch (err) {
-        console.error('Error resolving recipient:', err);
-      }
-    };
-
-    resolveRecipient();
-  }, [targetUsernameParam, targetSkillParam, navigate]);
-
   // Socket.IO real-time listener + 30s fallback polling when socket disconnected
   useEffect(() => {
     const socket = getSocket();
 
     const handleNewMessage = (payload: { conversationId: string; message: ChatMessage }) => {
       fetchConversations(true);
-      fetchUnreadCounts();
+      fetchUnreadCount();
 
       if (selectedConvId && payload.conversationId === selectedConvId) {
         setActiveConv((prev) => {
@@ -345,9 +254,9 @@ export const MessagesPage: React.FC = () => {
       }
     };
 
-    const handleConversationUpdated = (payload: { conversationId: string; event: string }) => {
+    const handleConversationUpdated = (payload: { conversationId: string }) => {
       fetchConversations(true);
-      fetchUnreadCounts();
+      fetchUnreadCount();
       if (selectedConvId && payload.conversationId === selectedConvId) {
         fetchConversationDetail(selectedConvId, true);
       }
@@ -356,10 +265,9 @@ export const MessagesPage: React.FC = () => {
     socket.on('message:new', handleNewMessage);
     socket.on('conversation:updated', handleConversationUpdated);
 
-    // 30-second fallback polling if socket is not connected
     const pollInterval = setInterval(() => {
       if (!socket.connected) {
-        fetchUnreadCounts();
+        fetchUnreadCount();
         fetchConversations(true);
         if (selectedConvId) {
           fetchConversationDetail(selectedConvId, true);
@@ -372,7 +280,7 @@ export const MessagesPage: React.FC = () => {
       socket.off('conversation:updated', handleConversationUpdated);
       clearInterval(pollInterval);
     };
-  }, [selectedConvId, fetchConversations, fetchUnreadCounts, fetchConversationDetail]);
+  }, [selectedConvId, fetchConversations, fetchUnreadCount, fetchConversationDetail]);
 
   // Close header menu on outside click
   useEffect(() => {
@@ -385,16 +293,17 @@ export const MessagesPage: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Load older messages (cursor pagination)
   const handleLoadOlder = async () => {
-    if (!activeConv || !activeConv.hasMore || !activeConv.nextCursor || loadingOlder) return;
+    if (!activeConv || !activeConv.nextCursor || loadingOlder) return;
     setLoadingOlder(true);
     try {
       const res = await api.get(
-        `/messages/conversations/${activeConv.id}?cursor=${encodeURIComponent(activeConv.nextCursor)}`
+        `/messages/conversations/${activeConv.conversation.id}/messages?cursor=${encodeURIComponent(
+          activeConv.nextCursor
+        )}`
       );
-      if (res.data?.success) {
-        const olderData: ConversationDetail = res.data.data;
+      if (res.data?.success && res.data.data) {
+        const olderData: ConversationDetailResponse = res.data.data;
         setActiveConv((prev) => {
           if (!prev) return prev;
           const existingIds = new Set(prev.messages.map((m) => m.id));
@@ -403,7 +312,6 @@ export const MessagesPage: React.FC = () => {
             ...prev,
             messages: [...uniqueOlder, ...prev.messages],
             nextCursor: olderData.nextCursor,
-            hasMore: olderData.hasMore,
           };
         });
       }
@@ -414,57 +322,32 @@ export const MessagesPage: React.FC = () => {
     }
   };
 
-  // Send message or start conversation
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = messageBody.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || !selectedConvId) return;
 
     setSending(true);
     setErrorBanner(null);
 
     try {
-      if (draftRecipient && !selectedConvId) {
-        const res = await api.post('/messages/conversations', {
-          recipientUsername: draftRecipient.username,
-          body: trimmed,
+      const res = await api.post(`/messages/conversations/${selectedConvId}/messages`, {
+        body: trimmed,
+      });
+      if (res.data?.success && res.data.data) {
+        const newMsg: ChatMessage = res.data.data;
+        setMessageBody('');
+        setActiveConv((prev) => {
+          if (!prev) return prev;
+          const exists = prev.messages.some((m) => m.id === newMsg.id);
+          return {
+            ...prev,
+            messages: exists ? prev.messages : [...prev.messages, newMsg],
+          };
         });
-        if (res.data?.success) {
-          const newConvId = res.data.data.conversation.id;
-          setMessageBody('');
-          setDraftRecipient(null);
-          setSearchParams({});
-          setSelectedConvId(newConvId);
-          navigate(`/messages/${newConvId}`, { replace: true });
-          await fetchConversations(true);
-          await fetchConversationDetail(newConvId);
-        }
-      } else if (selectedConvId) {
-        const res = await api.post(`/messages/conversations/${selectedConvId}/messages`, {
-          body: trimmed,
-        });
-        if (res.data?.success) {
-          const newMsg: ChatMessage = res.data.data;
-          setMessageBody('');
-          setActiveConv((prev) => {
-            if (!prev) return prev;
-            const exists = prev.messages.some((m) => m.id === newMsg.id);
-            const updatedMessages = exists ? prev.messages : [...prev.messages, newMsg];
-            const nextPendingCount = prev.isPending
-              ? prev.pendingMessagesSent + 1
-              : prev.pendingMessagesSent;
-            return {
-              ...prev,
-              messages: updatedMessages,
-              pendingMessagesSent: nextPendingCount,
-              canSend: prev.isPending
-                ? nextPendingCount < prev.pendingMessageLimit
-                : prev.canSend,
-            };
-          });
-          scrollToBottom('smooth');
-          fetchConversations(true);
-        }
+        scrollToBottom('smooth');
+        fetchConversations(true);
+        fetchConversationDetail(selectedConvId, true);
       }
     } catch (err: any) {
       setErrorBanner(err.response?.data?.message || 'Failed to send message.');
@@ -473,7 +356,6 @@ export const MessagesPage: React.FC = () => {
     }
   };
 
-  // Composer Enter vs Shift+Enter
   const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -481,89 +363,88 @@ export const MessagesPage: React.FC = () => {
     }
   };
 
-  // Accept request
-  const handleAcceptRequest = async () => {
+  const handleArchiveConversation = async () => {
     if (!activeConv) return;
+    setIsHeaderMenuOpen(false);
     try {
-      await api.post(`/messages/conversations/${activeConv.id}/accept`);
-      showToast('Message request accepted');
-      setActiveTab('inbox');
-      await fetchConversationDetail(activeConv.id);
-      await fetchConversations(true);
-      await fetchUnreadCounts();
-    } catch (err: any) {
-      setErrorBanner(err.response?.data?.message || 'Failed to accept request.');
-    }
-  };
-
-  // Decline request
-  const handleDeclineRequest = async () => {
-    if (!activeConv) return;
-    try {
-      await api.post(`/messages/conversations/${activeConv.id}/decline`);
-      showToast('Message request declined');
+      await api.post(`/messages/conversations/${activeConv.conversation.id}/archive`);
+      showToast('Conversation archived');
       setSelectedConvId(null);
       setActiveConv(null);
       setMobileShowChat(false);
       navigate('/messages');
       await fetchConversations(true);
-      await fetchUnreadCounts();
     } catch (err: any) {
-      setErrorBanner(err.response?.data?.message || 'Failed to decline request.');
+      setErrorBanner(err.response?.data?.message || 'Failed to archive conversation.');
     }
   };
 
-  // Archive / Unarchive conversation
-  const handleToggleArchive = async () => {
-    if (!activeConv) return;
-    setIsHeaderMenuOpen(false);
-    try {
-      const res = await api.post(`/messages/conversations/${activeConv.id}/archive`);
-      const newStatus = res.data?.data?.status;
-      showToast(newStatus === 'ARCHIVED' ? 'Conversation archived' : 'Moved back to Inbox');
-      await fetchConversationDetail(activeConv.id, true);
-      await fetchConversations(true);
-    } catch (err: any) {
-      setErrorBanner(err.response?.data?.message || 'Failed to update archive state.');
-    }
-  };
-
-  // Mute / Unmute conversation
   const handleToggleMute = async () => {
     if (!activeConv) return;
     setIsHeaderMenuOpen(false);
     try {
-      const res = await api.post(`/messages/conversations/${activeConv.id}/mute`);
+      const res = await api.post(`/messages/conversations/${activeConv.conversation.id}/mute`);
       const muted = res.data?.data?.muted;
       showToast(muted ? 'Notifications muted for this chat' : 'Notifications unmuted');
-      await fetchConversationDetail(activeConv.id, true);
+      await fetchConversationDetail(activeConv.conversation.id, true);
       await fetchConversations(true);
     } catch (err: any) {
       setErrorBanner(err.response?.data?.message || 'Failed to toggle mute.');
     }
   };
 
-  // Block / Unblock user
+  const handleCloseConversation = async () => {
+    if (!activeConv) return;
+    setIsHeaderMenuOpen(false);
+    try {
+      await api.post(`/messages/conversations/${activeConv.conversation.id}/close`);
+      showToast('Conversation closed');
+      await fetchConversationDetail(activeConv.conversation.id, true);
+      await fetchConversations(true);
+    } catch (err: any) {
+      setErrorBanner(err.response?.data?.message || 'Failed to close conversation.');
+    }
+  };
+
   const handleToggleBlock = async () => {
     if (!activeConv) return;
     setIsHeaderMenuOpen(false);
-    const peer = activeConv.otherParticipant.user;
+    const peer = activeConv.conversation.otherUser;
     try {
-      if (activeConv.isBlockedByMe) {
+      if (activeConv.conversation.isBlockedByMe) {
         await api.delete(`/messages/blocks/${peer.id}`);
         showToast(`Unblocked @${peer.username || peer.name}`);
       } else {
         await api.post(`/messages/blocks/${peer.id}`);
         showToast(`Blocked @${peer.username || peer.name}`);
       }
-      await fetchConversationDetail(activeConv.id, true);
+      await fetchConversationDetail(activeConv.conversation.id, true);
       await fetchConversations(true);
     } catch (err: any) {
       setErrorBanner(err.response?.data?.message || 'Failed to update block status.');
     }
   };
 
-  // Submit message report
+  const handleDecideApproachInChat = async (
+    approachId: string,
+    decision: 'ACCEPTED' | 'DECLINED'
+  ) => {
+    try {
+      await api.patch(`/openings/approaches/${approachId}`, { status: decision });
+      showToast(
+        decision === 'ACCEPTED'
+          ? 'Approach accepted — chat unlocked!'
+          : 'Approach declined'
+      );
+      if (selectedConvId) {
+        await fetchConversationDetail(selectedConvId, true);
+      }
+      await fetchConversations(true);
+    } catch (err: any) {
+      setErrorBanner(err.response?.data?.message || 'Failed to update approach decision.');
+    }
+  };
+
   const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reportingMessage || reportReason.trim().length < 3 || submittingReport) return;
@@ -582,7 +463,6 @@ export const MessagesPage: React.FC = () => {
     }
   };
 
-  // Format date separator
   const formatDateSeparator = (iso: string) => {
     const d = new Date(iso);
     const today = new Date();
@@ -598,30 +478,26 @@ export const MessagesPage: React.FC = () => {
     });
   };
 
-  // Starter suggestions for peers and recruiters
-  const getStarterSuggestions = () => {
-    const peerUsername =
-      activeConv?.otherParticipant.user.username || draftRecipient?.username || 'there';
-    const topSkill =
-      activeConv?.otherParticipant.user.topSkill?.language ||
-      draftRecipient?.topSkill ||
-      'TypeScript';
+  const filteredConversations = conversations.filter((conv) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.trim().toLowerCase();
+    return (
+      conv.otherUser.name.toLowerCase().includes(q) ||
+      (conv.otherUser.username && conv.otherUser.username.toLowerCase().includes(q)) ||
+      (conv.otherUser.companyName && conv.otherUser.companyName.toLowerCase().includes(q)) ||
+      conv.label.toLowerCase().includes(q)
+    );
+  });
 
-    if (user?.role === 'RECRUITER') {
-      return [
-        `Hi @${peerUsername}, I saw your verified ${topSkill} credential on SkillProof and would love to discuss an open role!`,
-        `Ask for guidance on ${topSkill} architecture & availability`,
-        `Hi @${peerUsername}, are you currently open to new engineering opportunities?`,
-      ];
-    }
-    return [
-      `Ask for guidance on ${topSkill}`,
-      `Hi @${peerUsername}! Congrats on your verified ${topSkill} badge — how did you prepare for the assessment?`,
-      `Hey @${peerUsername}, would you be open to collaborating or sharing tips on ${topSkill}?`,
-    ];
-  };
+  const convMeta = activeConv?.conversation || null;
+  const currentPeer = convMeta?.otherUser || null;
+  const peerProfileUrl = currentPeer
+    ? currentPeer.role === 'RECRUITER'
+      ? `/recruiters/${currentPeer.username}`
+      : `/u/${currentPeer.username}`
+    : '#';
 
-  const currentPeer = activeConv?.otherParticipant.user || null;
+  const isRecruiterViewer = user?.role === 'RECRUITER';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -633,9 +509,9 @@ export const MessagesPage: React.FC = () => {
       )}
 
       <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm overflow-hidden flex h-[calc(100vh-8.5rem)] min-h-[560px]">
-        {/* LEFT COLUMN: Conversation List */}
+        {/* LEFT COLUMN: Conversation List (320px on desktop) */}
         <div
-          className={`w-full md:w-80 lg:w-96 border-r border-[#E2E8F0] flex flex-col bg-slate-50/50 ${
+          className={`w-full md:w-80 border-r border-[#E2E8F0] flex flex-col bg-slate-50/50 shrink-0 ${
             mobileShowChat ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -648,24 +524,26 @@ export const MessagesPage: React.FC = () => {
                 </div>
                 <div>
                   <h1 className="text-base font-extrabold text-[#0F172A]">Messages</h1>
-                  <p className="text-[11px] text-[#64748B]">Direct developer & recruiter chat</p>
+                  <p className="text-[11px] text-[#64748B]">
+                    Opening approaches & recruiter outreach
+                  </p>
                 </div>
               </div>
-              {unreadCounts.total > 0 && (
+              {totalUnread > 0 && (
                 <span className="px-2 py-0.5 text-[11px] font-extrabold rounded-full bg-[#2563EB] text-white">
-                  {unreadCounts.total} unread
+                  {totalUnread} unread
                 </span>
               )}
             </div>
 
-            {/* Search by username */}
+            {/* Filter by name, @username, or opening */}
             <div className="relative">
               <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter by @username or name..."
+                placeholder="Filter by @username, company, or opening..."
                 className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl border border-[#CBD5E1] bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 transition"
               />
               {searchQuery && (
@@ -678,58 +556,6 @@ export const MessagesPage: React.FC = () => {
                 </button>
               )}
             </div>
-
-            {/* Tabs: Inbox | Requests | Archived */}
-            <div className="grid grid-cols-3 gap-1 mt-3 bg-slate-100 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setActiveTab('inbox')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                  activeTab === 'inbox'
-                    ? 'bg-white text-[#0F172A] shadow-sm'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                <Inbox size={13} />
-                <span>Inbox</span>
-                {unreadCounts.inboxUnread > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white text-[10px] flex items-center justify-center">
-                    {unreadCounts.inboxUnread}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('requests')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                  activeTab === 'requests'
-                    ? 'bg-white text-[#0F172A] shadow-sm'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                <MailQuestion size={13} />
-                <span>Requests</span>
-                {unreadCounts.requestsCount > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">
-                    {unreadCounts.requestsCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('archived')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                  activeTab === 'archived'
-                    ? 'bg-white text-[#0F172A] shadow-sm'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                <Archive size={13} />
-                <span>Archived</span>
-              </button>
-            </div>
           </div>
 
           {/* Conversation Items */}
@@ -739,26 +565,45 @@ export const MessagesPage: React.FC = () => {
                 <Loader2 size={20} className="animate-spin text-[#2563EB]" />
                 <span className="text-xs">Loading conversations...</span>
               </div>
-            ) : conversations.length === 0 ? (
-              <div className="p-8 text-center">
-                <MessageSquare size={28} className="mx-auto text-slate-300 mb-2" />
-                <p className="text-xs font-bold text-[#0F172A]">
-                  {activeTab === 'requests'
-                    ? 'No pending message requests'
-                    : activeTab === 'archived'
-                    ? 'No archived conversations'
-                    : 'No conversations yet'}
-                </p>
-                <p className="text-[11px] text-[#64748B] mt-1">
-                  Visit the{' '}
-                  <Link to="/leaderboard" className="text-[#2563EB] font-semibold hover:underline">
-                    Leaderboard
-                  </Link>{' '}
-                  or search a developer's @username to start chatting.
+            ) : filteredConversations.length === 0 ? (
+              <div className="p-8 text-center space-y-2">
+                <MessageSquare size={28} className="mx-auto text-slate-300" />
+                <p className="text-xs font-bold text-[#0F172A]">No conversations yet</p>
+                <p className="text-[11px] text-[#64748B]">
+                  {isRecruiterViewer ? (
+                    <>
+                      Publish a{' '}
+                      <Link
+                        to="/openings/manage"
+                        className="text-[#2563EB] font-semibold hover:underline"
+                      >
+                        Hiring Opening
+                      </Link>{' '}
+                      or discover verified candidates on{' '}
+                      <Link
+                        to="/recruiter"
+                        className="text-[#2563EB] font-semibold hover:underline"
+                      >
+                        Developer Discovery
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      Explore matching{' '}
+                      <Link
+                        to="/openings"
+                        className="text-[#2563EB] font-semibold hover:underline"
+                      >
+                        Hiring Openings
+                      </Link>{' '}
+                      to approach verified recruiters.
+                    </>
+                  )}
                 </p>
               </div>
             ) : (
-              conversations.map((conv) => {
+              filteredConversations.map((conv) => {
                 const isSelected = selectedConvId === conv.id;
                 const hasUnread = conv.unreadCount > 0;
                 return (
@@ -767,7 +612,6 @@ export const MessagesPage: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setSelectedConvId(conv.id);
-                      setDraftRecipient(null);
                       setMobileShowChat(true);
                       navigate(`/messages/${conv.id}`);
                     }}
@@ -808,16 +652,23 @@ export const MessagesPage: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-[11px] font-mono text-[#2563EB] truncate">
                           @{conv.otherUser.username}
                         </span>
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
-                          {conv.otherUser.role}
-                        </span>
-                        {conv.isPending && conv.myStatus === 'ACTIVE' && (
-                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
+                        {conv.otherUser.companyName && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded">
+                            {conv.otherUser.companyName}
+                          </span>
+                        )}
+                        {conv.status === 'PENDING_APPROVAL' && (
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded">
                             Pending
+                          </span>
+                        )}
+                        {conv.status === 'CLOSED' && (
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+                            Closed
                           </span>
                         )}
                         {conv.muted && (
@@ -825,9 +676,13 @@ export const MessagesPage: React.FC = () => {
                         )}
                       </div>
 
+                      <p className="text-[10px] font-semibold text-indigo-600 truncate mt-1">
+                        {conv.label}
+                      </p>
+
                       {conv.lastMessage && (
                         <p
-                          className={`text-xs mt-1 truncate ${
+                          className={`text-xs mt-0.5 truncate ${
                             hasUnread ? 'font-bold text-[#0F172A]' : 'text-[#64748B]'
                           }`}
                         >
@@ -854,7 +709,7 @@ export const MessagesPage: React.FC = () => {
               <Loader2 size={24} className="animate-spin text-[#2563EB]" />
               <span className="text-xs font-semibold">Loading chat history...</span>
             </div>
-          ) : activeConv || draftRecipient ? (
+          ) : activeConv && convMeta && currentPeer ? (
             <>
               {/* Chat Header */}
               <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between bg-white">
@@ -871,34 +726,40 @@ export const MessagesPage: React.FC = () => {
                   </button>
 
                   <div className="w-9 h-9 rounded-full bg-blue-100 text-[#2563EB] font-bold text-sm flex items-center justify-center shrink-0">
-                    {(currentPeer?.name || draftRecipient?.name || 'U').charAt(0).toUpperCase()}
+                    {currentPeer.name.charAt(0).toUpperCase()}
                   </div>
 
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-sm font-extrabold text-[#0F172A] truncate">
-                        {currentPeer?.name || draftRecipient?.name}
+                        {currentPeer.name}
                       </h2>
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-[#475569]">
-                        {currentPeer?.role || draftRecipient?.role}
+                        {currentPeer.role}
                       </span>
-                      {activeConv?.myParticipant.muted && (
+                      {currentPeer.companyName && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          {currentPeer.companyName}
+                        </span>
+                      )}
+                      {convMeta.muted && (
                         <span className="text-[10px] font-semibold text-slate-500 flex items-center gap-0.5">
                           <VolumeX size={12} /> Muted
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-[#64748B]">
+                    <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
                       <Link
-                        to={`/u/${currentPeer?.username || draftRecipient?.username}`}
+                        to={peerProfileUrl}
                         className="font-mono text-[#2563EB] hover:underline"
                       >
-                        @{currentPeer?.username || draftRecipient?.username}
+                        @{currentPeer.username}
                       </Link>
-                      {currentPeer?.topSkill && (
+                      {currentPeer.verifiedSkills && currentPeer.verifiedSkills.length > 0 && (
                         <span>
-                          • Top Verified: <strong>{currentPeer.topSkill.language}</strong> (
-                          {currentPeer.topSkill.level})
+                          • Top Verified:{' '}
+                          <strong>{currentPeer.verifiedSkills[0].language}</strong> (
+                          {currentPeer.verifiedSkills[0].score}%)
                         </span>
                       )}
                     </div>
@@ -906,86 +767,141 @@ export const MessagesPage: React.FC = () => {
                 </div>
 
                 {/* Chat Header Action Menu */}
-                {activeConv && currentPeer && (
-                  <div ref={headerMenuRef} className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setIsHeaderMenuOpen((prev) => !prev)}
-                      className="p-2 rounded-xl hover:bg-slate-100 text-[#475569] border border-[#E2E8F0] transition"
-                      aria-label="Conversation options"
-                    >
-                      <MoreVertical size={16} />
-                    </button>
+                <div ref={headerMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsHeaderMenuOpen((prev) => !prev)}
+                    className="p-2 rounded-xl hover:bg-slate-100 text-[#475569] border border-[#E2E8F0] transition"
+                    aria-label="Conversation options"
+                  >
+                    <MoreVertical size={16} />
+                  </button>
 
-                    {isHeaderMenuOpen && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white border border-[#E2E8F0] rounded-2xl shadow-xl py-1.5 z-40 divide-y divide-[#E2E8F0]">
-                        <div className="py-1">
-                          <Link
-                            to={`/u/${currentPeer.username}`}
-                            onClick={() => setIsHeaderMenuOpen(false)}
-                            className="px-3.5 py-2 text-xs font-semibold text-[#0F172A] hover:bg-slate-50 flex items-center gap-2"
-                          >
-                            <ExternalLink size={14} className="text-[#2563EB]" />
-                            View profile
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={handleToggleArchive}
-                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-[#0F172A] hover:bg-slate-50 flex items-center gap-2"
-                          >
-                            <Archive size={14} className="text-slate-500" />
-                            {activeConv.myParticipant.status === 'ARCHIVED'
-                              ? 'Unarchive chat'
-                              : 'Archive'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleToggleMute}
-                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-[#0F172A] hover:bg-slate-50 flex items-center gap-2"
-                          >
-                            {activeConv.myParticipant.muted ? (
-                              <>
-                                <Volume2 size={14} className="text-slate-500" />
-                                Unmute
-                              </>
-                            ) : (
-                              <>
-                                <VolumeX size={14} className="text-slate-500" />
-                                Mute
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <div className="py-1">
-                          <button
-                            type="button"
-                            onClick={handleToggleBlock}
-                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2"
-                          >
-                            <Ban size={14} />
-                            {activeConv.isBlockedByMe ? 'Unblock user' : 'Block'}
-                          </button>
-                          {activeConv.messages.some((m) => m.senderId === currentPeer.id) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHeaderMenuOpen(false);
-                                const lastPeerMsg = [...activeConv.messages]
-                                  .reverse()
-                                  .find((m) => m.senderId === currentPeer.id);
-                                if (lastPeerMsg) setReportingMessage(lastPeerMsg);
-                              }}
-                              className="w-full text-left px-3.5 py-2 text-xs font-semibold text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
-                            >
-                              <Flag size={14} />
-                              Report
-                            </button>
+                  {isHeaderMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-52 bg-white border border-[#E2E8F0] rounded-2xl shadow-xl py-1.5 z-40 divide-y divide-[#E2E8F0]">
+                      <div className="py-1">
+                        <Link
+                          to={peerProfileUrl}
+                          onClick={() => setIsHeaderMenuOpen(false)}
+                          className="px-3.5 py-2 text-xs font-semibold text-[#0F172A] hover:bg-slate-50 flex items-center gap-2"
+                        >
+                          <ExternalLink size={14} className="text-[#2563EB]" />
+                          View profile
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={handleArchiveConversation}
+                          className="w-full text-left px-3.5 py-2 text-xs font-semibold text-[#0F172A] hover:bg-slate-50 flex items-center gap-2"
+                        >
+                          <Archive size={14} className="text-slate-500" />
+                          Archive
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleToggleMute}
+                          className="w-full text-left px-3.5 py-2 text-xs font-semibold text-[#0F172A] hover:bg-slate-50 flex items-center gap-2"
+                        >
+                          {convMeta.muted ? (
+                            <>
+                              <Volume2 size={14} className="text-slate-500" />
+                              Unmute
+                            </>
+                          ) : (
+                            <>
+                              <VolumeX size={14} className="text-slate-500" />
+                              Mute
+                            </>
                           )}
-                        </div>
+                        </button>
+                        {isRecruiterViewer && convMeta.status !== 'CLOSED' && (
+                          <button
+                            type="button"
+                            onClick={handleCloseConversation}
+                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                          >
+                            <Lock size={14} className="text-slate-500" />
+                            Close conversation
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={handleToggleBlock}
+                          className="w-full text-left px-3.5 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2"
+                        >
+                          <Ban size={14} />
+                          {convMeta.isBlockedByMe ? 'Unblock user' : 'Block'}
+                        </button>
+                        {activeConv.messages.some((m) => m.senderId === currentPeer.id) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsHeaderMenuOpen(false);
+                              const lastPeerMsg = [...activeConv.messages]
+                                .reverse()
+                                .find((m) => m.senderId === currentPeer.id);
+                              if (lastPeerMsg) setReportingMessage(lastPeerMsg);
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
+                          >
+                            <Flag size={14} />
+                            Report
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Conversation Origin Banner ("From opening: <title>" or "Direct message from <recruiter>") */}
+              <div className="px-4 py-2 bg-indigo-50/70 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-indigo-900 font-bold">
+                  <Briefcase size={13} className="text-indigo-600 shrink-0" />
+                  {convMeta.origin === 'OPENING' && convMeta.opening ? (
+                    <Link
+                      to={isRecruiterViewer ? '/openings/manage' : '/openings'}
+                      className="hover:underline"
+                    >
+                      From opening: {convMeta.opening.title}
+                    </Link>
+                  ) : (
+                    <span>{convMeta.label}</span>
+                  )}
+                  {convMeta.directReason && (
+                    <span className="text-[11px] font-medium text-indigo-700">
+                      • {convMeta.directReason}
+                    </span>
+                  )}
+                </div>
+
+                {/* If Recruiter viewing a PENDING approach inside chat, allow quick Accept / Decline */}
+                {isRecruiterViewer &&
+                  convMeta.approach &&
+                  (convMeta.approach.status === 'PENDING' ||
+                    convMeta.approach.status === 'SAVED') && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDecideApproachInChat(convMeta.approach!.id, 'ACCEPTED')
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1"
+                      >
+                        <CheckCircle2 size={12} /> Accept Approach
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDecideApproachInChat(convMeta.approach!.id, 'DECLINED')
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold flex items-center gap-1"
+                      >
+                        <XCircle size={12} /> Decline
+                      </button>
+                    </div>
+                  )}
               </div>
 
               {/* Error Banner */}
@@ -1005,60 +921,10 @@ export const MessagesPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Message Request Banner for Recipient (Requests Tab) */}
-              {activeConv && activeConv.myParticipant.status === 'REQUEST' && (
-                <div className="px-4 py-3.5 bg-amber-50/90 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-extrabold text-amber-900">
-                      Message Request from {currentPeer?.name} (@{currentPeer?.username})
-                    </p>
-                    <p className="text-[11px] text-amber-800 mt-0.5">
-                      Accepting lets them message you freely. Declining hides the request without notifying the sender.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleAcceptRequest}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition"
-                    >
-                      <CheckCircle2 size={13} /> Accept
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDeclineRequest}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold flex items-center gap-1 transition"
-                    >
-                      <XCircle size={13} /> Decline
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleToggleBlock}
-                      className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold flex items-center gap-1 transition"
-                    >
-                      <Ban size={13} /> Block
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Pending Status Notice for Sender */}
-              {activeConv &&
-                activeConv.isPending &&
-                activeConv.myParticipant.status === 'ACTIVE' && (
-                  <div className="px-4 py-2 bg-blue-50/70 border-b border-blue-100 flex items-center justify-between text-[11px] text-blue-800">
-                    <span className="font-semibold flex items-center gap-1.5">
-                      <Clock size={13} className="text-blue-600" />
-                      Message request pending acceptance ({activeConv.pendingMessagesSent}/
-                      {activeConv.pendingMessageLimit} introductory messages used)
-                    </span>
-                  </div>
-                )}
-
               {/* Message List Area */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/40">
                 {/* Load Older Button */}
-                {activeConv?.hasMore && (
+                {activeConv.nextCursor && (
                   <div className="text-center pb-2">
                     <button
                       type="button"
@@ -1072,36 +938,19 @@ export const MessagesPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Starter Suggestions when conversation is empty or draft */}
-                {(!activeConv || activeConv.messages.length <= 1) && (
-                  <div className="bg-white border border-blue-100 rounded-2xl p-3.5 shadow-sm">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#2563EB] mb-2">
-                      <Sparkles size={14} />
-                      <span>Conversation Starters</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {getStarterSuggestions().map((suggestion, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setMessageBody(suggestion)}
-                          className="text-left text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-blue-50/80 hover:bg-blue-100 text-[#1E40AF] border border-blue-200/80 transition"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Messages with Date Separators */}
-                {activeConv?.messages.map((msg, idx) => {
+                {activeConv.messages.map((msg, idx) => {
                   const isMine = msg.senderId === user?.id;
                   const prevMsg = idx > 0 ? activeConv.messages[idx - 1] : null;
                   const showDateSeparator =
                     !prevMsg ||
                     new Date(prevMsg.createdAt).toDateString() !==
                       new Date(msg.createdAt).toDateString();
+
+                  const readByRecipient = Boolean(
+                    convMeta.otherLastReadAt &&
+                      new Date(convMeta.otherLastReadAt).getTime() >=
+                        new Date(msg.createdAt).getTime()
+                  );
 
                   return (
                     <React.Fragment key={msg.id}>
@@ -1120,7 +969,7 @@ export const MessagesPage: React.FC = () => {
                       >
                         {!isMine && (
                           <div className="w-7 h-7 rounded-full bg-blue-100 text-[#2563EB] font-bold text-xs flex items-center justify-center shrink-0">
-                            {(currentPeer?.name || 'U').charAt(0).toUpperCase()}
+                            {currentPeer.name.charAt(0).toUpperCase()}
                           </div>
                         )}
 
@@ -1149,7 +998,7 @@ export const MessagesPage: React.FC = () => {
                             </span>
                             {isMine && (
                               <span className="inline-flex items-center gap-0.5 font-semibold">
-                                {msg.readByRecipient ? (
+                                {readByRecipient ? (
                                   <>
                                     <CheckCheck size={12} className="text-emerald-300" />
                                     <span>Read</span>
@@ -1165,7 +1014,6 @@ export const MessagesPage: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Report button on incoming messages */}
                         {!isMine && (
                           <button
                             type="button"
@@ -1185,7 +1033,7 @@ export const MessagesPage: React.FC = () => {
 
               {/* Composer */}
               <div className="p-3.5 bg-white border-t border-[#E2E8F0]">
-                {activeConv?.isBlockedByMe ? (
+                {convMeta.isBlockedByMe ? (
                   <div className="text-center py-2 text-xs text-[#64748B] flex items-center justify-center gap-2">
                     <span>You have blocked this user.</span>
                     <button
@@ -1196,11 +1044,13 @@ export const MessagesPage: React.FC = () => {
                       Unblock to send messages
                     </button>
                   </div>
-                ) : activeConv && !activeConv.canSend ? (
-                  <div className="text-center py-2 text-xs text-amber-800 bg-amber-50 rounded-xl border border-amber-200 font-semibold">
-                    {activeConv.myParticipant.status === 'REQUEST'
-                      ? 'Please accept the message request above to reply.'
-                      : 'You have reached the 3-message limit for a pending request. You can send more once they accept.'}
+                ) : !convMeta.composerState.canSend ? (
+                  <div className="text-center py-2.5 px-4 text-xs text-amber-800 bg-amber-50 rounded-xl border border-amber-200 font-bold flex items-center justify-center gap-2">
+                    <Clock size={14} className="text-amber-600 shrink-0" />
+                    <span>
+                      {convMeta.composerState.reason ||
+                        'Waiting for the recruiter to respond to your approach'}
+                    </span>
                   </div>
                 ) : (
                   <form onSubmit={handleSendMessage} className="space-y-1.5">
@@ -1248,17 +1098,20 @@ export const MessagesPage: React.FC = () => {
                 <MessageSquare size={26} />
               </div>
               <h2 className="text-base font-extrabold text-[#0F172A]">
-                Select a conversation to start messaging
+                Select a conversation to view messages
               </h2>
               <p className="text-xs text-[#64748B] max-w-md mt-1">
-                Connect with verified developers, ask peers for guidance on specific skills, or reach out to candidates directly from the Leaderboard or Developer Discovery.
+                {isRecruiterViewer
+                  ? 'Review developer approaches on your hiring openings or start a direct conversation with eligible verified developers.'
+                  : 'Approach verified recruiters through matching hiring openings or reply to direct recruiter outreach.'}
               </p>
               <div className="flex items-center gap-3 mt-4">
                 <Link
-                  to="/leaderboard"
+                  to={isRecruiterViewer ? '/openings/manage' : '/openings'}
                   className="px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-sm transition inline-flex items-center gap-1.5"
                 >
-                  <UserPlus size={14} /> Browse Leaderboard
+                  <Briefcase size={14} />
+                  {isRecruiterViewer ? 'Manage Openings' : 'View Matching Openings'}
                 </Link>
               </div>
             </div>
@@ -1338,4 +1191,3 @@ export const MessagesPage: React.FC = () => {
     </div>
   );
 };
-

@@ -23,6 +23,8 @@ import {
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     | 'stats'
+    | 'recruiter-verification'
+    | 'openings'
     | 'proctoring'
     | 'catalog'
     | 'pool'
@@ -34,6 +36,8 @@ export const AdminDashboard: React.FC = () => {
     | 'audit'
   >('stats');
   const [stats, setStats] = useState<any>(null);
+  const [recruiters, setRecruiters] = useState<any[]>([]);
+  const [adminOpenings, setAdminOpenings] = useState<any[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
   const [flags, setFlags] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -101,6 +105,8 @@ export const AdminDashboard: React.FC = () => {
     try {
       const [
         statsRes,
+        recruitersRes,
+        openingsRes,
         questionsRes,
         flagsRes,
         usersRes,
@@ -112,6 +118,8 @@ export const AdminDashboard: React.FC = () => {
         msgReportsRes,
       ] = await Promise.all([
         api.get('/admin/stats'),
+        api.get('/admin/recruiters').catch(() => ({ data: { success: false } })),
+        api.get('/admin/openings').catch(() => ({ data: { success: false } })),
         api.get('/admin/questions'),
         api.get('/admin/flags'),
         api.get('/admin/users'),
@@ -124,6 +132,8 @@ export const AdminDashboard: React.FC = () => {
       ]);
 
       if (statsRes.data.success) setStats(statsRes.data.data);
+      if (recruitersRes.data?.success) setRecruiters(recruitersRes.data.data || []);
+      if (openingsRes.data?.success) setAdminOpenings(openingsRes.data.data || []);
       if (questionsRes.data.success) setQuestions(questionsRes.data.data);
       if (flagsRes.data.success) setFlags(flagsRes.data.data);
       if (usersRes.data.success) setUsers(usersRes.data.data);
@@ -452,6 +462,34 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleVerifyRecruiter = async (recruiterId: string, isVerified: boolean) => {
+    try {
+      await api.patch(`/admin/recruiters/${recruiterId}/verify`, { isVerified });
+      const [recRes, auditRes] = await Promise.all([
+        api.get('/admin/recruiters'),
+        api.get('/admin/audit'),
+      ]);
+      if (recRes.data?.success) setRecruiters(recRes.data.data || []);
+      if (auditRes.data?.success) setAuditLogs(auditRes.data.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update recruiter verification');
+    }
+  };
+
+  const handleAdminCloseOpening = async (openingId: string) => {
+    try {
+      await api.patch(`/admin/openings/${openingId}`, { status: 'CLOSED' });
+      const [opRes, auditRes] = await Promise.all([
+        api.get('/admin/openings'),
+        api.get('/admin/audit'),
+      ]);
+      if (opRes.data?.success) setAdminOpenings(opRes.data.data || []);
+      if (auditRes.data?.success) setAuditLogs(auditRes.data.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to close opening');
+    }
+  };
+
   if (loading) return <PageSkeleton />;
 
   const lowPoolCount = poolHealth.filter((p) => p.isLow).length;
@@ -489,7 +527,7 @@ export const AdminDashboard: React.FC = () => {
       <div>
         <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Admin Console</h1>
         <p className="text-sm text-[#64748B] mt-1">
-          Role-based skill catalog, camera proctoring review, blueprint question health, certificate claims, and assessment results.
+          Role-based skill catalog, recruiter verification, hiring openings, camera proctoring review, and message moderation.
         </p>
       </div>
 
@@ -497,6 +535,18 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex flex-wrap gap-2 border-b border-[#E2E8F0] pb-3">
         {[
           { id: 'stats', label: 'Overview Stats' },
+          {
+            id: 'recruiter-verification',
+            label: `Recruiter verification (${recruiters.length})`,
+          },
+          {
+            id: 'openings',
+            label: `Openings (${adminOpenings.length})`,
+          },
+          {
+            id: 'message-reports',
+            label: `Message reports (${messageReports.filter((r) => !r.resolved).length})`,
+          },
           {
             id: 'proctoring',
             label: `Proctoring (${proctoringData.lockouts?.length || 0})`,
@@ -513,10 +563,6 @@ export const AdminDashboard: React.FC = () => {
           { id: 'flags', label: `Flagged Queue (${flags.length})` },
           { id: 'claims', label: `Certificate Claims (${claims.length})` },
           { id: 'users', label: `Users (${users.length})` },
-          {
-            id: 'message-reports',
-            label: `Message reports (${messageReports.filter((r) => !r.resolved).length})`,
-          },
           { id: 'audit', label: 'Audit Trail' },
         ].map((tab) => (
           <button
@@ -1783,6 +1829,207 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: RECRUITER VERIFICATION */}
+      {activeTab === 'recruiter-verification' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-base font-bold text-[#0F172A]">
+              Recruiter Verification Queue ({recruiters.length})
+            </h3>
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Only verified recruiters may publish hiring openings or initiate direct conversations with developers.
+            </p>
+          </div>
+
+          {recruiters.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
+              No recruiter accounts registered yet.
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+                  <tr>
+                    <th className="p-3.5">Recruiter</th>
+                    <th className="p-3.5">Company & Role</th>
+                    <th className="p-3.5">Links</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E2E8F0]">
+                  {recruiters.map((rec: any) => {
+                    const rp = rec.recruiterProfile || {};
+                    const isVerified = Boolean(rp.isVerified);
+                    return (
+                      <tr key={rec.id} className="hover:bg-slate-50/50">
+                        <td className="p-3.5">
+                          <div className="font-bold text-[#0F172A]">{rec.name}</div>
+                          <div className="text-[11px] font-mono text-[#64748B]">@{rec.username}</div>
+                        </td>
+                        <td className="p-3.5">
+                          <div className="font-bold text-[#0F172A]">{rp.companyName || '—'}</div>
+                          <div className="text-[11px] text-[#64748B]">{rp.jobTitle || '—'}</div>
+                        </td>
+                        <td className="p-3.5 space-x-2">
+                          {rp.companyWebsite && (
+                            <a
+                              href={rp.companyWebsite}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:underline font-semibold"
+                            >
+                              Website
+                            </a>
+                          )}
+                          {rp.linkedinUrl && (
+                            <a
+                              href={rp.linkedinUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:underline font-semibold"
+                            >
+                              LinkedIn
+                            </a>
+                          )}
+                          {!rp.companyWebsite && !rp.linkedinUrl && (
+                            <span className="text-slate-400">None</span>
+                          )}
+                        </td>
+                        <td className="p-3.5">
+                          {isVerified ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase">
+                              Verified
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase">
+                              Pending Approval
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-right">
+                          {isVerified ? (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyRecruiter(rec.id, false)}
+                              className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition"
+                            >
+                              Revoke verification
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyRecruiter(rec.id, true)}
+                              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
+                            >
+                              Verify
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: OPENINGS MODERATION */}
+      {activeTab === 'openings' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-base font-bold text-[#0F172A]">
+              Hiring Openings Moderation ({adminOpenings.length})
+            </h3>
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Review all published recruiter openings and close spam or policy-violating listings.
+            </p>
+          </div>
+
+          {adminOpenings.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
+              No hiring openings published yet.
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+                  <tr>
+                    <th className="p-3.5">Opening</th>
+                    <th className="p-3.5">Recruiter & Company</th>
+                    <th className="p-3.5">Skills & Min Score</th>
+                    <th className="p-3.5">Approaches</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E2E8F0]">
+                  {adminOpenings.map((op: any) => (
+                    <tr key={op.id} className="hover:bg-slate-50/50">
+                      <td className="p-3.5">
+                        <div className="font-bold text-[#0F172A]">{op.title}</div>
+                        <div className="text-[11px] text-[#64748B]">
+                          {op.locationType} {op.location ? `• ${op.location}` : ''}
+                        </div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-bold text-[#0F172A]">
+                          {op.recruiter?.recruiterProfile?.companyName || op.recruiter?.name}
+                        </div>
+                        <div className="text-[11px] font-mono text-[#64748B]">
+                          @{op.recruiter?.username}
+                        </div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex flex-wrap gap-1">
+                          {(op.skills || []).map((s: any, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold"
+                            >
+                              {s.skillCatalog?.name || s.name} ≥ {s.minScore}%
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-3.5 font-bold text-[#0F172A]">
+                        {op._count?.approaches ?? op.approachCount ?? 0}
+                      </td>
+                      <td className="p-3.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            op.status === 'ACTIVE'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {op.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-right">
+                        {op.status === 'ACTIVE' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleAdminCloseOpening(op.id)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs"
+                          >
+                            Close opening
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">Closed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB: MESSAGE REPORTS (5-Message Context Moderation) */}
       {activeTab === 'message-reports' && (
         <div className="space-y-4">
@@ -1803,97 +2050,103 @@ export const AdminDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {messageReports.map((rep: any) => (
-                <div
-                  key={rep.id}
-                  className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            rep.resolved
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-red-100 text-red-800 border border-red-200'
-                          }`}
-                        >
-                          {rep.resolved ? 'Resolved' : 'Pending Review'}
-                        </span>
-                        <span className="text-xs font-extrabold text-[#0F172A]">
-                          Reported Sender: {rep.reportedUser?.name} (@{rep.reportedUser?.username})
-                        </span>
-                        <span className="text-[11px] text-[#64748B]">
-                          • Reported by @{rep.reporter?.username} on{' '}
-                          {new Date(rep.createdAt).toLocaleString()}
-                        </span>
+              {messageReports.map((rep: any) => {
+                const reportedSender = rep.reportedSender || rep.reportedUser;
+                return (
+                  <div
+                    key={rep.id}
+                    className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              rep.resolved
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-red-100 text-red-800 border border-red-200'
+                            }`}
+                          >
+                            {rep.resolved ? 'Resolved' : 'Pending Review'}
+                          </span>
+                          <span className="text-xs font-extrabold text-[#0F172A]">
+                            Reported Sender: {reportedSender?.name} (@{reportedSender?.username})
+                          </span>
+                          <span className="text-[11px] text-[#64748B]">
+                            • Reported by @{rep.reporter?.username} on{' '}
+                            {new Date(rep.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-red-700 font-semibold">
+                          Report Reason: &ldquo;{rep.reason}&rdquo;
+                        </p>
                       </div>
-                      <p className="text-xs text-red-700 font-semibold">
-                        Report Reason: &ldquo;{rep.reason}&rdquo;
-                      </p>
-                    </div>
 
-                    {/* Moderation Actions */}
-                    <div className="flex items-center gap-2">
-                      {!rep.resolved && (
+                      {/* Moderation Actions */}
+                      <div className="flex items-center gap-2">
+                        {!rep.resolved && (
+                          <button
+                            type="button"
+                            onClick={() => handleMessageReportAction(rep.id, 'resolve')}
+                            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0F172A] text-xs font-bold transition"
+                          >
+                            Resolve
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => handleMessageReportAction(rep.id, 'resolve')}
-                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0F172A] text-xs font-bold transition"
+                          onClick={() => handleMessageReportAction(rep.id, 'warn')}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs"
                         >
-                          Resolve
+                          Warn Sender
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleMessageReportAction(rep.id, 'warn')}
-                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs"
-                      >
-                        Warn Sender
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMessageReportAction(rep.id, 'suspend')}
-                        className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs"
-                      >
-                        Suspend Sender
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 5-Message Context Window */}
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-bold uppercase text-[#64748B]">
-                      Context Snapshot ({rep.contextMessages?.length || 0} of max 5 messages)
-                    </p>
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
-                      {(rep.contextMessages || []).map((cm: any) => (
-                        <div
-                          key={cm.id}
-                          className={`p-2.5 rounded-lg text-xs ${
-                            cm.isReportedMessage
-                              ? 'bg-red-50 border border-red-300 text-red-950 font-semibold'
-                              : 'bg-white border border-slate-200 text-[#334155]'
-                          }`}
+                        <button
+                          type="button"
+                          onClick={() => handleMessageReportAction(rep.id, 'suspend')}
+                          className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs"
                         >
-                          <div className="flex items-center justify-between text-[10px] text-[#64748B] mb-0.5">
-                            <span className="font-bold text-[#0F172A]">
-                              {cm.senderName} (@{cm.senderUsername})
-                              {cm.isReportedMessage && (
-                                <span className="ml-2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] uppercase font-extrabold">
-                                  Reported Message
+                          Suspend Sender
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 5-Message Context Window */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase text-[#64748B]">
+                        Context Snapshot ({rep.contextMessages?.length || 0} of max 5 messages)
+                      </p>
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+                        {(rep.contextMessages || []).map((cm: any) => {
+                          const isReportedMsg = Boolean(cm.isReported || cm.isReportedMessage);
+                          return (
+                            <div
+                              key={cm.id}
+                              className={`p-2.5 rounded-lg text-xs ${
+                                isReportedMsg
+                                  ? 'bg-red-50 border border-red-300 text-red-950 font-semibold'
+                                  : 'bg-white border border-slate-200 text-[#334155]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[10px] text-[#64748B] mb-0.5">
+                                <span className="font-bold text-[#0F172A]">
+                                  {cm.senderName} (@{cm.senderUsername})
+                                  {isReportedMsg && (
+                                    <span className="ml-2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] uppercase font-extrabold">
+                                      Reported Message
+                                    </span>
+                                  )}
                                 </span>
-                              )}
-                            </span>
-                            <span>{new Date(cm.createdAt).toLocaleString()}</span>
-                          </div>
-                          <p className="whitespace-pre-wrap break-words">{cm.body}</p>
-                        </div>
-                      ))}
+                                <span>{new Date(cm.createdAt).toLocaleString()}</span>
+                              </div>
+                              <p className="whitespace-pre-wrap break-words">{cm.body}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

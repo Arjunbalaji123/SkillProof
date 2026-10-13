@@ -1,71 +1,61 @@
 import { Router } from 'express';
 import {
+  startDirectConversation,
   listConversations,
-  getConversation,
-  startConversation,
+  getConversationMessages,
   sendMessage,
+  closeConversation,
   markConversationRead,
-  acceptConversationRequest,
-  declineConversationRequest,
   archiveConversation,
   toggleMuteConversation,
   blockUser,
   unblockUser,
   reportMessage,
   getUnreadCount,
+  getDirectQuota,
 } from '../controllers/messageController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
 import { validateBody } from '../middleware/validate.js';
 import {
-  startConversationSchema,
+  startDirectConversationSchema,
   sendMessageSchema,
   reportMessageSchema,
 } from '../validators/index.js';
 import {
   messageSendRateLimiter,
-  conversationStartRateLimiter,
+  directConversationRateLimiter,
 } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
-// All messaging routes require authentication and active DEVELOPER or RECRUITER role
 router.use(requireAuth);
-router.use(requireRole('DEVELOPER', 'RECRUITER', 'ADMIN'));
 
 router.get('/unread-count', getUnreadCount);
-router.get('/conversations', listConversations);
-router.get('/conversations/:id', getConversation);
+router.get('/direct-quota', requireRole('RECRUITER', 'ADMIN'), getDirectQuota);
 
 router.post(
   '/conversations',
-  conversationStartRateLimiter,
-  messageSendRateLimiter,
-  validateBody(startConversationSchema),
-  startConversation
+  directConversationRateLimiter,
+  validateBody(startDirectConversationSchema),
+  startDirectConversation
 );
-
+router.get('/conversations', listConversations);
+router.get('/conversations/:id', getConversationMessages);
 router.post(
   '/conversations/:id/messages',
   messageSendRateLimiter,
   validateBody(sendMessageSchema),
   sendMessage
 );
-
+router.post('/conversations/:id/close', requireRole('RECRUITER', 'ADMIN'), closeConversation);
 router.post('/conversations/:id/read', markConversationRead);
-router.post('/conversations/:id/accept', acceptConversationRequest);
-router.post('/conversations/:id/decline', declineConversationRequest);
 router.post('/conversations/:id/archive', archiveConversation);
 router.post('/conversations/:id/mute', toggleMuteConversation);
 
 router.post('/blocks/:userId', blockUser);
 router.delete('/blocks/:userId', unblockUser);
 
-router.post(
-  '/:messageId/report',
-  validateBody(reportMessageSchema),
-  reportMessage
-);
+router.post('/:messageId/report', validateBody(reportMessageSchema), reportMessage);
 
 export default router;
-

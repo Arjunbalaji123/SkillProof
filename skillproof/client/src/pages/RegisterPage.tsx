@@ -28,6 +28,11 @@ export const RegisterPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'DEVELOPER' | 'RECRUITER'>('DEVELOPER');
+  const [companyName, setCompanyName] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [companyWebsite, setCompanyWebsite] = useState('');
+  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [bio, setBio] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -73,8 +78,6 @@ export const RegisterPage: React.FC = () => {
           });
         }
       } catch (err: any) {
-        // Only mark unavailable if backend explicitly returned 400 with available: false.
-        // Never block the register button when the username check has a network or proxy error.
         if (err.response && err.response.status === 400 && err.response.data?.data?.available === false) {
           setUsernameStatus({
             checking: false,
@@ -109,10 +112,32 @@ export const RegisterPage: React.FC = () => {
       return;
     }
 
+    if (role === 'RECRUITER') {
+      if (!companyName.trim() || companyName.trim().length < 2 || !jobTitle.trim() || jobTitle.trim().length < 2) {
+        setError('Company name and job title are required for Recruiter accounts.');
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
-      await register(name.trim(), email.trim().toLowerCase(), password, role, cleanUsername);
-      navigate('/dashboard');
+      await register(
+        name.trim(),
+        email.trim().toLowerCase(),
+        password,
+        role,
+        cleanUsername,
+        role === 'RECRUITER'
+          ? {
+              companyName: companyName.trim(),
+              jobTitle: jobTitle.trim(),
+              companyWebsite: companyWebsite.trim() || undefined,
+              linkedinUrl: linkedinUrl.trim() || undefined,
+              bio: bio.trim() || undefined,
+            }
+          : undefined
+      );
+      navigate(role === 'RECRUITER' ? '/recruiter' : '/dashboard');
     } catch (err: any) {
       if (err.response?.status === 409) {
         setError(err.response.data?.message || 'Email already in use');
@@ -238,9 +263,84 @@ export const RegisterPage: React.FC = () => {
               />
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              Your public portfolio URL will be <span className="font-mono text-slate-300">/u/{username || 'username'}</span>
+              Your public profile URL will be{' '}
+              <span className="font-mono text-slate-300">
+                {role === 'RECRUITER' ? `/recruiters/${username || 'username'}` : `/u/${username || 'username'}`}
+              </span>
             </p>
           </div>
+
+          {role === 'RECRUITER' && (
+            <div className="space-y-3 p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
+              <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">
+                Recruiter Details
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Company Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="Acme Corp"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Job Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={jobTitle}
+                    onChange={(e) => setJobTitle(e.target.value)}
+                    placeholder="Technical Recruiter"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Company Website (optional)
+                </label>
+                <input
+                  type="url"
+                  value={companyWebsite}
+                  onChange={(e) => setCompanyWebsite(e.target.value)}
+                  placeholder="https://acme.example.com"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  LinkedIn URL (optional)
+                </label>
+                <input
+                  type="url"
+                  value={linkedinUrl}
+                  onChange={(e) => setLinkedinUrl(e.target.value)}
+                  placeholder="https://linkedin.com/in/..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Bio / Hiring Focus (optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Hiring distributed systems & AI engineers..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>

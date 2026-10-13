@@ -15,6 +15,7 @@ import { requireAuth } from './middleware/auth.js';
 import { requireAdmin } from './middleware/role.js';
 import { ProctorService } from './services/proctorService.js';
 import { SocketService } from './services/socketService.js';
+import { OpeningService } from './services/openingService.js';
 import { serveProctorSnapshot } from './controllers/adminController.js';
 
 if (!process.env.JWT_SECRET) {
@@ -37,11 +38,13 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-  // Disable caching for dynamic developer, skills, dashboard, assessment, and messaging routes to avoid stale 304 responses
+  // Disable caching for dynamic developer, skills, dashboard, assessment, openings, notifications, and messaging routes
   if (
     req.path.startsWith('/api/dashboard') ||
     req.path.startsWith('/api/skills') ||
     req.path.startsWith('/api/assessments') ||
+    req.path.startsWith('/api/openings') ||
+    req.path.startsWith('/api/notifications') ||
     req.path.startsWith('/api/messages') ||
     req.path.startsWith('/api/admin')
   ) {
@@ -118,9 +121,17 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== 'test') {
   // Run initial 30-day proctor snapshot cleanup and schedule periodic jobs
   ProctorService.cleanupExpiredSnapshots().catch(() => {});
+  OpeningService.backfillInterestsFromVerifiedSkills().catch(() => {});
+  OpeningService.expireOverdueOpenings().catch(() => {});
+
   setInterval(() => {
     ProctorService.cleanupExpiredSnapshots().catch(() => {});
   }, 6 * 60 * 60 * 1000); // every 6 hours
+
+  // Hourly job: set expired openings to EXPIRED
+  setInterval(() => {
+    OpeningService.expireOverdueOpenings().catch(() => {});
+  }, 60 * 60 * 1000); // every 1 hour
 
   setInterval(() => {
     ProctorService.monitorActiveHeartbeats().catch(() => {});

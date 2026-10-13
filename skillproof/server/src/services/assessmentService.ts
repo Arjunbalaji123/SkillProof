@@ -510,7 +510,7 @@ export class AssessmentService {
         // Best score comparison: keep the highest
         const newBestScore = Math.max(existingSkill?.bestScore || 0, scoreResult.weightedPercent);
 
-        await tx.skill.update({
+        const updatedSkill = await tx.skill.update({
           where: { id: assessment.skillId },
           data: {
             status: 'VERIFIED',
@@ -519,7 +519,33 @@ export class AssessmentService {
             verifiedAt: now,
             expiresAt,
           },
+          include: {
+            skillCatalog: true,
+          },
         });
+
+        const catalogId = updatedSkill.skillCatalogId || assessment.skillCatalogId;
+        if (catalogId) {
+          const existingSkillInterest = await tx.developerInterest.findFirst({
+            where: { userId, skillCatalogId: catalogId },
+          });
+          if (!existingSkillInterest) {
+            await tx.developerInterest.create({
+              data: { userId, skillCatalogId: catalogId },
+            });
+          }
+          const trackId = updatedSkill.skillCatalog?.trackId;
+          if (trackId) {
+            const existingTrackInterest = await tx.developerInterest.findFirst({
+              where: { userId, trackId },
+            });
+            if (!existingTrackInterest) {
+              await tx.developerInterest.create({
+                data: { userId, trackId },
+              });
+            }
+          }
+        }
       }
 
       // 3. Recalculate leaderboard entries inside the same transaction

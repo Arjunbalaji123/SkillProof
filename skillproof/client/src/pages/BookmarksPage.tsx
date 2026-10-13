@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/LoadingSkeleton';
+import { DirectMessageModal } from '../components/DirectMessageModal';
 import { RecruiterBookmarkItem } from '../types';
 import {
   Bookmark,
@@ -21,6 +22,14 @@ export const BookmarksPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [dmTarget, setDmTarget] = useState<{
+    name: string;
+    username: string;
+    topSkill?: { language: string; score: number } | null;
+  } | null>(null);
+
+  const isVerifiedRecruiter =
+    user?.role === 'RECRUITER' && Boolean(user?.recruiterProfile?.isVerified);
 
   const loadBookmarks = async () => {
     try {
@@ -81,7 +90,7 @@ export const BookmarksPage: React.FC = () => {
           <p className="text-base font-bold text-[#0F172A]">No developers bookmarked yet</p>
           <p className="text-xs text-[#64748B] mt-1 mb-4">Discover verified developers and bookmark candidates to track them here.</p>
           <Link
-            to="/recruiters/developers"
+            to="/recruiter"
             className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs"
           >
             Find Developers
@@ -97,7 +106,12 @@ export const BookmarksPage: React.FC = () => {
                 (user?.username &&
                   devUsername &&
                   user.username.toLowerCase() === devUsername.toLowerCase()));
-            const canMessage = !isSelf && !b.isDemo;
+            const canMessage =
+              isVerifiedRecruiter &&
+              !isSelf &&
+              !b.isDemo &&
+              b.canDirectMessage !== false &&
+              b.verifiedSkills.length > 0;
 
             return (
               <div
@@ -184,16 +198,24 @@ export const BookmarksPage: React.FC = () => {
 
                   <div className="flex items-center gap-2">
                     {canMessage && devUsername && (
-                      <Link
-                        to={`/messages?to=${encodeURIComponent(devUsername)}${
-                          b.verifiedSkills[0]?.language
-                            ? `&skill=${encodeURIComponent(b.verifiedSkills[0].language)}`
-                            : ''
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDmTarget({
+                            name: b.name,
+                            username: devUsername,
+                            topSkill: b.verifiedSkills[0]
+                              ? {
+                                  language: b.verifiedSkills[0].language,
+                                  score: b.verifiedSkills[0].score || 0,
+                                }
+                              : null,
+                          })
+                        }
                         className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 font-bold text-xs flex items-center gap-1 transition"
                       >
                         <MessageSquare size={12} /> Message
-                      </Link>
+                      </button>
                     )}
                     <Link
                       to={`/u/${devUsername}`}
@@ -209,6 +231,12 @@ export const BookmarksPage: React.FC = () => {
           })}
         </div>
       )}
+
+      <DirectMessageModal
+        isOpen={Boolean(dmTarget)}
+        onClose={() => setDmTarget(null)}
+        developer={dmTarget}
+      />
     </div>
   );
 };
