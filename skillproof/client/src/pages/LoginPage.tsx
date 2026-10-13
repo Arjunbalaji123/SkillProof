@@ -1,28 +1,53 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { PageSkeleton } from '../components/LoadingSkeleton';
 import { ShieldCheck, Mail, Lock, ArrowRight, AlertCircle, Zap } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const { login, user, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [email, setEmail] = useState<string>(() => (location.state as any)?.email || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  // Helper to determine destination path for a role
+  const getDestination = (role?: string) => {
+    if (role === 'RECRUITER') return '/recruiters/developers';
+    if (role === 'ADMIN') return '/admin';
+    return '/dashboard';
+  };
+
+  // 2. Logged-in users who open /login are redirected to their role dashboard
+  useEffect(() => {
+    if (!loading && user) {
+      const from = (location.state as any)?.from?.pathname;
+      const destination = from || getDestination(user.role);
+      navigate(destination, { replace: true });
+    }
+  }, [user, loading, navigate, location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-      await login(email, password);
-      navigate('/dashboard');
+      await login(email.trim().toLowerCase(), password);
+      // AuthProvider updates user, navigation happens via useEffect or here
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      console.error('Backend Login Error:', err?.response?.data || err?.message || err);
+      if (!err.response) {
+        setError('Network error: Unable to connect to backend server. Please verify your connection.');
+      } else if (err.response.status === 401) {
+        setError(err.response.data?.message || 'Invalid email or password credentials');
+      } else {
+        setError(err.response.data?.message || 'Login failed. Please try again.');
+      }
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -30,16 +55,22 @@ export const LoginPage: React.FC = () => {
     setEmail(quickEmail);
     setPassword(quickPass);
     setError(null);
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       await login(quickEmail, quickPass);
-      navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Quick login failed.');
+      console.error('Backend Quick Login Error:', err?.response?.data || err?.message || err);
+      if (!err.response) {
+        setError('Network error: Unable to connect to backend server. Please verify your connection.');
+      } else {
+        setError(err.response.data?.message || 'Quick login failed.');
+      }
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
+
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
@@ -123,11 +154,11 @@ export const LoginPage: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isSubmitting}
             className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition flex items-center justify-center gap-2 mt-2"
           >
-            {isLoading ? 'Signing In...' : 'Sign In'}
-            {!isLoading && <ArrowRight size={16} />}
+            {isSubmitting ? 'Signing In...' : 'Sign In'}
+            {!isSubmitting && <ArrowRight size={16} />}
           </button>
         </form>
 

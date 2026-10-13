@@ -1,137 +1,73 @@
-import { Response, NextFunction } from 'express';
-import { prisma } from '../config/db.js';
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
+import { PortfolioService } from '../services/portfolioService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
-import { updateProfileSchema } from '../validators/index.js';
-import { calculateProfileCompletion } from '../utils/completion.js';
-import { logAudit } from '../utils/audit.js';
 
-export const getProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const getPublicPortfolio = async (req: AuthRequest, res: Response) => {
+  try {
+    const slug = req.params.slug as string;
+    const viewerId = req.user?.userId;
+    const portfolio = await PortfolioService.getPublicPortfolioBySlug(slug, viewerId);
+
+    if (!portfolio) {
+      return sendError(res, 'Portfolio not found or set to private', 404);
+    }
+
+    return sendSuccess(res, 'Portfolio retrieved', portfolio);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve portfolio', 500);
+  }
+};
+
+export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      include: {
-        user_skills: {
-          include: { skill: true },
-          orderBy: { created_at: 'desc' },
-        },
-        projects: {
-          include: { technologies: true },
-          orderBy: { created_at: 'desc' },
-        },
-        education: { orderBy: { created_at: 'desc' } },
-        certifications: { orderBy: { created_at: 'desc' } },
-        achievements: { orderBy: { created_at: 'desc' } },
-      },
-    });
-
-    if (!profile) {
-      return sendError(res, 'Profile not found', 404);
-    }
-
-    const completion = await calculateProfileCompletion(profile.id);
-    profile.profile_completion = completion;
-
-    return sendSuccess(res, 'Profile fetched successfully', profile);
-  } catch (err) {
-    next(err);
+    const profile = await PortfolioService.updateProfile(userId, req.body);
+    return sendSuccess(res, 'Profile updated successfully', profile);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update profile', 400);
   }
 };
 
-export const updateProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const getInterests = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const validated = updateProfileSchema.parse(req.body);
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!profile) {
-      return sendError(res, 'Profile not found', 404);
-    }
-
-    const updatedProfile = await prisma.profile.update({
-      where: { id: profile.id },
-      data: validated,
-    });
-
-    const completion = await calculateProfileCompletion(profile.id);
-    updatedProfile.profile_completion = completion;
-
-    await logAudit(userId, 'PROFILE_UPDATED', 'PROFILE', profile.id);
-
-    return sendSuccess(res, 'Profile updated successfully', updatedProfile);
-  } catch (err) {
-    next(err);
+    const data = await PortfolioService.getInterests(userId);
+    return sendSuccess(res, 'Interests retrieved', data);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve interests', 500);
   }
 };
 
-export const uploadAvatar = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const updateInterests = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-
-    if (!req.file) {
-      return sendError(res, 'No image file uploaded', 400);
-    }
-
-    const avatarUrl = `/uploads/${req.file.filename}`;
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!profile) {
-      return sendError(res, 'Profile not found', 404);
-    }
-
-    const updatedProfile = await prisma.profile.update({
-      where: { id: profile.id },
-      data: { profile_image: avatarUrl },
-    });
-
-    const completion = await calculateProfileCompletion(profile.id);
-    updatedProfile.profile_completion = completion;
-
-    await logAudit(userId, 'AVATAR_UPLOADED', 'PROFILE', profile.id, { avatarUrl });
-
-    return sendSuccess(res, 'Profile avatar uploaded successfully', updatedProfile);
-  } catch (err) {
-    next(err);
+    const { trackIds, skillIds } = req.body;
+    const data = await PortfolioService.updateInterests(userId, trackIds || [], skillIds || []);
+    return sendSuccess(res, 'Interests updated successfully', data);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update interests', 400);
   }
 };
 
-export const getPublicProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const updateMessagingSettings = async (req: AuthRequest, res: Response) => {
   try {
-    const username = req.params.username as string;
-
-    const profile = await prisma.profile.findUnique({
-      where: { username },
-      include: {
-        user: { select: { id: true, email: true, role: true, created_at: true } },
-        user_skills: {
-          include: { skill: true },
-          orderBy: { created_at: 'desc' },
-        },
-        projects: {
-          include: { technologies: true },
-          orderBy: { created_at: 'desc' },
-        },
-        education: { orderBy: { created_at: 'desc' } },
-        certifications: { orderBy: { created_at: 'desc' } },
-        achievements: { orderBy: { created_at: 'desc' } },
-      },
-    });
-
-    if (!profile) {
-      return sendError(res, `Developer profile '@${username}' not found`, 404);
-    }
-
-    return sendSuccess(res, 'Public profile retrieved successfully', profile);
-  } catch (err) {
-    next(err);
+    const userId = req.user!.userId;
+    const { allowRecruiterMessages } = req.body;
+    const data = await PortfolioService.updateMessagingSettings(userId, Boolean(allowRecruiterMessages));
+    return sendSuccess(res, 'Messaging settings updated', data);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update messaging settings', 400);
   }
 };
 
+export const updateNotificationSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { notificationsPaused } = req.body;
+    const data = await PortfolioService.updateNotificationSettings(userId, Boolean(notificationsPaused));
+    return sendSuccess(res, 'Notification settings updated', data);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update notification settings', 400);
+  }
+};

@@ -1,180 +1,74 @@
-import { Response, NextFunction } from 'express';
-import { prisma } from '../config/db.js';
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
+import { SkillService } from '../services/skillService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
-import { userSkillSchema } from '../validators/index.js';
-import { calculateProfileCompletion } from '../utils/completion.js';
-import { logAudit } from '../utils/audit.js';
 
-export const getAllSkills = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { category, search } = req.query;
-
-    const where: any = {};
-    if (category) where.category = String(category);
-    if (search) {
-      where.name = { contains: String(search) };
-    }
-
-    const skills = await prisma.skill.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
-
-    return sendSuccess(res, 'Skills retrieved successfully', skills);
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const createSkill = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { name, category, description } = req.body;
-
-    if (!name || !category) {
-      return sendError(res, 'Skill name and category are required', 400);
-    }
-
-    const existing = await prisma.skill.findUnique({ where: { name: String(name) } });
-    if (existing) {
-      return sendError(res, 'Skill already exists in catalog', 409);
-    }
-
-    const skill = await prisma.skill.create({
-      data: { name: String(name), category: String(category), description: description ? String(description) : null },
-    });
-
-    await logAudit(req.user?.userId || null, 'SKILL_CREATED', 'SKILL', skill.id, { name: skill.name });
-
-    return sendSuccess(res, 'Skill created successfully', skill, 201);
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const getUserSkills = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const getDashboardSummary = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!profile) return sendError(res, 'Profile not found', 404);
-
-    const userSkills = await prisma.userSkill.findMany({
-      where: { profile_id: profile.id },
-      include: { skill: true },
-      orderBy: { created_at: 'desc' },
-    });
-
-    return sendSuccess(res, 'User skills retrieved successfully', userSkills);
-  } catch (err) {
-    next(err);
+    const summary = await SkillService.getDashboardSummary(userId);
+    return sendSuccess(res, 'Dashboard summary retrieved', summary);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch dashboard summary', 500);
   }
 };
 
-export const addUserSkill = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const getUserSkills = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const validated = userSkillSchema.parse(req.body);
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-    });
-    if (!profile) return sendError(res, 'Profile not found', 404);
-
-    let skillId = validated.skill_id;
-
-    if (!skillId && validated.skill_name) {
-      let skill = await prisma.skill.findUnique({ where: { name: validated.skill_name } });
-      if (!skill) {
-        skill = await prisma.skill.create({
-          data: { name: validated.skill_name, category: 'General' },
-        });
-      }
-      skillId = skill.id;
-    }
-
-    if (!skillId) {
-      return sendError(res, 'Skill ID or Skill Name is required', 400);
-    }
-
-    const existingUserSkill = await prisma.userSkill.findFirst({
-      where: { profile_id: profile.id, skill_id: skillId },
-    });
-
-    if (existingUserSkill) {
-      return sendError(res, 'Skill is already added to your profile', 409);
-    }
-
-    const userSkill = await prisma.userSkill.create({
-      data: {
-        profile_id: profile.id,
-        skill_id: skillId,
-        proficiency_level: validated.proficiency_level,
-        verification_status: 'UNVERIFIED',
-      },
-      include: { skill: true },
-    });
-
-    await calculateProfileCompletion(profile.id);
-    await logAudit(userId, 'USER_SKILL_ADDED', 'USER_SKILL', userSkill.id);
-
-    return sendSuccess(res, 'Skill added to profile successfully', userSkill, 201);
-  } catch (err) {
-    next(err);
+    const skills = await SkillService.getUserSkills(userId);
+    return sendSuccess(res, 'User skills retrieved', skills);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch skills', 500);
   }
 };
 
-export const updateUserSkill = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const claimSkill = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const userSkillId = req.params.id as string;
-    const { proficiency_level } = req.body;
-
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
-
-    const userSkill = await prisma.userSkill.findFirst({
-      where: { id: userSkillId, profile_id: profile.id },
-    });
-
-    if (!userSkill) return sendError(res, 'User skill record not found', 404);
-
-    const updated = await prisma.userSkill.update({
-      where: { id: userSkillId },
-      data: { proficiency_level: String(proficiency_level) },
-      include: { skill: true },
-    });
-
-    return sendSuccess(res, 'User skill updated successfully', updated);
-  } catch (err) {
-    next(err);
+    const skill = await SkillService.claimSkill(userId, req.body);
+    return sendSuccess(res, 'Skill claimed successfully. Pass assessment to verify.', skill, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to claim skill', 400);
   }
 };
 
-export const deleteUserSkill = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const updateClaimedSkill = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const userSkillId = req.params.id as string;
-
-    const profile = await prisma.profile.findUnique({ where: { user_id: userId } });
-    if (!profile) return sendError(res, 'Profile not found', 404);
-
-    const userSkill = await prisma.userSkill.findFirst({
-      where: { id: userSkillId, profile_id: profile.id },
-    });
-
-    if (!userSkill) return sendError(res, 'User skill record not found', 404);
-
-    await prisma.userSkill.delete({ where: { id: userSkillId } });
-    await calculateProfileCompletion(profile.id);
-    await logAudit(userId, 'USER_SKILL_DELETED', 'USER_SKILL', userSkillId);
-
-    return sendSuccess(res, 'User skill removed from profile successfully');
-  } catch (err) {
-    next(err);
+    const skillId = req.params.id as string;
+    const updated = await SkillService.updateClaimedSkill(userId, skillId, req.body);
+    return sendSuccess(res, 'Claimed skill updated', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update skill', 400);
   }
 };
 
+export const deleteSkill = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const skillId = req.params.id as string;
+    await SkillService.deleteSkill(userId, skillId);
+    return sendSuccess(res, 'Skill removed successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete skill', 400);
+  }
+};
+
+export const getCertificateClaims = async (_req: AuthRequest, res: Response) => {
+  try {
+    const claims = await SkillService.getCertificateClaims();
+    return sendSuccess(res, 'Certificate claims retrieved (unverified)', claims);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch certificate claims', 500);
+  }
+};
+
+export const getSkillCatalog = async (_req: AuthRequest, res: Response) => {
+  try {
+    const catalog = await SkillService.getSkillCatalog();
+    return sendSuccess(res, 'Skill catalog retrieved', catalog);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch skill catalog', 500);
+  }
+};

@@ -1,48 +1,149 @@
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
 import dotenv from 'dotenv';
-import apiRoutes from './routes/index.js';
-import { errorHandler } from './middleware/errorHandler.js';
-
 dotenv.config();
 
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import path from 'path';
+import cookieParser from 'cookie-parser';
+import apiRoutes from './routes/index.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { requestLogger } from './middleware/logger.js';
+import { prisma } from './config/db.js';
+import { loginRateLimiter, authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
+import { requireAuth } from './middleware/auth.js';
+import { requireAdmin } from './middleware/role.js';
+import { ProctorService } from './services/proctorService.js';
+import { SocketService } from './services/socketService.js';
+import { OpeningService } from './services/openingService.js';
+import { serveProctorSnapshot } from './controllers/adminController.js';
+
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is missing.');
+  process.exit(1);
+}
+
 const app = express();
+const httpServer = http.createServer(app);
+SocketService.init(httpServer);
+
 const PORT = process.env.PORT || 5000;
 const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR || '../uploads');
+const serverUploadsDir = path.resolve(process.cwd(), 'uploads');
 
-// Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true,
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security Headers Middleware & HTTP Caching Policy
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-// Serve static file uploads
-app.use('/uploads', express.static(uploadDir));
+  // Disable caching for dynamic developer, skills, dashboard, assessment, openings, notifications, and messaging routes
+  if (
+    req.path.startsWith('/api/dashboard') ||
+    req.path.startsWith('/api/skills') ||
+    req.path.startsWith('/api/assessments') ||
+    req.path.startsWith('/api/openings') ||
+    req.path.startsWith('/api/notifications') ||
+    req.path.startsWith('/api/messages') ||
+    req.path.startsWith('/api/admin')
+  ) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    app: 'SKILLPROOF Backend Engine',
-    timestamp: new Date().toISOString(),
-  });
+  next();
 });
 
-// API Routes
-app.use('/api', apiRoutes);
+// Request Logging & Security Middleware
+app.use(requestLogger);
+app.use(cors({
+  origin: [
+    process.env.CLIENT_URL || 'http://localhost:5173',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ],
+  credentials: true,
+}));
+app.use(cookieParser());
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// Proctor snapshots are accessible ONLY to admins
+app.get('/uploads/proctor/:filename', requireAuth, requireAdmin, serveProctorSnapshot);
+
+// Serve static file uploads safely (excluding raw access to sensitive proof PDFs and proctor snapshots)
+app.use('/uploads', (req, res, next) => {
+  if (req.path.startsWith('/proof_') || req.path.startsWith('/proctor')) {
+    return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
+  }
+  next();
+}, express.static(uploadDir, {
+  dotfiles: 'ignore',
+  index: false,
+}), express.static(serverUploadsDir, {
+  dotfiles: 'ignore',
+  index: false,
+}));
+
+// Health check with DB status
+app.get('/api/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      success: true,
+      status: 'OK',
+      database: 'connected',
+      app: 'SKILLPROOF Backend Engine',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      success: false,
+      status: 'ERROR',
+      database: 'disconnected',
+      app: 'SKILLPROOF Backend Engine',
+      error: err?.message || 'Database unavailable',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// Apply Rate Limiters & API Routes
+app.use('/api/auth/login', loginRateLimiter);
+app.use('/api/auth/register', authRateLimiter);
+app.use('/api', apiRateLimiter, apiRoutes);
 
 // Error Handler
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 SKILLPROOF Server running at http://localhost:${PORT}`);
+  // Run initial 30-day proctor snapshot cleanup and schedule periodic jobs
+  ProctorService.cleanupExpiredSnapshots().catch(() => {});
+  OpeningService.backfillInterestsFromVerifiedSkills().catch(() => {});
+  OpeningService.expireOverdueOpenings().catch(() => {});
+
+  setInterval(() => {
+    ProctorService.cleanupExpiredSnapshots().catch(() => {});
+  }, 6 * 60 * 60 * 1000); // every 6 hours
+
+  // Hourly job: set expired openings to EXPIRED
+  setInterval(() => {
+    OpeningService.expireOverdueOpenings().catch(() => {});
+  }, 60 * 60 * 1000); // every 1 hour
+
+  setInterval(() => {
+    ProctorService.monitorActiveHeartbeats().catch(() => {});
+  }, 10 * 1000); // every 10 seconds
+
+  httpServer.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 SKILLPROOF Server & Socket.IO running at http://0.0.0.0:${PORT}`);
     console.log(`📁 Static Uploads directory: ${uploadDir}`);
   });
 }
 
+export { httpServer };
 export default app;
+
 

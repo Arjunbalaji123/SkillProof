@@ -1,188 +1,389 @@
-import { Response, NextFunction } from 'express';
-import { prisma } from '../config/db.js';
+import fs from 'fs';
+import path from 'path';
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
+import { AdminService } from '../services/adminService.js';
+import { QuestionService } from '../services/questionService.js';
+import { ProctorService } from '../services/proctorService.js';
+import { MessageService } from '../services/messageService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
-import { logAudit } from '../utils/audit.js';
 
-export const getDashboardStats = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const getStats = async (_req: AuthRequest, res: Response) => {
   try {
-    const [
-      totalUsers,
-      totalDevelopers,
-      totalRecruiters,
-      verifiedSkillsCount,
-      pendingVerificationsCount,
-      assessmentsCompletedCount,
-      totalProjectsCount,
-    ] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { role: 'DEVELOPER' } }),
-      prisma.user.count({ where: { role: 'RECRUITER' } }),
-      prisma.userSkill.count({ where: { verification_status: 'VERIFIED' } }),
-      prisma.verificationRequest.count({ where: { status: 'PENDING' } }),
-      prisma.assessmentAttempt.count({ where: { status: 'PASSED' } }),
-      prisma.project.count(),
-    ]);
-
-    const usersByRole = [
-      { role: 'DEVELOPER', count: totalDevelopers },
-      { role: 'RECRUITER', count: totalRecruiters },
-      { role: 'ADMIN', count: totalUsers - (totalDevelopers + totalRecruiters) },
-    ];
-
-    const [unverified, pending, verified, rejected] = await Promise.all([
-      prisma.userSkill.count({ where: { verification_status: 'UNVERIFIED' } }),
-      prisma.userSkill.count({ where: { verification_status: 'PENDING' } }),
-      prisma.userSkill.count({ where: { verification_status: 'VERIFIED' } }),
-      prisma.userSkill.count({ where: { verification_status: 'REJECTED' } }),
-    ]);
-
-    const verificationBreakdown = [
-      { status: 'VERIFIED', count: verified },
-      { status: 'PENDING', count: pending },
-      { status: 'UNVERIFIED', count: unverified },
-      { status: 'REJECTED', count: rejected },
-    ];
-
-    const popularSkills = await prisma.userSkill.groupBy({
-      by: ['skill_id'],
-      _count: { skill_id: true },
-      orderBy: { _count: { skill_id: 'desc' } },
-      take: 5,
-    });
-
-    const skillIds = popularSkills.map((s) => s.skill_id);
-    const skillsList = await prisma.skill.findMany({ where: { id: { in: skillIds } } });
-
-    const topSkillsFormatted = popularSkills.map((item) => {
-      const found = skillsList.find((s) => s.id === item.skill_id);
-      return {
-        name: found ? found.name : 'Unknown',
-        category: found ? found.category : 'General',
-        count: item._count.skill_id,
-      };
-    });
-
-    return sendSuccess(res, 'Admin stats retrieved successfully', {
-      stats: {
-        totalUsers,
-        totalDevelopers,
-        totalRecruiters,
-        verifiedSkillsCount,
-        pendingVerificationsCount,
-        assessmentsCompletedCount,
-        totalProjectsCount,
-      },
-      charts: {
-        usersByRole,
-        verificationBreakdown,
-        topSkills: topSkillsFormatted,
-      },
-    });
-  } catch (err) {
-    next(err);
+    const stats = await AdminService.getPlatformStats();
+    return sendSuccess(res, 'Platform stats retrieved', stats);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch stats', 500);
   }
 };
 
-export const getUsersList = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const listQuestions = async (req: AuthRequest, res: Response) => {
   try {
-    const { role, status, search } = req.query;
-
-    const where: any = {};
-    if (role) where.role = String(role);
-    if (status) where.status = String(status);
-    if (search) {
-      where.OR = [
-        { email: { contains: String(search) } },
-        { profile: { name: { contains: String(search) } } },
-        { profile: { username: { contains: String(search) } } },
-      ];
-    }
-
-    const users = await prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
-        created_at: true,
-        profile: {
-          select: {
-            name: true,
-            username: true,
-            profile_image: true,
-            location: true,
-            profile_completion: true,
-          },
-        },
-      },
-      orderBy: { created_at: 'desc' },
+    const { language, difficulty, status, search } = req.query;
+    const questions = await QuestionService.listQuestions({
+      language: language as string,
+      difficulty: difficulty as string,
+      status: status as string,
+      search: search as string,
     });
-
-    return sendSuccess(res, 'Users list retrieved', users);
-  } catch (err) {
-    next(err);
+    return sendSuccess(res, 'Questions retrieved', questions);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch questions', 500);
   }
 };
 
-export const updateUserStatus = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const createQuestion = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    const targetUserId = req.params.id as string;
+    const question = await QuestionService.createQuestion(adminId, req.body);
+    return sendSuccess(res, 'Question created successfully', question, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create question', 400);
+  }
+};
+
+export const updateQuestion = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const questionId = req.params.id as string;
+    const question = await QuestionService.updateQuestion(adminId, questionId, req.body);
+    return sendSuccess(res, 'Question updated successfully', question);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update question', 400);
+  }
+};
+
+export const deleteQuestion = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const questionId = req.params.id as string;
+    await QuestionService.deleteQuestion(adminId, questionId);
+    return sendSuccess(res, 'Question deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete question', 400);
+  }
+};
+
+export const importQuestions = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const { questions } = req.body;
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return sendError(res, 'Questions must be a non-empty array', 400);
+    }
+    const result = await QuestionService.importQuestions(adminId, questions);
+    return sendSuccess(res, `Successfully imported ${result.count} questions`, result, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to import questions', 400);
+  }
+};
+
+export const listUsers = async (req: AuthRequest, res: Response) => {
+  try {
+    const { search, role } = req.query;
+    const users = await AdminService.listUsers(search as string, role as string);
+    return sendSuccess(res, 'Users retrieved', users);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch users', 500);
+  }
+};
+
+export const updateUserStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const userId = req.params.id as string;
     const { status } = req.body;
-
-    if (!['ACTIVE', 'SUSPENDED'].includes(status)) {
-      return sendError(res, 'Invalid status value. Allowed: ACTIVE, SUSPENDED', 400);
-    }
-
-    if (targetUserId === adminId) {
-      return sendError(res, 'You cannot suspend your own admin account', 400);
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: targetUserId },
-      data: { status },
-      select: { id: true, email: true, role: true, status: true },
-    });
-
-    await logAudit(adminId, 'USER_STATUS_UPDATED', 'USER', targetUserId, { newStatus: status });
-
-    return sendSuccess(res, `User status updated to ${status}`, updatedUser);
-  } catch (err) {
-    next(err);
+    const user = await AdminService.updateUserStatus(adminId, userId, status);
+    return sendSuccess(res, `User status updated to ${status}`, user);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update user status', 400);
   }
 };
 
-export const getAuditLogs = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const getFlags = async (_req: AuthRequest, res: Response) => {
   try {
-    const logs = await prisma.auditLog.findMany({
-      include: {
-        user: { select: { email: true, role: true, profile: { select: { name: true } } } },
-      },
-      orderBy: { timestamp: 'desc' },
-      take: 100,
-    });
+    const flags = await AdminService.getFlaggedQuestions();
+    return sendSuccess(res, 'Flagged questions retrieved', flags);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch flagged questions', 500);
+  }
+};
 
+export const resolveFlag = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const flagId = req.params.id as string;
+    const { action } = req.body; // 'RESOLVE' | 'RETIRE_QUESTION'
+    await AdminService.resolveFlag(adminId, flagId, action || 'RESOLVE');
+    return sendSuccess(res, 'Flag action executed successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to process flag action', 400);
+  }
+};
+
+export const getAuditLogs = async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 100;
+    const logs = await AdminService.getAuditLogs(limit);
     return sendSuccess(res, 'Audit logs retrieved', logs);
-  } catch (err) {
-    next(err);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch audit logs', 500);
   }
 };
 
-export const getReports = async (req: AuthRequest, res: Response, next: NextFunction) => {
+// ==========================================
+// Catalog CRUD & Question Pool Health
+// ==========================================
+export const getCatalog = async (_req: AuthRequest, res: Response) => {
   try {
-    const reports = await prisma.report.findMany({
-      include: {
-        reporter: { select: { email: true, profile: { select: { name: true } } } },
-        reported_user: { select: { email: true, profile: { select: { name: true, username: true } } } },
-      },
-      orderBy: { created_at: 'desc' },
-    });
-
-    return sendSuccess(res, 'Reports list retrieved', reports);
-  } catch (err) {
-    next(err);
+    const catalog = await AdminService.getCatalog();
+    return sendSuccess(res, 'Catalog retrieved', catalog);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch catalog', 500);
   }
 };
+
+export const createTrack = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const track = await AdminService.createTrack(adminId, req.body);
+    return sendSuccess(res, 'Track created successfully', track, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create track', 400);
+  }
+};
+
+export const updateTrack = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const track = await AdminService.updateTrack(adminId, req.params.id as string, req.body);
+    return sendSuccess(res, 'Track updated successfully', track);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update track', 400);
+  }
+};
+
+export const deleteTrack = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    await AdminService.deleteTrack(adminId, req.params.id as string);
+    return sendSuccess(res, 'Track deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete track', 400);
+  }
+};
+
+export const createSkillCatalog = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const skill = await AdminService.createSkillCatalog(adminId, req.body);
+    return sendSuccess(res, 'Skill created successfully', skill, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create skill', 400);
+  }
+};
+
+export const updateSkillCatalog = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const skill = await AdminService.updateSkillCatalog(adminId, req.params.id as string, req.body);
+    return sendSuccess(res, 'Skill updated successfully', skill);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update skill', 400);
+  }
+};
+
+export const deleteSkillCatalog = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    await AdminService.deleteSkillCatalog(adminId, req.params.id as string);
+    return sendSuccess(res, 'Skill deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete skill', 400);
+  }
+};
+
+export const createTopic = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const topic = await AdminService.createTopic(adminId, req.body);
+    return sendSuccess(res, 'Topic created successfully', topic, 201);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to create topic', 400);
+  }
+};
+
+export const updateTopic = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const topic = await AdminService.updateTopic(adminId, req.params.id as string, req.body);
+    return sendSuccess(res, 'Topic updated successfully', topic);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update topic', 400);
+  }
+};
+
+export const deleteTopic = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    await AdminService.deleteTopic(adminId, req.params.id as string);
+    return sendSuccess(res, 'Topic deleted successfully');
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to delete topic', 400);
+  }
+};
+
+export const getQuestionPoolHealth = async (_req: AuthRequest, res: Response) => {
+  try {
+    const poolHealth = await AdminService.getQuestionPoolHealth();
+    return sendSuccess(res, 'Question pool health retrieved', poolHealth);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch question pool health', 500);
+  }
+};
+
+// ==========================================
+// Proctoring & Lockout Administration
+// ==========================================
+export const getProctoringOverview = async (_req: AuthRequest, res: Response) => {
+  try {
+    const data = await ProctorService.getAdminProctoringData();
+    return sendSuccess(res, 'Proctoring overview retrieved', data);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch proctoring overview', 500);
+  }
+};
+
+export const liftLockout = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const lockoutId = req.params.id as string;
+    const { reason } = req.body;
+    const updated = await ProctorService.liftLockout(adminId, lockoutId, reason);
+    return sendSuccess(res, 'Skill lockout lifted and attempt restored', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to lift lockout', err.statusCode || 400);
+  }
+};
+
+export const confirmViolation = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const lockoutId = req.params.id as string;
+    const { notes } = req.body;
+    const updated = await ProctorService.confirmViolation(adminId, lockoutId, notes);
+    return sendSuccess(res, 'Violation confirmed', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to confirm violation', err.statusCode || 400);
+  }
+};
+
+export const serveProctorSnapshot = async (req: AuthRequest, res: Response) => {
+  try {
+    const filename = path.basename(req.params.filename as string);
+    const filePath = path.join(ProctorService.getSnapshotDir(), filename);
+    if (!fs.existsSync(filePath)) {
+      return sendError(res, 'Snapshot not found', 404);
+    }
+    return res.sendFile(filePath);
+  } catch (err: any) {
+    return sendError(res, 'Failed to serve snapshot', 500);
+  }
+};
+
+// ==========================================
+// Recruiter Verification & Opening Moderation
+// ==========================================
+export const listRecruiters = async (req: AuthRequest, res: Response) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const recruiters = await AdminService.listRecruitersForVerification(status);
+    return sendSuccess(res, 'Recruiters retrieved', recruiters);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve recruiters', 500);
+  }
+};
+
+export const verifyRecruiter = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const targetId = String(req.params.id || req.body.recruiterId || req.body.userId || '');
+    const isVerified = Boolean(req.body.isVerified);
+    const note = req.body.note;
+
+    if (!targetId) {
+      return sendError(res, 'Recruiter ID is required', 400);
+    }
+
+    const updated = await AdminService.verifyRecruiter(adminId, targetId, isVerified, note);
+    return sendSuccess(
+      res,
+      isVerified ? 'Recruiter verified successfully' : 'Recruiter verification revoked',
+      updated
+    );
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to update recruiter verification', 400);
+  }
+};
+
+export const listAdminOpenings = async (req: AuthRequest, res: Response) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const openings = await AdminService.listAllOpeningsForAdmin(status);
+    return sendSuccess(res, 'Openings retrieved', openings);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve openings', 500);
+  }
+};
+
+export const moderateAdminOpening = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const openingId = String(req.params.id || req.body.openingId || '');
+    if (!openingId) {
+      return sendError(res, 'Opening ID is required', 400);
+    }
+    const { OpeningService } = await import('../services/openingService.js');
+    const updated = await OpeningService.updateOpening(adminId, openingId, req.body, true);
+    return sendSuccess(res, 'Opening moderated successfully', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to moderate opening', err.statusCode || 400);
+  }
+};
+
+// ==========================================
+// Message Reports Moderation
+// ==========================================
+export const getMessageReports = async (req: AuthRequest, res: Response) => {
+  try {
+    const resolvedParam = req.query.resolved;
+    const resolvedFilter =
+      resolvedParam === 'true' ? true : resolvedParam === 'false' ? false : undefined;
+    const reports = await MessageService.getAdminMessageReports(resolvedFilter);
+    return sendSuccess(res, 'Message reports retrieved', reports);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch message reports', 500);
+  }
+};
+
+export const resolveMessageReport = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const reportId = String(req.params.id || req.body.reportId || '');
+    const action = req.body.action as string | undefined;
+
+    const options = {
+      deleteMessage: Boolean(req.body.deleteMessage || action === 'delete' || action === 'suspend'),
+      warnSender: Boolean(req.body.warnSender || action === 'warn'),
+      suspendSender: Boolean(req.body.suspendSender || action === 'suspend'),
+    };
+
+    const updated = await MessageService.resolveAdminMessageReport(adminId, reportId, options);
+    return sendSuccess(res, `Message report processed`, updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to resolve message report', err.statusCode || 400);
+  }
+};
+
+
 

@@ -1,150 +1,92 @@
-import { Request, Response, NextFunction } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../config/db.js';
-import { signToken } from '../utils/jwt.js';
-import { sendSuccess, sendError } from '../utils/response.js';
-import { registerSchema, loginSchema } from '../validators/index.js';
-import { logAudit } from '../utils/audit.js';
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
+import { AuthService } from '../services/authService.js';
+import { sendSuccess, sendError } from '../utils/response.js';
 
-export const register = async (req: Request, res: Response, next: NextFunction) => {
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+};
+
+const CLEAR_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+};
+
+export const register = async (req: AuthRequest, res: Response) => {
   try {
-    const validated = registerSchema.parse(req.body);
+    const { user, token } = await AuthService.register(req.body);
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email: validated.email },
-    });
+    res.cookie('token', token, COOKIE_OPTIONS);
 
-    if (existingUser) {
-      return sendError(res, 'Email address is already registered', 409);
-    }
-
-    const baseUsername = validated.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    let username = baseUsername;
-    let count = 1;
-    while (await prisma.profile.findUnique({ where: { username } })) {
-      username = `${baseUsername}${count++}`;
-    }
-
-    const password_hash = await bcrypt.hash(validated.password, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        email: validated.email,
-        password_hash,
-        role: validated.role,
-        status: 'ACTIVE',
-        profile: {
-          create: {
-            name: validated.name,
-            username,
-            profile_completion: 20,
-          },
+    return sendSuccess(
+      res,
+      'Registration successful',
+      {
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: user.role,
+          profile: user.profile,
+          recruiterProfile: (user as any).recruiterProfile || null,
         },
+        token, // also return token for mobile/bearer compatibility
       },
-      include: { profile: true },
-    });
-
-    await logAudit(user.id, 'USER_REGISTERED', 'USER', user.id, { role: user.role });
-
-    const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      username: user.profile?.username,
-    });
-
-    return sendSuccess(res, 'User registered successfully', {
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        profile: user.profile,
-      },
-    }, 201);
-  } catch (err) {
-    next(err);
+      201
+    );
+  } catch (err: any) {
+    const status = err.statusCode || (err.message === 'Email already in use' ? 409 : 400);
+    return sendError(res, err.message || 'Registration failed', status);
   }
 };
 
-export const login = async (req: Request, res: Response, next: NextFunction) => {
+export const login = async (req: AuthRequest, res: Response) => {
   try {
-    const validated = loginSchema.parse(req.body);
+    const { user, token } = await AuthService.login(req.body);
 
-    const user = await prisma.user.findUnique({
-      where: { email: validated.email },
-      include: { profile: true },
-    });
-
-    if (!user) {
-      return sendError(res, 'Invalid email or password', 401);
-    }
-
-    if (user.status === 'SUSPENDED') {
-      return sendError(res, 'Your account has been suspended. Please contact admin support.', 403);
-    }
-
-    const isMatch = await bcrypt.compare(validated.password, user.password_hash);
-    if (!isMatch) {
-      return sendError(res, 'Invalid email or password', 401);
-    }
-
-    await logAudit(user.id, 'USER_LOGIN', 'USER', user.id);
-
-    const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      username: user.profile?.username,
-    });
+    res.cookie('token', token, COOKIE_OPTIONS);
 
     return sendSuccess(res, 'Login successful', {
-      token,
       user: {
         id: user.id,
-        email: user.email,
+        username: user.username,
+        name: user.name,
         role: user.role,
-        status: user.status,
         profile: user.profile,
+        recruiterProfile: (user as any).recruiterProfile || null,
+        interests: (user as any).interests || [],
       },
+      token,
     });
-  } catch (err) {
-    next(err);
+  } catch (err: any) {
+    const status = err.statusCode || 401;
+    return sendError(res, err.message || 'Login failed', status);
   }
 };
 
-export const getMe = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const logout = async (_req: AuthRequest, res: Response) => {
+  res.clearCookie('token', CLEAR_COOKIE_OPTIONS);
+  return sendSuccess(res, 'Logged out successfully');
+};
+
+export const getSession = async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) {
-      return sendError(res, 'Unauthenticated', 401);
+      return sendError(res, 'Unauthorized', 401);
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-      include: {
-        profile: {
-          include: {
-            user_skills: { include: { skill: true } },
-            projects: { include: { technologies: true } },
-            education: true,
-            certifications: true,
-            achievements: true,
-          },
-        },
-      },
-    });
-
-    if (!user) {
-      return sendError(res, 'User not found', 404);
+    const session = await AuthService.getSession(req.user.userId);
+    if (!session) {
+      return sendError(res, 'Session invalid or user suspended', 401);
     }
 
-    const { password_hash, ...userWithoutPassword } = user;
-
-    return sendSuccess(res, 'Current user retrieved successfully', userWithoutPassword);
-  } catch (err) {
-    next(err);
+    const { email: _email, ...sessionWithoutEmail } = session;
+    return sendSuccess(res, 'Current session retrieved', sessionWithoutEmail);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch session', 500);
   }
 };
-

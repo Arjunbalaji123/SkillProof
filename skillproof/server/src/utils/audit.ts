@@ -1,19 +1,19 @@
 import { prisma } from '../config/db.js';
 
 export async function logAudit(
-  userId: string | null,
+  actorId: string | null,
   action: string,
-  entityType: string,
-  entityId?: string,
+  entity: string,
+  entityId?: string | null,
   metadata?: any
 ) {
   try {
     await prisma.auditLog.create({
       data: {
-        user_id: userId,
+        actorId: actorId || null,
         action,
-        entity_type: entityType,
-        entity_id: entityId || null,
+        entity,
+        entityId: entityId || null,
         metadata: metadata ? JSON.stringify(metadata) : null,
       },
     });
@@ -21,4 +21,3 @@ export async function logAudit(
     console.error('Failed to log audit event:', err);
   }
 }
-

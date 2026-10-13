@@ -1,78 +1,217 @@
 import { z } from 'zod';
 
-export const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['DEVELOPER', 'RECRUITER', 'ADMIN']).default('DEVELOPER'),
-});
+const safeUrlSchema = z.string().superRefine((val, ctx) => {
+  if (!val) return;
+  if (!/^https?:\/\//i.test(val) && !val.startsWith('/uploads/')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'URL must start with http://, https://, or /uploads/',
+    });
+  }
+}).or(z.literal('')).optional();
+
+export const registerSchema = z
+  .object({
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    username: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(/^[a-z0-9_]{3,20}$/, 'Username must be 3-20 characters, lowercase alphanumeric or underscore'),
+    email: z.string().trim().toLowerCase().pipe(z.string().email('Invalid email address')),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    role: z.enum(['DEVELOPER', 'RECRUITER']).default('DEVELOPER'),
+    companyName: z.string().trim().optional(),
+    jobTitle: z.string().trim().optional(),
+    companyWebsite: safeUrlSchema,
+    linkedinUrl: safeUrlSchema,
+    bio: z.string().max(2000).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.role === 'RECRUITER') {
+      if (!val.companyName || val.companyName.trim().length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['companyName'],
+          message: 'Company name is required for recruiter registration',
+        });
+      }
+      if (!val.jobTitle || val.jobTitle.trim().length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['jobTitle'],
+          message: 'Job title is required for recruiter registration',
+        });
+      }
+    }
+  });
 
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().toLowerCase().pipe(z.string().email('Invalid email address')),
   password: z.string().min(1, 'Password is required'),
 });
 
-export const updateProfileSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-  headline: z.string().max(255).optional(),
-  bio: z.string().max(2000).optional(),
-  location: z.string().max(150).optional(),
-  github_url: z.string().url('Invalid GitHub URL').or(z.literal('')).optional(),
-  linkedin_url: z.string().url('Invalid LinkedIn URL').or(z.literal('')).optional(),
-  portfolio_url: z.string().url('Invalid Portfolio URL').or(z.literal('')).optional(),
-  years_experience: z.number().min(0).max(60).optional(),
+export const claimSkillSchema = z.object({
+  language: z.string().min(1, 'Language is required'),
+  claimedLevel: z.enum(['Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert']).default('Intermediate'),
+  certificateUrl: safeUrlSchema,
 });
 
-export const userSkillSchema = z.object({
-  skill_id: z.string().uuid('Invalid skill ID').optional(),
-  skill_name: z.string().min(1).optional(),
-  proficiency_level: z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT']).default('INTERMEDIATE'),
+export const updateClaimSkillSchema = z.object({
+  claimedLevel: z.enum(['Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert']).optional(),
+  certificateUrl: safeUrlSchema,
+});
+
+export const startAssessmentSchema = z.object({
+  language: z.string().min(1, 'Language is required'),
+});
+
+export const saveAnswerSchema = z.object({
+  order: z.number().int().min(1),
+  userAnswer: z.any(),
+});
+
+export const flagQuestionSchema = z.object({
+  reason: z.string().min(3, 'Reason must be at least 3 characters'),
 });
 
 export const projectSchema = z.object({
   title: z.string().min(2, 'Title is required'),
   description: z.string().min(10, 'Description must be at least 10 characters'),
-  github_url: z.string().url('Invalid GitHub URL').or(z.literal('')).optional(),
-  live_url: z.string().url('Invalid Live Demo URL').or(z.literal('')).optional(),
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-  status: z.enum(['COMPLETED', 'IN_PROGRESS', 'PLANNED']).default('COMPLETED'),
-  technologies: z.array(z.string()).default([]),
+  repoUrl: safeUrlSchema,
+  techStack: z.string().min(1, 'Tech stack is required'),
 });
 
-export const educationSchema = z.object({
-  institution: z.string().min(2, 'Institution is required'),
-  degree: z.string().min(2, 'Degree is required'),
-  field_of_study: z.string().min(2, 'Field of study is required'),
-  start_date: z.string().min(1, 'Start date is required'),
-  end_date: z.string().optional(),
-  grade: z.string().optional(),
-  description: z.string().optional(),
+export const updateProfileSchema = z.object({
+  bio: z.string().max(2000).optional(),
+  githubUrl: safeUrlSchema,
+  isPublic: z.boolean().optional(),
+  showOnLeaderboard: z.boolean().optional(),
+  allowRecruiterMessages: z.boolean().optional(),
+  notificationsPaused: z.boolean().optional(),
+  companyName: z.string().max(200).optional(),
+  jobTitle: z.string().max(200).optional(),
+  companyWebsite: safeUrlSchema,
+  linkedinUrl: safeUrlSchema,
 });
 
-export const certificationSchema = z.object({
-  title: z.string().min(2, 'Title is required'),
-  issuer: z.string().min(2, 'Issuer is required'),
-  issue_date: z.string().min(1, 'Issue date is required'),
-  expiry_date: z.string().optional(),
-  credential_id: z.string().optional(),
-  credential_url: z.string().url('Invalid Credential URL').or(z.literal('')).optional(),
+export const bookmarkSchema = z.object({
+  developerId: z.string().min(1, 'Developer ID is required'),
+  note: z.string().max(1000).optional(),
 });
 
-export const achievementSchema = z.object({
-  title: z.string().min(2, 'Title is required'),
-  description: z.string().min(5, 'Description must be at least 5 characters'),
-  date: z.string().optional(),
-  issuer: z.string().optional(),
-  url: z.string().url('Invalid URL').or(z.literal('')).optional(),
+export const adminQuestionSchema = z.object({
+  language: z.string().min(1, 'Language is required'),
+  topic: z.string().min(1, 'Topic is required'),
+  skillCatalogId: z.string().optional(),
+  topicId: z.string().optional(),
+  difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
+  type: z.enum(['MCQ', 'MULTI', 'CODE_OUTPUT', 'SCENARIO']).default('MCQ'),
+  prompt: z.string().min(5, 'Prompt must be at least 5 characters'),
+  options: z.any(),
+  correctAnswer: z.any(),
+  explanation: z.string().default(''),
 });
 
-export const verificationRequestSchema = z.object({
-  user_skill_id: z.string().min(1, 'User skill ID is required'),
-  method: z.enum(['ASSESSMENT', 'CERTIFICATION', 'PROJECT', 'DOCUMENT']),
+export const adminUserStatusSchema = z.object({
+  status: z.enum(['ACTIVE', 'SUSPENDED']),
 });
 
-export const adminVerificationReviewSchema = z.object({
-  status: z.enum(['VERIFIED', 'REJECTED']),
-  rejection_reason: z.string().optional(),
+export const proctorEventSchema = z.object({
+  type: z.enum(['PHONE', 'BOOK', 'NO_FACE', 'MULTI_FACE', 'CAMERA_OFF', 'NO_HEARTBEAT']),
+  snapshot: z.string().optional().nullable(),
 });
+
+export const proctorHeartbeatSchema = z.object({
+  cameraStatus: z.string().optional(),
+  cameraActive: z.boolean().optional(),
+});
+
+export const lockoutAppealSchema = z.object({
+  appealText: z.string().min(3, 'Appeal explanation must be at least 3 characters').max(2000),
+});
+
+export const liftLockoutSchema = z.object({
+  reason: z.string().min(3, 'Reason for lifting lockout is required').max(1000),
+});
+
+export const confirmViolationSchema = z.object({
+  notes: z.string().max(1000).optional(),
+});
+
+export const createOpeningSchema = z.object({
+  title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
+  trackId: z.string().trim().min(1, 'Track is required'),
+  description: z.string().trim().min(10, 'Description must be at least 10 characters').max(5000),
+  skillCatalogIds: z.array(z.string().min(1)).optional(),
+  skillIds: z.array(z.string().min(1)).optional(),
+  minLevel: z.enum(['Basic', 'Intermediate', 'Advanced', 'Expert']).optional().nullable(),
+  minScore: z.number().min(0).max(100).optional().nullable(),
+  positions: z.number().int().min(1).max(100).default(1),
+  expiresAt: z.string().optional(),
+});
+
+export const updateOpeningSchema = z.object({
+  title: z.string().trim().min(3).max(200).optional(),
+  trackId: z.string().trim().min(1).optional(),
+  description: z.string().trim().min(10).max(5000).optional(),
+  skillCatalogIds: z.array(z.string().min(1)).optional(),
+  skillIds: z.array(z.string().min(1)).optional(),
+  minLevel: z.enum(['Basic', 'Intermediate', 'Advanced', 'Expert']).optional().nullable(),
+  minScore: z.number().min(0).max(100).optional().nullable(),
+  positions: z.number().int().min(1).max(100).optional(),
+  status: z.enum(['ACTIVE', 'PAUSED', 'CLOSED']).optional(),
+});
+
+export const approachOpeningSchema = z.object({
+  message: z.string().min(1, 'Approach message cannot be empty').max(500, 'Approach message cannot exceed 500 characters'),
+});
+
+export const decideApproachSchema = z.object({
+  decision: z.enum(['ACCEPTED', 'DECLINED', 'SAVED']),
+});
+
+export const startDirectConversationSchema = z.object({
+  developerUsername: z.string().trim().min(1).optional(),
+  recipientUsername: z.string().trim().min(1).optional(),
+  body: z.string().min(1, 'Message body cannot be empty').max(2000, 'Message cannot exceed 2000 characters'),
+  reason: z.string().max(500).optional(),
+});
+
+export const sendMessageSchema = z.object({
+  body: z.string().min(1, 'Message body cannot be empty').max(2000, 'Message cannot exceed 2000 characters'),
+});
+
+export const reportMessageSchema = z.object({
+  reason: z.string().min(3, 'Reason must be at least 3 characters').max(500, 'Reason cannot exceed 500 characters'),
+});
+
+export const adminResolveMessageReportSchema = z.object({
+  action: z.enum(['resolve', 'warn', 'suspend', 'delete']).optional(),
+  deleteMessage: z.boolean().optional(),
+  warnSender: z.boolean().optional(),
+  suspendSender: z.boolean().optional(),
+  note: z.string().max(1000).optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+export const updateInterestsSchema = z.object({
+  trackIds: z.array(z.string()).default([]),
+  skillIds: z.array(z.string()).default([]),
+});
+
+export const updateMessagingSettingsSchema = z.object({
+  allowRecruiterMessages: z.boolean(),
+});
+
+export const updateNotificationSettingsSchema = z.object({
+  notificationsPaused: z.boolean(),
+});
+
+export const adminVerifyRecruiterSchema = z.object({
+  isVerified: z.boolean(),
+  note: z.string().max(500).optional(),
+});
+
+
+

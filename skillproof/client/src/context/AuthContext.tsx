@@ -1,15 +1,30 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
+import { proctorCamera } from '../services/proctorCamera';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, role: string) => Promise<void>;
-  logout: () => void;
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    role?: string,
+    username?: string,
+    extra?: {
+      companyName?: string;
+      jobTitle?: string;
+      companyWebsite?: string;
+      linkedinUrl?: string;
+      bio?: string;
+    }
+  ) => Promise<void>;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isDeveloper: boolean;
   isRecruiter: boolean;
@@ -25,16 +40,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchCurrentUser = async () => {
     try {
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
-      const res = await api.get('/auth/me');
-      if (res.data.success) {
+      // First try /auth/session using httpOnly cookie or stored token
+      const res = await api.get('/auth/session');
+      if (res.data.success && res.data.data) {
         setUser(res.data.data);
+      } else {
+        setUser(null);
       }
-    } catch (err) {
-      console.error('Failed to restore session:', err);
+    } catch {
       localStorage.removeItem('skillproof_token');
       setToken(null);
       setUser(null);
@@ -45,49 +58,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     fetchCurrentUser();
-  }, [token]);
+  }, []);
 
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      const res = await api.post('/auth/login', { email, password });
-      if (res.data.success) {
-        const { token: newToken, user: userData } = res.data.data;
+    const normalizedEmail = email.trim().toLowerCase();
+    const res = await api.post('/auth/login', { email: normalizedEmail, password });
+    if (res.data.success) {
+      const { token: newToken, user: userData } = res.data.data;
+      if (newToken) {
         localStorage.setItem('skillproof_token', newToken);
         setToken(newToken);
-        setUser(userData);
       }
-    } finally {
-      setIsLoading(false);
+      setUser(userData);
     }
   };
 
-  const register = async (name: string, email: string, password: string, role: string) => {
-    setIsLoading(true);
-    try {
-      const res = await api.post('/auth/register', { name, email, password, role });
-      if (res.data.success) {
-        const { token: newToken, user: userData } = res.data.data;
+  const register = async (
+    name: string,
+    email: string,
+    password: string,
+    role: string = 'DEVELOPER',
+    username?: string,
+    extra?: {
+      companyName?: string;
+      jobTitle?: string;
+      companyWebsite?: string;
+      linkedinUrl?: string;
+      bio?: string;
+    }
+  ) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const res = await api.post('/auth/register', {
+      name: name.trim(),
+      email: normalizedEmail,
+      password,
+      role,
+      username,
+      ...(extra || {}),
+    });
+    if (res.data.success) {
+      const { token: newToken, user: userData } = res.data.data;
+      if (newToken) {
         localStorage.setItem('skillproof_token', newToken);
         setToken(newToken);
-        setUser(userData);
       }
-    } finally {
-      setIsLoading(false);
+      setUser(userData);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('skillproof_token');
-    setToken(null);
-    setUser(null);
+  const logout = async () => {
+    proctorCamera.stopCamera();
+    try {
+      await api.post('/auth/logout');
+    } catch (_) {
+      // ignore
+    } finally {
+      localStorage.removeItem('skillproof_token');
+      setToken(null);
+      setUser(null);
+    }
   };
 
   const refreshUser = async () => {
     await fetchCurrentUser();
   };
 
-  const isAuthenticated = Boolean(user && token);
+  const isAuthenticated = Boolean(user);
   const isDeveloper = user?.role === 'DEVELOPER';
   const isRecruiter = user?.role === 'RECRUITER';
   const isAdmin = user?.role === 'ADMIN';
@@ -99,6 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         token,
         isAuthenticated,
         isLoading,
+        loading: isLoading,
         login,
         register,
         logout,

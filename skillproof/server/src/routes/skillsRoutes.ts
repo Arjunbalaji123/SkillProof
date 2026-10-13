@@ -1,25 +1,30 @@
 import { Router } from 'express';
 import {
-  getAllSkills,
-  createSkill,
+  getDashboardSummary,
   getUserSkills,
-  addUserSkill,
-  updateUserSkill,
-  deleteUserSkill,
+  claimSkill,
+  updateClaimedSkill,
+  deleteSkill,
+  getCertificateClaims,
+  getSkillCatalog,
 } from '../controllers/skillsController.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireAdmin, requireDeveloper } from '../middleware/role.js';
+import { validateBody } from '../middleware/validate.js';
+import { claimSkillSchema, updateClaimSkillSchema } from '../validators/index.js';
 
 const router = Router();
 
-// Master catalog
-router.get('/', getAllSkills);
-router.post('/', requireAuth, createSkill);
+router.use(requireAuth);
 
-// User skills
-router.get('/user', requireAuth, getUserSkills);
-router.post('/user', requireAuth, addUserSkill);
-router.put('/user/:id', requireAuth, updateUserSkill);
-router.delete('/user/:id', requireAuth, deleteUserSkill);
+router.get('/catalog', getSkillCatalog);
+router.get('/summary', requireDeveloper, getDashboardSummary);
+router.get('/', requireDeveloper, getUserSkills);
+router.post('/claim', requireDeveloper, validateBody(claimSkillSchema), claimSkill);
+router.patch('/:id', requireDeveloper, validateBody(updateClaimSkillSchema), updateClaimedSkill);
+router.delete('/:id', requireDeveloper, deleteSkill);
+
+// Admin or reviewer endpoint for certificate claims
+router.get('/claims/unverified', requireAdmin, getCertificateClaims);
 
 export default router;
-

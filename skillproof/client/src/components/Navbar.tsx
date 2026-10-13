@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import { getSocket, disconnectSocket } from '../services/socket';
 import { NotificationBell } from './NotificationBell';
+import { UserSearchResult } from '../types';
 import {
   ShieldCheck,
   User as UserIcon,
@@ -12,166 +15,460 @@ import {
   CheckCircle2,
   Award,
   FolderGit2,
-  BookOpen,
   LayoutDashboard,
   ShieldAlert,
   ExternalLink,
   Bookmark,
-  FileCheck,
+  Trophy,
+  Loader2,
+  RefreshCw,
+  MessageSquare,
+  Briefcase,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { user, isAuthenticated, logout, isDeveloper, isRecruiter, isAdmin } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => {
-    logout();
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const isPublicLandingOrAuth =
+    location.pathname === '/' ||
+    location.pathname === '/login' ||
+    location.pathname === '/register';
+
+  // Fetch unread message count & subscribe to Socket.IO / 30s fallback polling
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUnreadMessageCount(0);
+      disconnectSocket();
+      return;
+    }
+
+    const fetchUnread = async () => {
+      try {
+        const res = await api.get('/messages/unread-count');
+        if (res.data?.success) {
+          setUnreadMessageCount(
+            Number(res.data.data?.count ?? res.data.data?.total ?? 0)
+          );
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    fetchUnread();
+
+    const socket = getSocket();
+    const handleMessageUpdate = () => {
+      fetchUnread();
+    };
+    const handleNotificationNew = (payload: any) => {
+      window.dispatchEvent(new CustomEvent('skillproof:notification-new', { detail: payload }));
+    };
+
+    socket.on('message:new', handleMessageUpdate);
+    socket.on('conversation:updated', handleMessageUpdate);
+    socket.on('notification:new', handleNotificationNew);
+
+    const handleManualRefresh = () => fetchUnread();
+    window.addEventListener('skillproof:messages-refresh', handleManualRefresh);
+
+    // Fallback: poll unread-count every 30 seconds
+    const timer = setInterval(() => {
+      fetchUnread();
+    }, 30000);
+
+    return () => {
+      socket.off('message:new', handleMessageUpdate);
+      socket.off('conversation:updated', handleMessageUpdate);
+      socket.off('notification:new', handleNotificationNew);
+      window.removeEventListener('skillproof:messages-refresh', handleManualRefresh);
+      clearInterval(timer);
+    };
+  }, [isAuthenticated, location.pathname]);
+
+  // 300ms debounced search
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setIsSearching(false);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.get(`/users/search?q=${encodeURIComponent(q)}`);
+        if (res.data.success && Array.isArray(res.data.data)) {
+          setSearchResults(res.data.data);
+          setIsSearchOpen(true);
+          setSelectedIndex(-1);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Handle outside click to close search dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Keyboard navigation for search dropdown
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isSearchOpen || searchResults.length === 0) {
+      if (e.key === 'Escape') {
+        setIsSearchOpen(false);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev < searchResults.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : searchResults.length - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && selectedIndex < searchResults.length) {
+        const chosen = searchResults[selectedIndex];
+        handleSelectUser(chosen.username);
+      }
+    } else if (e.key === 'Escape') {
+      setIsSearchOpen(false);
+    }
+  };
+
+  const handleSelectUser = (username: string) => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSelectedIndex(-1);
+    navigate(`/u/${username}`);
+  };
+
+  const handleLogout = async () => {
+    disconnectSocket();
+    await logout();
     navigate('/login');
   };
 
-  const isActive = (path: string) => location.pathname === path;
+  const handleSwitchAccount = async () => {
+    setIsUserMenuOpen(false);
+    disconnectSocket();
+    await logout();
+    navigate('/login');
+  };
+
+  const isActive = (path: string) =>
+    location.pathname === path ||
+    (path === '/messages' && location.pathname.startsWith('/messages')) ||
+    (path === '/openings' && location.pathname === '/openings') ||
+    (path === '/openings/manage' && location.pathname.startsWith('/openings/manage'));
+
+  const isHomePage = location.pathname === '/';
 
   return (
-    <nav className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
+    <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#E2E8F0] shadow-sm transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-16 gap-4">
           {/* Brand Logo */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-emerald-400 p-0.5 shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-200">
-                <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                  <ShieldCheck className="w-5 h-5 text-indigo-400" />
-                </div>
+              <div className="w-9 h-9 rounded-xl bg-[#2563EB] flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
+                <ShieldCheck className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent">
-                  SKILL<span className="text-indigo-400">PROOF</span>
+                <span className="font-extrabold text-lg tracking-tight text-[#0F172A]">
+                  SKILL<span className="text-[#2563EB]">PROOF</span>
                 </span>
-                <span className="text-[10px] tracking-wider text-slate-400 uppercase font-semibold -mt-1">
-                  Verified Portfolios
+                <span className="text-[10px] tracking-wider text-[#64748B] uppercase font-semibold -mt-1">
+                  Verification Engine
                 </span>
               </div>
             </Link>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center gap-1">
-            {isAuthenticated ? (
-              <>
-                {/* DEVELOPER NAV */}
-                {isDeveloper && (
-                  <>
-                    <Link
-                      to="/dashboard"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/dashboard') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <LayoutDashboard size={16} />
-                      Dashboard
-                    </Link>
-                    <Link
-                      to="/skills"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/skills') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <CheckCircle2 size={16} />
-                      Skills
-                    </Link>
-                    <Link
-                      to="/projects"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/projects') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <FolderGit2 size={16} />
-                      Projects
-                    </Link>
-                    <Link
-                      to="/assessments"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/assessments') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <Award size={16} />
-                      Assessments
-                    </Link>
-                    <Link
-                      to="/verifications"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/verifications') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <FileCheck size={16} />
-                      Verifications
-                    </Link>
-                  </>
-                )}
+          {/* Search Box with 300ms debounce & keyboard navigation */}
+          <div ref={searchContainerRef} className="relative flex-1 max-w-xs sm:max-w-sm hidden sm:block">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search developers by @username or name..."
+                value={searchQuery}
+                onFocus={() => {
+                  if (searchResults.length > 0) setIsSearchOpen(true);
+                }}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="w-full pl-9 pr-8 py-1.5 text-xs rounded-xl border border-[#CBD5E1] bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 transition placeholder-slate-400"
+              />
+              {isSearching && (
+                <Loader2 size={14} className="absolute right-3 top-2.5 text-blue-600 animate-spin" />
+              )}
+            </div>
 
-                {/* RECRUITER NAV */}
-                {isRecruiter && (
-                  <>
-                    <Link
-                      to="/recruiters/developers"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/recruiters/developers') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
+            {/* Live Search Results Dropdown (No Message button on search results) */}
+            {isSearchOpen && (
+              <div className="absolute left-0 right-0 mt-1.5 bg-white border border-[#E2E8F0] rounded-2xl shadow-xl overflow-hidden z-50 divide-y divide-[#E2E8F0]">
+                {searchResults.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-[#64748B]">
+                    No users found matching "{searchQuery}"
+                  </div>
+                ) : (
+                  searchResults.map((u, idx) => (
+                    <div
+                      key={u.username}
+                      onClick={() => handleSelectUser(u.username)}
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                      className={`w-full p-3 text-left flex items-center justify-between gap-2 cursor-pointer transition ${
+                        selectedIndex === idx ? 'bg-blue-50/80' : 'hover:bg-slate-50'
                       }`}
                     >
-                      <Search size={16} />
-                      Find Developers
-                    </Link>
-                    <Link
-                      to="/recruiters/bookmarks"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/recruiters/bookmarks') ? 'bg-indigo-600/10 text-indigo-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <Bookmark size={16} />
-                      Saved Developers
-                    </Link>
-                  </>
-                )}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
+                          {u.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold text-[#0F172A] truncate">{u.name}</p>
+                            {u.isDemo && (
+                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                                Demo
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-mono text-slate-500 truncate">@{u.username}</p>
+                        </div>
+                      </div>
 
-                {/* ADMIN NAV */}
-                {isAdmin && (
-                  <>
-                    <Link
-                      to="/admin"
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
-                        isActive('/admin') ? 'bg-purple-600/10 text-purple-400 font-semibold' : 'text-slate-300 hover:text-white hover:bg-slate-850'
-                      }`}
-                    >
-                      <ShieldAlert size={16} />
-                      Admin Control Center
-                    </Link>
-                  </>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <span className="text-xs font-black text-blue-600">{u.points} pts</span>
+                          {u.topSkill && (
+                            <p className="text-[10px] text-slate-500">
+                              {u.topSkill.language} ({u.topSkill.level})
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
                 )}
-              </>
-            ) : (
-              <>
-                <Link
-                  to="/recruiters/developers"
-                  className="px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-850 transition flex items-center gap-1.5"
-                >
-                  <Search size={16} />
-                  Browse Talent
-                </Link>
-              </>
+              </div>
             )}
           </div>
 
+          {/* Navigation Items */}
+          {isHomePage ? (
+            <div className="hidden md:flex items-center gap-6 text-xs font-semibold text-[#475569]">
+              <Link to="/leaderboard" className="hover:text-[#2563EB] transition flex items-center gap-1 font-bold text-amber-600">
+                <Trophy size={14} /> Leaderboard
+              </Link>
+              <Link to="/recruiters/developers" className="hover:text-[#2563EB] transition">
+                Developers
+              </Link>
+              <Link to="/assessments" className="hover:text-[#2563EB] transition">
+                Assessments
+              </Link>
+              <Link to="/recruiters/developers" className="hover:text-[#2563EB] transition">
+                For Recruiters
+              </Link>
+            </div>
+          ) : (
+            <div className="hidden md:flex items-center gap-1">
+              <Link
+                to="/leaderboard"
+                className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                  isActive('/leaderboard')
+                    ? 'bg-amber-50 text-amber-700 font-bold'
+                    : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                }`}
+              >
+                <Trophy size={15} className="text-amber-500" />
+                Leaderboard
+              </Link>
+
+              {isAuthenticated ? (
+                <>
+                  {/* DEVELOPER NAV */}
+                  {isDeveloper && (
+                    <>
+                      <Link
+                        to="/dashboard"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/dashboard') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <LayoutDashboard size={15} />
+                        Dashboard
+                      </Link>
+                      <Link
+                        to="/skills"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/skills') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <CheckCircle2 size={15} />
+                        Skills
+                      </Link>
+                      <Link
+                        to="/assessments"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/assessments') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Award size={15} />
+                        Assessments
+                      </Link>
+                      <Link
+                        to="/openings"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/openings')
+                            ? 'bg-blue-50 text-[#2563EB] font-bold'
+                            : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Briefcase size={15} />
+                        Openings
+                      </Link>
+                      <Link
+                        to="/projects"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/projects') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <FolderGit2 size={15} />
+                        Projects
+                      </Link>
+                    </>
+                  )}
+
+                  {/* RECRUITER NAV */}
+                  {isRecruiter && (
+                    <>
+                      <Link
+                        to="/openings/manage"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/openings/manage')
+                            ? 'bg-blue-50 text-[#2563EB] font-bold'
+                            : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Briefcase size={15} />
+                        Openings
+                      </Link>
+                      <Link
+                        to="/recruiters/developers"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/recruiters/developers') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Search size={15} />
+                        Find Developers
+                      </Link>
+                      <Link
+                        to="/recruiters/bookmarks"
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isActive('/recruiters/bookmarks') ? 'bg-blue-50 text-[#2563EB]' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                        }`}
+                      >
+                        <Bookmark size={15} />
+                        Saved Developers
+                      </Link>
+                    </>
+                  )}
+
+                  {/* MESSAGES NAV ITEM (For Developer and Recruiter, not on Login/Register/Public Landing) */}
+                  {(isDeveloper || isRecruiter) && !isPublicLandingOrAuth && (
+                    <Link
+                      to="/messages"
+                      data-testid="navbar-messages-link"
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                        isActive('/messages')
+                          ? 'bg-blue-50 text-[#2563EB] font-bold'
+                          : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                      }`}
+                    >
+                      <MessageSquare size={15} />
+                      <span>Messages</span>
+                      {unreadMessageCount > 0 && (
+                        <span
+                          data-testid="messages-unread-badge"
+                          className="px-1.5 py-0.2 rounded-full bg-[#2563EB] text-white text-[10px] font-extrabold leading-tight"
+                        >
+                          {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                        </span>
+                      )}
+                    </Link>
+                  )}
+
+                  {/* ADMIN NAV */}
+                  {isAdmin && (
+                    <Link
+                      to="/admin"
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                        isActive('/admin') ? 'bg-purple-50 text-purple-700' : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                      }`}
+                    >
+                      <ShieldAlert size={15} />
+                      Admin Control Center
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <Link
+                  to="/recruiters/developers"
+                  className="px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 transition flex items-center gap-1.5"
+                >
+                  <Search size={15} />
+                  Browse Talent
+                </Link>
+              )}
+            </div>
+          )}
+
           {/* Right Action Menu */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-3 shrink-0">
             {isAuthenticated ? (
               <>
-                <NotificationBell />
+                {!isPublicLandingOrAuth && (isDeveloper || isRecruiter || isAdmin) && (
+                  <NotificationBell />
+                )}
 
                 {/* Role Badge */}
-                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-slate-700 bg-slate-900 text-slate-300 uppercase tracking-wider">
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] uppercase tracking-wider">
                   {user?.role}
                 </span>
 
@@ -179,48 +476,68 @@ export const Navbar: React.FC = () => {
                 <div className="relative">
                   <button
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-850 border border-slate-800 transition"
+                    className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 border border-[#E2E8F0] transition"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
-                      {user?.profile?.name ? user.profile.name.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs border border-blue-200">
+                      {user?.name ? user.name.charAt(0).toUpperCase() : user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
                     </div>
-                    <span className="text-sm font-medium text-slate-200 max-w-[120px] truncate">
-                      {user?.profile?.name || user?.email}
+                    <span className="text-xs font-semibold text-[#0F172A] max-w-[120px] truncate">
+                      {user?.name || (user?.username ? `@${user.username}` : 'User')}
                     </span>
                   </button>
 
                   {isUserMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-56 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl py-1 z-50 divide-y divide-slate-800">
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-[#E2E8F0] shadow-xl py-1 z-50 divide-y divide-[#E2E8F0]">
                       <div className="px-4 py-3">
-                        <p className="text-sm font-bold text-slate-100 truncate">{user?.profile?.name}</p>
-                        <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                        <p className="text-xs font-bold text-[#0F172A] truncate">{user?.name}</p>
+                        {user?.username && (
+                          <p className="text-[11px] font-mono text-[#2563EB] truncate">@{user.username}</p>
+                        )}
+                        <p className="text-[11px] text-[#64748B] uppercase font-bold tracking-wider">{user?.role}</p>
                       </div>
 
                       <div className="py-1">
-                        {isDeveloper && user?.profile?.username && (
+                        {isDeveloper && (
                           <Link
-                            to={`/developer/${user.profile.username}`}
+                            to={`/u/${user?.username || user?.profile?.publicSlug || 'arjun'}`}
                             onClick={() => setIsUserMenuOpen(false)}
-                            className="px-4 py-2 text-xs font-medium text-indigo-400 hover:bg-indigo-950/30 flex items-center gap-2"
+                            className="px-4 py-2 text-xs font-semibold text-[#2563EB] hover:bg-blue-50 flex items-center gap-2"
                           >
                             <ExternalLink size={14} />
                             View Public Portfolio
                           </Link>
                         )}
+                        {isRecruiter && user?.username && (
+                          <Link
+                            to={`/recruiters/${user.username}`}
+                            onClick={() => setIsUserMenuOpen(false)}
+                            className="px-4 py-2 text-xs font-semibold text-[#2563EB] hover:bg-blue-50 flex items-center gap-2"
+                          >
+                            <ExternalLink size={14} />
+                            View Recruiter Profile
+                          </Link>
+                        )}
                         <Link
                           to="/profile"
                           onClick={() => setIsUserMenuOpen(false)}
-                          className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-2"
+                          className="px-4 py-2 text-xs font-semibold text-[#475569] hover:bg-slate-100 flex items-center gap-2"
                         >
                           <UserIcon size={14} />
-                          Manage Profile
+                          Settings & Profile
                         </Link>
                       </div>
 
                       <div className="py-1">
                         <button
+                          onClick={handleSwitchAccount}
+                          className="w-full text-left px-4 py-2 text-xs font-semibold text-[#475569] hover:bg-slate-100 flex items-center gap-2"
+                        >
+                          <RefreshCw size={14} />
+                          Switch Account
+                        </button>
+                        <button
                           onClick={handleLogout}
-                          className="w-full text-left px-4 py-2 text-xs font-medium text-rose-400 hover:bg-rose-950/30 flex items-center gap-2"
+                          className="w-full text-left px-4 py-2 text-xs font-semibold text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
                         >
                           <LogOut size={14} />
                           Sign Out
@@ -234,13 +551,13 @@ export const Navbar: React.FC = () => {
               <div className="flex items-center gap-3">
                 <Link
                   to="/login"
-                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-slate-850 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#0F172A] hover:bg-slate-100 transition"
                 >
-                  Log In
+                  Sign In
                 </Link>
                 <Link
                   to="/register"
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-md shadow-blue-500/20 transition"
                 >
                   Get Started
                 </Link>
@@ -250,12 +567,12 @@ export const Navbar: React.FC = () => {
 
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center gap-2">
-            {isAuthenticated && <NotificationBell />}
+            {isAuthenticated && !isPublicLandingOrAuth && <NotificationBell />}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+              className="p-2 text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 rounded-lg"
             >
-              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
           </div>
         </div>
@@ -263,7 +580,26 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-b border-slate-800 bg-slate-950 p-4 space-y-3">
+        <div className="md:hidden border-b border-[#E2E8F0] bg-white p-4 space-y-3 shadow-lg">
+          <div className="relative mb-2">
+            <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search @username or name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#CBD5E1] bg-slate-50 focus:bg-white focus:outline-none"
+            />
+          </div>
+
+          <Link
+            to="/leaderboard"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="block px-3 py-2 rounded-lg text-xs font-bold text-amber-600 hover:bg-amber-50"
+          >
+            🏆 Leaderboard
+          </Link>
+
           {isAuthenticated ? (
             <>
               {isDeveloper && (
@@ -271,77 +607,109 @@ export const Navbar: React.FC = () => {
                   <Link
                     to="/dashboard"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Dashboard
                   </Link>
                   <Link
                     to="/skills"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Skills
                   </Link>
                   <Link
+                    to="/assessments"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                  >
+                    Assessments
+                  </Link>
+                  <Link
+                    to="/openings"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                  >
+                    Openings for You
+                  </Link>
+                  <Link
                     to="/projects"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Projects
                   </Link>
                   <Link
-                    to="/assessments"
+                    to={`/u/${user?.username || user?.profile?.publicSlug || 'arjun'}`}
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs text-[#2563EB] font-semibold"
                   >
-                    Assessments
+                    Public Portfolio
                   </Link>
-                  {user?.profile?.username && (
-                    <Link
-                      to={`/developer/${user.profile.username}`}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="block px-3 py-2 rounded-lg text-sm text-indigo-400 font-semibold"
-                    >
-                      Public Portfolio
-                    </Link>
-                  )}
                 </>
               )}
 
               {isRecruiter && (
                 <>
                   <Link
+                    to="/openings/manage"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                  >
+                    Manage Openings
+                  </Link>
+                  <Link
                     to="/recruiters/developers"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Find Developers
                   </Link>
                   <Link
                     to="/recruiters/bookmarks"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800"
+                    className="block px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
                   >
                     Saved Developers
                   </Link>
                 </>
               )}
 
+              {(isDeveloper || isRecruiter) && (
+                <Link
+                  to="/messages"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                >
+                  <span>💬 Messages</span>
+                  {unreadMessageCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-[10px] font-extrabold">
+                      {unreadMessageCount}
+                    </span>
+                  )}
+                </Link>
+              )}
+
               {isAdmin && (
                 <Link
                   to="/admin"
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-3 py-2 rounded-lg text-sm text-purple-400 font-semibold"
+                  className="block px-3 py-2 rounded-lg text-xs text-purple-700 font-semibold"
                 >
                   Admin Control Center
                 </Link>
               )}
 
-              <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
-                <span className="text-xs text-slate-400">{user?.email}</span>
+              <div className="pt-2 border-t border-[#E2E8F0] flex flex-col gap-2">
+                <button
+                  onClick={handleSwitchAccount}
+                  className="text-xs text-[#475569] font-semibold flex items-center gap-1.5"
+                >
+                  <RefreshCw size={14} /> Switch Account
+                </button>
                 <button
                   onClick={handleLogout}
-                  className="text-xs text-rose-400 font-semibold flex items-center gap-1"
+                  className="text-xs text-[#DC2626] font-semibold flex items-center gap-1.5"
                 >
                   <LogOut size={14} /> Sign Out
                 </button>
@@ -352,14 +720,14 @@ export const Navbar: React.FC = () => {
               <Link
                 to="/login"
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block text-center w-full py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-sm font-semibold text-slate-200"
+                className="block text-center w-full py-2.5 rounded-xl bg-slate-100 border border-[#E2E8F0] text-xs font-semibold text-[#0F172A]"
               >
-                Log In
+                Sign In
               </Link>
               <Link
                 to="/register"
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block text-center w-full py-2.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white"
+                className="block text-center w-full py-2.5 rounded-xl bg-[#2563EB] text-xs font-bold text-white"
               >
                 Get Started
               </Link>
@@ -370,4 +738,3 @@ export const Navbar: React.FC = () => {
     </nav>
   );
 };
-
