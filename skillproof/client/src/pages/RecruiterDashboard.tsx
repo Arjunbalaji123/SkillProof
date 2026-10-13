@@ -173,7 +173,7 @@ export const RecruiterDashboard: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {developers.map((dev) => {
-            const devUsername = dev.username || dev.publicSlug;
+            const devUsername = dev.username;
             const isSelf =
               Boolean(user) &&
               (user?.id === dev.id ||

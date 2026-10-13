@@ -1,584 +1,495 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import {
-  ShieldCheck,
-  User as UserIcon,
+  User,
   Mail,
   Lock,
-  ArrowRight,
-  AlertCircle,
+  Building,
   Briefcase,
-  Code,
-  AtSign,
-  CheckCircle2,
+  Eye,
+  EyeOff,
   Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  AtSign,
 } from 'lucide-react';
+import {
+  validateName,
+  validateUsername,
+  validateEmail,
+  validatePassword,
+  validateRecruiterFields,
+} from '../validators/authValidators';
 
 export const RegisterPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { register } = useAuth();
+
+  const [role, setRole] = useState<'DEVELOPER' | 'RECRUITER'>('DEVELOPER');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
-  const [usernameStatus, setUsernameStatus] = useState<{
-    checking: boolean;
-    available: boolean | null;
-    message: string;
-    isNetworkError?: boolean;
-  }>({ checking: false, available: null, message: '' });
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'DEVELOPER' | 'RECRUITER'>('DEVELOPER');
   const [companyName, setCompanyName] = useState('');
   const [jobTitle, setJobTitle] = useState('');
-  const [companyWebsite, setCompanyWebsite] = useState('');
-  const [linkedinUrl, setLinkedinUrl] = useState('');
-  const [bio, setBio] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  const [formError, setFormError] = useState<string | null>(null);
+  // Username live availability state
+  const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
+  const [usernameMessage, setUsernameMessage] = useState('');
+  const debounceTimer = useRef<any>(null);
+
+  // Form error and submission states
+  const [submitting, setSubmitting] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(false);
 
-  const { register } = useAuth();
-  const navigate = useNavigate();
-
-  // Auto-suggest username from name if username untouched
-  const handleNameChange = (val: string) => {
-    setName(val);
-    if (fieldErrors.name) {
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        delete next.name;
-        return next;
-      });
-    }
-    if (!username || username === name.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20)) {
-      const suggested = val.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20);
-      setUsername(suggested);
-    }
-  };
-
-  // 400ms debounced live availability check (GET /api/users/check-username?u=)
+  // Debounced username availability check
   useEffect(() => {
-    const clean = username.trim().toLowerCase();
-    if (!clean) {
-      setUsernameStatus({ checking: false, available: null, message: '' });
+    const trimmed = username.trim().toLowerCase();
+    if (!trimmed) {
+      setUsernameStatus('idle');
+      setUsernameMessage('');
+      setCheckingUsername(false);
       return;
     }
 
-    if (!/^[a-z0-9_]{3,20}$/.test(clean)) {
-      setUsernameStatus({
-        checking: false,
-        available: false,
-        message: 'Must be 3-20 lowercase alphanumeric characters or underscores',
-      });
+    const formatError = validateUsername(trimmed);
+    if (formatError) {
+      setUsernameStatus('invalid');
+      setUsernameMessage(formatError);
+      setCheckingUsername(false);
       return;
     }
 
-    setUsernameStatus((prev) => ({ ...prev, checking: true, isNetworkError: false }));
+    setUsernameStatus('checking');
+    setCheckingUsername(true);
 
-    const timer = setTimeout(async () => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+
+    debounceTimer.current = setTimeout(async () => {
       try {
-        const res = await api.get(`/users/check-username?u=${clean}`);
-        if (res.data.success) {
-          setUsernameStatus({
-            checking: false,
-            available: res.data.data.available,
-            message: res.data.data.message,
-            isNetworkError: false,
-          });
-        }
-      } catch (err: any) {
-        if (err.response && err.response.status === 400 && err.response.data?.data?.available === false) {
-          setUsernameStatus({
-            checking: false,
-            available: false,
-            message: err.response.data?.data?.message || err.response.data?.message || 'Username already taken',
-            isNetworkError: false,
-          });
+        const res = await api.get(`/auth/check-username?u=${encodeURIComponent(trimmed)}`);
+        if (res.data?.success && res.data?.data?.available) {
+          setUsernameStatus('available');
+          setUsernameMessage('Username is available');
         } else {
-          // Network or server error: show notice but do NOT block register button
-          setUsernameStatus({
-            checking: false,
-            available: null,
-            isNetworkError: true,
-            message: 'Could not check username',
-          });
+          setUsernameStatus('taken');
+          setUsernameMessage('Username already taken');
         }
+      } catch {
+        setUsernameStatus('idle');
+        setUsernameMessage('');
+      } finally {
+        setCheckingUsername(false);
       }
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
   }, [username]);
 
-  const clearFieldError = (field: string) => {
-    if (fieldErrors[field]) {
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        delete next.field;
-        return next;
-      });
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+
+    const nameErr = validateName(name);
+    if (nameErr) errors.name = nameErr;
+
+    const userErr = validateUsername(username);
+    if (userErr) errors.username = userErr;
+
+    const emailErr = validateEmail(email);
+    if (emailErr) errors.email = emailErr;
+
+    const passErr = validatePassword(password);
+    if (passErr) errors.password = passErr;
+
+    if (role === 'RECRUITER') {
+      const recErrors = validateRecruiterFields(companyName, jobTitle);
+      if (recErrors.companyName) errors.companyName = recErrors.companyName;
+      if (recErrors.jobTitle) errors.jobTitle = recErrors.jobTitle;
     }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError(null);
-    setFieldErrors({});
+    setGlobalError(null);
 
-    const errors: Record<string, string> = {};
-
-    const cleanName = name.trim();
-    if (!cleanName || cleanName.length < 2) {
-      errors.name = 'Full name must be at least 2 characters';
-    } else if (cleanName.length > 60) {
-      errors.name = 'Full name cannot exceed 60 characters';
-    }
-
-    const cleanUsername = username.trim().toLowerCase();
-    if (!cleanUsername) {
-      errors.username = 'Username is required';
-    } else if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
-      errors.username = 'Username must be 3-20 characters: lowercase letters, numbers, or underscores';
-    } else if (usernameStatus.available === false) {
-      errors.username = usernameStatus.message || 'Username already taken';
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) {
-      errors.email = 'Email address is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      errors.email = 'Invalid email address';
-    }
-
-    if (!password) {
-      errors.password = 'Password is required';
-    } else if (password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
-    }
-
-    if (role === 'RECRUITER') {
-      if (!companyName.trim() || companyName.trim().length < 2) {
-        errors.companyName = 'Company name is required';
-      }
-      if (!jobTitle.trim() || jobTitle.trim().length < 2) {
-        errors.jobTitle = 'Job title is required';
-      }
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      setFormError('Please resolve the highlighted field errors.');
+    if (!validateForm()) {
       return;
     }
 
-    setIsLoading(true);
+    if (usernameStatus === 'taken') {
+      setFieldErrors((prev) => ({ ...prev, username: 'Username already taken' }));
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await register(
-        cleanName,
-        cleanEmail,
+      const registeredUser = await register({
+        name: name.trim(),
+        username: username.trim().toLowerCase(),
+        email: email.trim().toLowerCase(),
         password,
         role,
-        cleanUsername,
-        role === 'RECRUITER'
+        ...(role === 'RECRUITER'
           ? {
               companyName: companyName.trim(),
               jobTitle: jobTitle.trim(),
-              companyWebsite: companyWebsite.trim() || undefined,
-              linkedinUrl: linkedinUrl.trim() || undefined,
-              bio: bio.trim() || undefined,
             }
-          : undefined
-      );
+          : {}),
+      });
 
-      navigate(role === 'RECRUITER' ? '/recruiter' : '/dashboard');
-    } catch (err: any) {
-      const response = err.response;
-      if (response) {
-        const data = response.data;
-
-        // Field-level validation errors from server (Zod)
-        if (Array.isArray(data?.errors) && data.errors.length > 0) {
-          const srvFields: Record<string, string> = {};
-          for (const item of data.errors) {
-            const key = item.field === 'fullName' ? 'name' : item.field;
-            srvFields[key] = item.message;
-          }
-          setFieldErrors(srvFields);
-          setFormError(data.message || 'Please fix the field errors below.');
-          return;
-        }
-
-        // Specific 409 conflict messages
-        if (response.status === 409) {
-          const msg = data?.message || '';
-          if (msg.toLowerCase().includes('email')) {
-            setFieldErrors({ email: 'Email already in use. Please sign in.' });
-            setFormError('Email already in use. Please sign in.');
-          } else if (msg.toLowerCase().includes('username')) {
-            setFieldErrors({ username: 'Username already taken' });
-            setFormError('Username already taken');
-          } else {
-            setFormError(msg || 'An account with these details already exists.');
-          }
-          return;
-        }
-
-        // 429 Rate limit
-        if (response.status === 429) {
-          setFormError(data?.message || 'Too many attempts, try again in a few minutes');
-          return;
-        }
-
-        setFormError(data?.message || 'Registration failed. Please try again.');
+      if (registeredUser.role === 'RECRUITER') {
+        navigate('/recruiter');
       } else {
-        setFormError('Network error. Unable to reach the server. Please try again.');
+        navigate('/dashboard');
       }
+    } catch (err: any) {
+      const respData = err?.response?.data;
+      if (respData?.errors && Array.isArray(respData.errors)) {
+        const newFieldErrors: Record<string, string> = {};
+        respData.errors.forEach((e: any) => {
+          if (e.field) {
+            newFieldErrors[e.field] = e.message;
+          }
+        });
+        setFieldErrors(newFieldErrors);
+      }
+
+      const msg =
+        respData?.error ||
+        respData?.message ||
+        err?.message ||
+        'Registration failed. Please try again.';
+      setGlobalError(msg);
     } finally {
-      setIsLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const isEmailAlreadyInUse = Boolean(
-    formError && formError.toLowerCase().includes('email already in use')
-  );
-
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
-      <div className="w-full max-w-md space-y-6 bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 mb-3">
-            <ShieldCheck size={24} />
-          </div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">
-            Create your SKILLPROOF Account
+          <Link to="/" className="inline-flex items-center gap-2 text-2xl font-black text-slate-900 tracking-tight">
+            <span className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-lg shadow-sm shadow-blue-500/20">
+              S
+            </span>
+            SkillProof
+          </Link>
+          <h2 className="mt-6 text-2xl font-bold tracking-tight text-slate-900">
+            Create your account
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Choose your role and claim your unique public username
+          <p className="mt-2 text-sm text-slate-600">
+            Already have an account?{' '}
+            <Link to="/login" className="font-semibold text-blue-600 hover:text-blue-500">
+              Sign in
+            </Link>
           </p>
         </div>
 
-        {formError && (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <AlertCircle size={16} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-            {isEmailAlreadyInUse && (
-              <Link
-                to="/login"
-                state={{ email: email.trim().toLowerCase() }}
-                className="shrink-0 font-bold text-indigo-400 hover:text-indigo-300 underline ml-2"
-              >
-                Sign in →
-              </Link>
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 shadow-sm sm:rounded-2xl sm:px-10 border border-slate-200/80">
+            {globalError && (
+              <div className="mb-6 rounded-xl bg-red-50 p-4 border border-red-200/80 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm font-medium text-red-800">{globalError}</p>
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Role Selector Tabs */}
-        <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-950 rounded-xl border border-slate-800">
-          <button
-            type="button"
-            onClick={() => {
-              setRole('DEVELOPER');
-              setFieldErrors({});
-            }}
-            className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-              role === 'DEVELOPER'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Code size={14} />
-            Developer
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRole('RECRUITER');
-              setFieldErrors({});
-            }}
-            className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-              role === 'RECRUITER'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Briefcase size={14} />
-            Recruiter
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          {/* Full Name */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Full Name <span className="text-rose-400">*</span>
-            </label>
-            <div className="relative">
-              <UserIcon size={18} className="absolute left-3.5 top-3 text-slate-500" />
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Jane Doe"
-                className={`w-full bg-slate-950 border rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition ${
-                  fieldErrors.name
-                    ? 'border-rose-500/70 focus:border-rose-500'
-                    : 'border-slate-800 focus:border-indigo-500'
-                }`}
-              />
-            </div>
-            {fieldErrors.name && (
-              <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
-                <AlertCircle size={12} className="shrink-0" /> {fieldErrors.name}
-              </p>
-            )}
-          </div>
-
-          {/* Username */}
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-semibold text-slate-300">
-                Username <span className="text-rose-400">*</span>
+            {/* Role Selection Tabs */}
+            <div className="mb-6">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                I want to join as a:
               </label>
-              {usernameStatus.checking ? (
-                <span className="text-[11px] text-indigo-400 flex items-center gap-1">
-                  <Loader2 size={12} className="animate-spin" /> Checking...
-                </span>
-              ) : usernameStatus.available === true ? (
-                <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold">
-                  <CheckCircle2 size={12} /> Available
-                </span>
-              ) : usernameStatus.available === false ? (
-                <span className="text-[11px] text-rose-400 font-semibold">
-                  {usernameStatus.message}
-                </span>
-              ) : usernameStatus.isNetworkError ? (
-                <span className="text-[11px] text-amber-400 font-medium">
-                  {usernameStatus.message}
-                </span>
-              ) : null}
+              <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRole('DEVELOPER');
+                    setGlobalError(null);
+                  }}
+                  className={`py-2 px-4 rounded-lg text-xs font-bold transition-all ${
+                    role === 'DEVELOPER'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Developer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRole('RECRUITER');
+                    setGlobalError(null);
+                  }}
+                  className={`py-2 px-4 rounded-lg text-xs font-bold transition-all ${
+                    role === 'RECRUITER'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Recruiter
+                </button>
+              </div>
             </div>
-            <div className="relative">
-              <AtSign size={18} className="absolute left-3.5 top-3 text-slate-500" />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''));
-                  clearFieldError('username');
-                }}
-                placeholder="janedoe_dev"
-                className={`w-full bg-slate-950 border rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition ${
-                  fieldErrors.username
-                    ? 'border-rose-500/70 focus:border-rose-500'
-                    : usernameStatus.available === true
-                    ? 'border-emerald-500/60 focus:border-emerald-500'
-                    : usernameStatus.available === false
-                    ? 'border-rose-500/60 focus:border-rose-500'
-                    : 'border-slate-800 focus:border-indigo-500'
-                }`}
-              />
-            </div>
-            {fieldErrors.username && (
-              <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
-                <AlertCircle size={12} className="shrink-0" /> {fieldErrors.username}
-              </p>
-            )}
-            <p className="text-[10px] text-slate-400 mt-1">
-              Public profile:{' '}
-              <span className="font-mono text-slate-300">
-                {role === 'RECRUITER' ? `/recruiters/${username || 'username'}` : `/u/${username || 'username'}`}
-              </span>
-            </p>
-          </div>
 
-          {/* Recruiter-only Fields */}
-          {role === 'RECRUITER' && (
-            <div className="space-y-3 p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
-              <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">
-                Recruiter Organization Details
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Company Name <span className="text-rose-400">*</span>
-                  </label>
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              {/* Full Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <div className="relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <User className="h-4 w-4" />
+                  </div>
                   <input
                     type="text"
-                    value={companyName}
+                    required
+                    value={name}
                     onChange={(e) => {
-                      setCompanyName(e.target.value);
-                      clearFieldError('companyName');
+                      setName(e.target.value);
+                      if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: '' }));
                     }}
-                    placeholder="Acme Corp"
-                    className={`w-full bg-slate-950 border rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none transition ${
-                      fieldErrors.companyName
-                        ? 'border-rose-500/70 focus:border-rose-500'
-                        : 'border-slate-800 focus:border-indigo-500'
+                    placeholder={role === 'DEVELOPER' ? 'Alex Rivera' : 'Sarah Jenkins'}
+                    className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                      fieldErrors.name ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
                     }`}
                   />
-                  {fieldErrors.companyName && (
-                    <p className="text-[10px] text-rose-400 mt-1 font-medium">
-                      {fieldErrors.companyName}
-                    </p>
-                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Job Title <span className="text-rose-400">*</span>
-                  </label>
+                {fieldErrors.name && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">{fieldErrors.name}</p>
+                )}
+              </div>
+
+              {/* Username with Live Availability Check */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Username
+                </label>
+                <div className="relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <AtSign className="h-4 w-4" />
+                  </div>
                   <input
                     type="text"
-                    value={jobTitle}
+                    required
+                    value={username}
                     onChange={(e) => {
-                      setJobTitle(e.target.value);
-                      clearFieldError('jobTitle');
+                      setUsername(e.target.value);
+                      if (fieldErrors.username) setFieldErrors((prev) => ({ ...prev, username: '' }));
                     }}
-                    placeholder="Senior Technical Recruiter"
-                    className={`w-full bg-slate-950 border rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none transition ${
-                      fieldErrors.jobTitle
-                        ? 'border-rose-500/70 focus:border-rose-500'
-                        : 'border-slate-800 focus:border-indigo-500'
+                    placeholder="alex_rivera"
+                    className={`block w-full pl-10 pr-10 py-2.5 border rounded-xl text-sm font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                      usernameStatus === 'taken' || usernameStatus === 'invalid' || fieldErrors.username
+                        ? 'border-red-300 bg-red-50/20'
+                        : usernameStatus === 'available'
+                        ? 'border-emerald-400 bg-emerald-50/20'
+                        : 'border-slate-300'
                     }`}
                   />
-                  {fieldErrors.jobTitle && (
-                    <p className="text-[10px] text-rose-400 mt-1 font-medium">
-                      {fieldErrors.jobTitle}
-                    </p>
-                  )}
+                  <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                    {checkingUsername && <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />}
+                    {!checkingUsername && usernameStatus === 'available' && (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    )}
+                    {!checkingUsername && (usernameStatus === 'taken' || usernameStatus === 'invalid') && (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    )}
+                  </div>
                 </div>
+                {usernameMessage && (
+                  <p
+                    className={`mt-1 text-xs font-medium ${
+                      usernameStatus === 'available' ? 'text-emerald-600' : 'text-red-600'
+                    }`}
+                  >
+                    {usernameMessage}
+                  </p>
+                )}
+                {fieldErrors.username && !usernameMessage && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">{fieldErrors.username}</p>
+                )}
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Company Website (optional)
-                </label>
-                <input
-                  type="url"
-                  value={companyWebsite}
-                  onChange={(e) => setCompanyWebsite(e.target.value)}
-                  placeholder="https://acme.example.com"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  LinkedIn URL (optional)
-                </label>
-                <input
-                  type="url"
-                  value={linkedinUrl}
-                  onChange={(e) => setLinkedinUrl(e.target.value)}
-                  placeholder="https://linkedin.com/in/..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Hiring Focus / Bio (optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Hiring full-stack, distributed systems & ML engineers..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-          )}
 
-          {/* Email Address */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Email Address <span className="text-rose-400">*</span>
-            </label>
-            <div className="relative">
-              <Mail size={18} className="absolute left-3.5 top-3 text-slate-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  clearFieldError('email');
-                }}
-                placeholder="name@example.com"
-                className={`w-full bg-slate-950 border rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition ${
-                  fieldErrors.email
-                    ? 'border-rose-500/70 focus:border-rose-500'
-                    : 'border-slate-800 focus:border-indigo-500'
-                }`}
-              />
-            </div>
-            {fieldErrors.email && (
-              <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
-                <AlertCircle size={12} className="shrink-0" /> {fieldErrors.email}
-              </p>
-            )}
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Email Address
+                </label>
+                <div className="relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: '' }));
+                    }}
+                    placeholder="alex@example.com"
+                    className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                      fieldErrors.email ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
+                    }`}
+                  />
+                </div>
+                {fieldErrors.email && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">{fieldErrors.email}</p>
+                )}
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Password
+                </label>
+                <div className="relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: '' }));
+                    }}
+                    placeholder="••••••••"
+                    className={`block w-full pl-10 pr-10 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                      fieldErrors.password ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {/* Minimum 8 characters shown BEFORE submit */}
+                <p
+                  className={`mt-1.5 text-xs font-medium flex items-center gap-1 ${
+                    password.length >= 8
+                      ? 'text-emerald-600'
+                      : password.length > 0
+                      ? 'text-amber-600'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  {password.length >= 8 ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 inline" />
+                  ) : (
+                    <span>•</span>
+                  )}
+                  Must be between 8 and 72 characters
+                </p>
+                {fieldErrors.password && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">{fieldErrors.password}</p>
+                )}
+              </div>
+
+              {/* Recruiter-specific fields */}
+              {role === 'RECRUITER' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Company Name
+                    </label>
+                    <div className="relative rounded-xl shadow-sm">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Building className="h-4 w-4" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={companyName}
+                        onChange={(e) => {
+                          setCompanyName(e.target.value);
+                          if (fieldErrors.companyName)
+                            setFieldErrors((prev) => ({ ...prev, companyName: '' }));
+                        }}
+                        placeholder="Acme Technologies"
+                        className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                          fieldErrors.companyName ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
+                        }`}
+                      />
+                    </div>
+                    {fieldErrors.companyName && (
+                      <p className="mt-1 text-xs text-red-600 font-medium">{fieldErrors.companyName}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Job Title
+                    </label>
+                    <div className="relative rounded-xl shadow-sm">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Briefcase className="h-4 w-4" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={jobTitle}
+                        onChange={(e) => {
+                          setJobTitle(e.target.value);
+                          if (fieldErrors.jobTitle)
+                            setFieldErrors((prev) => ({ ...prev, jobTitle: '' }));
+                        }}
+                        placeholder="Technical Talent Lead"
+                        className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                          fieldErrors.jobTitle ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
+                        }`}
+                      />
+                    </div>
+                    {fieldErrors.jobTitle && (
+                      <p className="mt-1 text-xs text-red-600 font-medium">{fieldErrors.jobTitle}</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="pt-3">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    `Join as ${role === 'DEVELOPER' ? 'Developer' : 'Recruiter'}`
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-
-          {/* Password */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Password <span className="text-rose-400">*</span>
-            </label>
-            <div className="relative">
-              <Lock size={18} className="absolute left-3.5 top-3 text-slate-500" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  clearFieldError('password');
-                }}
-                placeholder="At least 8 characters"
-                className={`w-full bg-slate-950 border rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition ${
-                  fieldErrors.password
-                    ? 'border-rose-500/70 focus:border-rose-500'
-                    : 'border-slate-800 focus:border-indigo-500'
-                }`}
-              />
-            </div>
-            {fieldErrors.password ? (
-              <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
-                <AlertCircle size={12} className="shrink-0" /> {fieldErrors.password}
-              </p>
-            ) : (
-              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                <Lock size={12} className="text-slate-500" /> Minimum 8 characters
-              </p>
-            )}
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading || usernameStatus.available === false}
-            className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition flex items-center justify-center gap-2 mt-2"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                <span>Creating Account...</span>
-              </>
-            ) : (
-              <>
-                <span>Register as {role === 'DEVELOPER' ? 'Developer' : 'Recruiter'}</span>
-                <ArrowRight size={16} />
-              </>
-            )}
-          </button>
-        </form>
-
-        <p className="text-center text-xs text-slate-400">
-          Already have an account?{' '}
-          <Link to="/login" className="text-indigo-400 font-semibold hover:underline">
-            Sign In
-          </Link>
-        </p>
+        </div>
       </div>
     </div>
   );
 };
+
+export default RegisterPage;
+

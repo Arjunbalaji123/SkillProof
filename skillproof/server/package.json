@@ -12,7 +12,6 @@
     "db:seed": "tsx src/seed.ts",
     "db:generate": "prisma generate",
     "leaderboard:rebuild": "tsx src/scripts/rebuildLeaderboard.ts",
-    "user:reset": "tsx src/scripts/resetUser.ts",
     "test": "NODE_ENV=test tsx src/tests/runTests.ts"
   },
   "dependencies": {

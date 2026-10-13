@@ -499,7 +499,7 @@ export const Navbar: React.FC = () => {
                       <div className="py-1">
                         {isDeveloper && (
                           <Link
-                            to={`/u/${user?.username || user?.profile?.publicSlug || 'arjun'}`}
+                            to={`/u/${user?.username || 'arjun'}`}
                             onClick={() => setIsUserMenuOpen(false)}
                             className="px-4 py-2 text-xs font-semibold text-[#2563EB] hover:bg-blue-50 flex items-center gap-2"
                           >
@@ -640,7 +640,7 @@ export const Navbar: React.FC = () => {
                     Projects
                   </Link>
                   <Link
-                    to={`/u/${user?.username || user?.profile?.publicSlug || 'arjun'}`}
+                    to={`/u/${user?.username || 'arjun'}`}
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="block px-3 py-2 rounded-lg text-xs text-[#2563EB] font-semibold"
                   >

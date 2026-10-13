@@ -1,14 +1,20 @@
 import { Router } from 'express';
-import { register, login, logout, getSession } from '../controllers/authController.js';
-import { requireAuth } from '../middleware/auth.js';
-import { validateBody } from '../middleware/validate.js';
-import { registerSchema, loginSchema } from '../validators/index.js';
+import { AuthController } from '../controllers/authController.js';
+import { optionalAuth } from '../middleware/auth.js';
+import {
+  loginRateLimiter,
+  registerRateLimiter,
+  checkUsernameRateLimiter,
+} from '../middleware/rateLimiter.js';
 
 const router = Router();
 
-router.post('/register', validateBody(registerSchema), register);
-router.post('/login', validateBody(loginSchema), login);
-router.post('/logout', logout);
-router.get('/session', requireAuth, getSession);
+// Public auth endpoints
+router.post('/register', registerRateLimiter, AuthController.register);
+router.post('/login', loginRateLimiter, AuthController.login);
+router.post('/logout', AuthController.logout);
+router.get('/session', optionalAuth, AuthController.session);
+router.get('/check-username', checkUsernameRateLimiter, AuthController.checkUsername);
 
 export default router;
+

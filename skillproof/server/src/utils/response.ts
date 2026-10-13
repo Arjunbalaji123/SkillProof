@@ -49,9 +49,6 @@ export const formatFriendlyError = (
       if (msg.includes('email')) {
         return { message: 'Email already in use. Please sign in.', statusCode: 409 };
       }
-      if (msg.includes('publicSlug')) {
-        return { message: 'Username already taken', statusCode: 409 };
-      }
       return { message: 'A record with these details already exists.', statusCode: 409 };
     }
 

@@ -29,7 +29,7 @@ export const errorHandler = (
     const target = Array.isArray(err.meta?.target)
       ? err.meta.target.join(',')
       : String(err.meta?.target || err.message || '');
-    if (target.includes('username') || target.includes('publicSlug')) {
+    if (target.includes('username')) {
       return sendError(res, 'Username already taken', 409);
     }
     if (target.includes('email')) {

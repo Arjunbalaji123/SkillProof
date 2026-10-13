@@ -11,7 +11,7 @@ import apiRoutes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 import { prisma } from './config/db.js';
-import { loginRateLimiter, registerRateLimiter, authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
+import { apiRateLimiter } from './middleware/rateLimiter.js';
 import { requireAuth } from './middleware/auth.js';
 import { requireAdmin } from './middleware/role.js';
 import { ProctorService } from './services/proctorService.js';
@@ -91,29 +91,22 @@ app.use('/uploads', (req, res, next) => {
 app.get('/api/health', async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({
-      success: true,
-      status: 'OK',
-      database: 'connected',
-      app: 'SKILLPROOF Backend Engine',
-      timestamp: new Date().toISOString(),
-    });
+    res.status(200).json({ success: true });
   } catch (err: any) {
     res.status(503).json({
       success: false,
-      status: 'ERROR',
-      database: 'disconnected',
-      app: 'SKILLPROOF Backend Engine',
-      error: err?.message || 'Database unavailable',
-      timestamp: new Date().toISOString(),
+      error: 'Database unavailable',
     });
   }
 });
 
-// Apply Rate Limiters & API Routes
-app.use('/api/auth/login', loginRateLimiter);
-app.use('/api/auth/register', registerRateLimiter);
-app.use('/api', apiRateLimiter, apiRoutes);
+// Mount API Routes (excluding auth from global limiter)
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth')) {
+    return next();
+  }
+  return apiRateLimiter(req, res, next);
+}, apiRoutes);
 
 // Error Handler
 app.use(errorHandler);

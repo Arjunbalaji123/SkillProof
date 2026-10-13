@@ -1,226 +1,263 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../config/db.js';
-import { logAudit } from '../utils/audit.js';
 import { signToken } from '../utils/jwt.js';
+import { logAudit } from '../utils/audit.js';
+
+// Precomputed bcrypt cost 10 hash used to defend against timing attacks when user does not exist
+const DUMMY_HASH = '$2a$10$wK1nKqEa6vQzE5Xn4k0kQ.7sWJgW5Q1vYQxG5mZzBwK1nKqEa6vQz';
+
+export interface RegisterInput {
+  name: string;
+  username: string;
+  email: string;
+  password: string;
+  role: 'DEVELOPER' | 'RECRUITER';
+  companyName?: string;
+  jobTitle?: string;
+  companyWebsite?: string;
+  linkedinUrl?: string;
+  bio?: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
 
 export class AuthService {
-  static async register(data: {
-    name?: string;
-    fullName?: string;
-    username?: string;
-    email: string;
-    password: string;
-    role?: string;
-    companyName?: string;
-    jobTitle?: string;
-    companyWebsite?: string;
-    linkedinUrl?: string;
-    bio?: string;
-  }) {
-    const effectiveName = (data.fullName || data.name || '').trim();
-    if (effectiveName.length < 2 || effectiveName.length > 60) {
-      const err: any = new Error('Full name must be between 2 and 60 characters.');
+  /**
+   * Cleans user record for client consumption (never returning passwordHash).
+   */
+  static sanitizeUser(user: any, profile?: any, recruiterProfile?: any) {
+    const { passwordHash, ...safeUser } = user;
+    return {
+      ...safeUser,
+      profile: profile !== undefined ? profile : user.profile || null,
+      recruiterProfile: recruiterProfile !== undefined ? recruiterProfile : user.recruiterProfile || null,
+    };
+  }
+
+  /**
+   * Registers a new user with single-transaction guarantee.
+   */
+  static async register(data: RegisterInput) {
+    if (data.role !== 'DEVELOPER' && data.role !== 'RECRUITER') {
+      const err: any = new Error('Role must be DEVELOPER or RECRUITER');
       err.statusCode = 400;
+      err.field = 'role';
       throw err;
     }
 
-    if (!data.password || data.password.length < 8) {
-      const err: any = new Error('Password must be at least 8 characters.');
-      err.statusCode = 400;
-      throw err;
-    }
-
-    const emailNormalized = (data.email || '').trim().toLowerCase();
-
-    // Do NOT generate username or publicSlug from data.name. Require explicit username.
-    const usernameNormalized = (data.username || '').trim().toLowerCase();
-
-    // Validate regex: 3-20 chars, ^[a-z0-9_]+$
-    if (!/^[a-z0-9_]{3,20}$/.test(usernameNormalized)) {
-      const err: any = new Error(
-        'Username must be 3-20 characters long, containing only lowercase letters, numbers, and underscores.'
-      );
-      err.statusCode = 400;
-      throw err;
-    }
-
-    const assignedRole =
-      data.role && ['DEVELOPER', 'RECRUITER'].includes(data.role.toUpperCase())
-        ? data.role.toUpperCase()
-        : 'DEVELOPER';
-
-    if (assignedRole === 'RECRUITER') {
-      if (!data.companyName || data.companyName.trim().length < 2 || !data.jobTitle || data.jobTitle.trim().length < 2) {
-        const err: any = new Error(
-          'Registration as RECRUITER requires companyName and jobTitle.'
-        );
+    if (data.role === 'RECRUITER') {
+      if (!data.companyName || data.companyName.trim().length === 0) {
+        const err: any = new Error('Company name is required for recruiter registration');
         err.statusCode = 400;
+        err.field = 'companyName';
+        throw err;
+      }
+      if (!data.jobTitle || data.jobTitle.trim().length === 0) {
+        const err: any = new Error('Job title is required for recruiter registration');
+        err.statusCode = 400;
+        err.field = 'jobTitle';
         throw err;
       }
     }
 
-    const existingEmail = await prisma.user.findFirst({
-      where: { email: emailNormalized },
-    });
+    const email = data.email.trim().toLowerCase();
+    const username = data.username.trim().toLowerCase();
+    const name = data.name.trim();
 
-    if (existingEmail) {
-      const err: any = new Error('Email already in use. Please sign in.');
-      err.statusCode = 409;
-      throw err;
-    }
-
-    const existingUsername = await prisma.user.findUnique({
-      where: { username: usernameNormalized },
-    });
-    if (existingUsername) {
-      const err: any = new Error('Username already taken');
-      err.statusCode = 409;
-      throw err;
-    }
-
+    // Hash password with bcrypt cost 10, exactly once
     const passwordHash = await bcrypt.hash(data.password, 10);
 
-    let user;
+    let createdUser: any;
+    let createdProfile: any = null;
+    let createdRecruiterProfile: any = null;
+
     try {
-      user = await prisma.$transaction(async (tx) => {
-        const createdUser = await tx.user.create({
+      const result = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
           data: {
-            name: effectiveName,
-            username: usernameNormalized,
-            email: emailNormalized,
+            email,
+            username,
+            name,
             passwordHash,
-            role: assignedRole,
+            role: data.role,
+            status: 'ACTIVE',
+            failedLoginCount: 0,
           },
         });
 
-        let createdProfile = null;
-        let createdRecruiterProfile = null;
-
-        if (assignedRole === 'DEVELOPER') {
-          createdProfile = await tx.developerProfile.create({
+        if (data.role === 'RECRUITER') {
+          const recProfile = await tx.recruiterProfile.create({
             data: {
-              userId: createdUser.id,
-              bio: data.bio?.trim() || 'Software developer exploring verified skill benchmarks.',
+              userId: newUser.id,
+              companyName: data.companyName!.trim(),
+              jobTitle: data.jobTitle!.trim(),
+              companyWebsite: data.companyWebsite || null,
+              linkedinUrl: data.linkedinUrl || null,
+              bio: data.bio || null,
+              isVerified: false,
+            },
+          });
+          return { user: newUser, profile: null, recruiterProfile: recProfile };
+        } else {
+          const devProfile = await tx.developerProfile.create({
+            data: {
+              userId: newUser.id,
+              bio: data.bio || 'Software developer exploring verified skill benchmarks.',
+              githubUrl: null,
               isPublic: true,
               showOnLeaderboard: true,
               allowRecruiterMessages: true,
               notificationsPaused: false,
             },
           });
-        } else if (assignedRole === 'RECRUITER') {
-          createdRecruiterProfile = await tx.recruiterProfile.create({
-            data: {
-              userId: createdUser.id,
-              companyName: data.companyName!.trim(),
-              jobTitle: data.jobTitle!.trim(),
-              companyWebsite: data.companyWebsite?.trim() || null,
-              linkedinUrl: data.linkedinUrl?.trim() || null,
-              bio: data.bio?.trim() || null,
-              isVerified: false,
-            },
-          });
+          return { user: newUser, profile: devProfile, recruiterProfile: null };
         }
-
-        return {
-          ...createdUser,
-          profile: createdProfile,
-          recruiterProfile: createdRecruiterProfile,
-        };
       });
+
+      createdUser = result.user;
+      createdProfile = result.profile;
+      createdRecruiterProfile = result.recruiterProfile;
     } catch (err: any) {
-      const isP2002 =
-        err?.code === 'P2002' ||
-        (typeof err?.message === 'string' && err.message.includes('Unique constraint failed'));
-      if (isP2002) {
-        const target = Array.isArray(err?.meta?.target)
+      if (err.code === 'P2002') {
+        const target = Array.isArray(err.meta?.target)
           ? err.meta.target.join(',')
-          : String(err?.meta?.target || err?.message || '');
+          : String(err.meta?.target || err.message || '');
 
         if (target.includes('username')) {
           const friendly: any = new Error('Username already taken');
           friendly.statusCode = 409;
+          friendly.field = 'username';
           throw friendly;
         } else if (target.includes('email')) {
           const friendly: any = new Error('Email already in use. Please sign in.');
           friendly.statusCode = 409;
+          friendly.field = 'email';
           throw friendly;
         } else {
-          const friendly: any = new Error('An account with these details already exists.');
+          const friendly: any = new Error('A record with these details already exists.');
           friendly.statusCode = 409;
           throw friendly;
         }
-      } else {
-        console.error('[AuthService.register Error]:', err);
-        const friendly: any = new Error('Registration could not be completed. Please try again.');
-        friendly.statusCode = err?.statusCode || 500;
-        throw friendly;
       }
+
+      console.error('[AuthService.register Error]:', err);
+      const friendly: any = new Error('Registration could not be completed. Please try again.');
+      friendly.statusCode = err?.statusCode || 500;
+      throw friendly;
     }
 
-    await logAudit(user.id, 'USER_REGISTER', 'User', user.id, {
-      role: user.role,
-      username: user.username,
+    await logAudit(createdUser.id, 'USER_REGISTER', 'User', createdUser.id, {
+      role: createdUser.role,
+      username: createdUser.username,
     });
 
     const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      username: user.username,
+      userId: createdUser.id,
+      email: createdUser.email,
+      role: createdUser.role,
+      username: createdUser.username,
     });
 
-    return { user, token };
+    return {
+      user: this.sanitizeUser(createdUser, createdProfile, createdRecruiterProfile),
+      token,
+    };
   }
 
-  static async login(data: { email: string; password: string }) {
+  /**
+   * Logs in a user with timing-attack defense, lockout policy, and 401 error parity.
+   */
+  static async login(data: LoginInput) {
     const emailNormalized = (data.email || '').trim().toLowerCase();
 
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email: emailNormalized },
       include: {
         profile: true,
         recruiterProfile: true,
-        interests: true,
       },
     });
 
-    if (!user) {
-      const allMatching = await prisma.user.findMany({
-        include: { profile: true, recruiterProfile: true, interests: true },
-      });
-      user = allMatching.find((u) => u.email.trim().toLowerCase() === emailNormalized) || null;
-    }
-
+    // Timing-attack defense: always run bcrypt.compare even if user does not exist
     if (!user || !user.passwordHash) {
-      console.warn(`[Login Failure]: User not found or missing password hash for email: ${emailNormalized}`);
+      await bcrypt.compare(data.password, DUMMY_HASH);
       const err: any = new Error('Incorrect email or password');
       err.statusCode = 401;
       throw err;
     }
 
+    // Account lockout policy
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const remainingMinutes = Math.max(
+        1,
+        Math.ceil((user.lockedUntil.getTime() - Date.now()) / (60 * 1000))
+      );
+      const err: any = new Error(`Too many failed attempts. Try again in ${remainingMinutes} minutes`);
+      err.statusCode = 423;
+      throw err;
+    }
+
+    // Suspended check
     if (user.status === 'SUSPENDED') {
-      console.warn(`[Login Failure]: Suspended account attempted login for user ${user.username} (${user.email})`);
-      const err: any = new Error('Account suspended. Please contact platform administrators.');
+      const err: any = new Error('This account is suspended');
       err.statusCode = 403;
       throw err;
     }
 
+    // Verify password
     const validPassword = await bcrypt.compare(data.password, user.passwordHash);
+
     if (!validPassword) {
-      console.warn(`[Login Failure]: Password mismatch for email: ${emailNormalized}`);
-      const err: any = new Error('Incorrect email or password');
-      err.statusCode = 401;
-      throw err;
+      const newFailedCount = (user.failedLoginCount || 0) + 1;
+
+      if (newFailedCount >= 5) {
+        const lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedLoginCount: newFailedCount,
+            lockedUntil,
+          },
+        });
+        const err: any = new Error('Too many failed attempts. Try again in 15 minutes');
+        err.statusCode = 423;
+        throw err;
+      } else {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { failedLoginCount: newFailedCount },
+        });
+        const err: any = new Error('Incorrect email or password');
+        err.statusCode = 401;
+        throw err;
+      }
     }
 
-    if (user.role === 'RECRUITER' && user.recruiterProfile && !user.recruiterProfile.isVerified) {
-      console.info(`[Login Notice]: Recruiter account ${user.email} is pending approval.`);
-    }
+    // Password is valid - reset lock and update lastLoginAt
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date(),
+      },
+      include: {
+        profile: true,
+        recruiterProfile: true,
+      },
+    });
 
-    if (user.role === 'DEVELOPER' && !user.profile) {
-      const createdProfile = await prisma.developerProfile.create({
+    // Ensure user always has matching profile for its role
+    let profile = updatedUser.profile;
+    let recruiterProfile = updatedUser.recruiterProfile;
+
+    if (updatedUser.role === 'DEVELOPER' && !profile) {
+      profile = await prisma.developerProfile.create({
         data: {
-          userId: user.id,
+          userId: updatedUser.id,
           bio: 'Software Engineer',
           isPublic: true,
           showOnLeaderboard: true,
@@ -228,39 +265,41 @@ export class AuthService {
           notificationsPaused: false,
         },
       });
-      user = { ...user, profile: createdProfile };
-    } else if (user.role === 'RECRUITER' && !user.recruiterProfile) {
-      const createdRecProfile = await prisma.recruiterProfile.create({
+    } else if (updatedUser.role === 'RECRUITER' && !recruiterProfile) {
+      recruiterProfile = await prisma.recruiterProfile.create({
         data: {
-          userId: user.id,
+          userId: updatedUser.id,
           companyName: 'SkillProof Partner',
           jobTitle: 'Technical Recruiter',
-          isVerified: true,
-          verifiedAt: new Date(),
+          isVerified: false,
         },
       });
-      user = { ...user, recruiterProfile: createdRecProfile };
     }
 
-    await logAudit(user.id, 'USER_LOGIN', 'User', user.id);
+    await logAudit(updatedUser.id, 'USER_LOGIN', 'User', updatedUser.id);
 
     const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      username: user.username || emailNormalized.split('@')[0],
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      role: updatedUser.role,
+      username: updatedUser.username,
     });
 
-    return { user, token };
+    return {
+      user: this.sanitizeUser(updatedUser, profile, recruiterProfile),
+      token,
+    };
   }
 
+  /**
+   * Retrieves active session details for a given userId.
+   */
   static async getSession(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         profile: true,
         recruiterProfile: true,
-        interests: true,
       },
     });
 
@@ -268,17 +307,22 @@ export class AuthService {
       return null;
     }
 
-    return {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      isDemo: user.isDemo,
-      profile: user.profile,
-      recruiterProfile: user.recruiterProfile,
-      interests: user.interests,
-    };
+    return this.sanitizeUser(user);
+  }
+
+  /**
+   * Checks if a username is available.
+   */
+  static async checkUsername(username: string): Promise<boolean> {
+    const normalized = (username || '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+      return false;
+    }
+    const existing = await prisma.user.findUnique({
+      where: { username: normalized },
+      select: { id: true },
+    });
+    return !existing;
   }
 }
+

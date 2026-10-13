@@ -8,16 +8,19 @@ datasource db {
 }
 
 model User {
-  id           String            @id @default(uuid())
-  username     String            @unique
-  name         String
-  email        String            @unique
-  passwordHash String
-  role         String            @default("DEVELOPER") // DEVELOPER, RECRUITER, ADMIN
-  status       String            @default("ACTIVE")    // ACTIVE, SUSPENDED
-  isDemo       Boolean           @default(false)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id               String            @id @default(cuid())
+  email            String            @unique
+  username         String            @unique
+  name             String
+  passwordHash     String
+  role             String            @default("DEVELOPER") // DEVELOPER, RECRUITER, ADMIN
+  status           String            @default("ACTIVE")    // ACTIVE, SUSPENDED
+  isDemo           Boolean           @default(false)
+  failedLoginCount Int               @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   profile                  DeveloperProfile?
   recruiterProfile         RecruiterProfile?
@@ -46,7 +49,7 @@ model User {
 }
 
 model DeveloperProfile {
-  id                     String   @id @default(uuid())
+  id                     String   @id @default(cuid())
   userId                 String   @unique
   user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   bio                    String?
@@ -60,7 +63,7 @@ model DeveloperProfile {
 }
 
 model RecruiterProfile {
-  id             String    @id @default(uuid())
+  id             String    @id @default(cuid())
   userId         String    @unique
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   companyName    String

@@ -10,18 +10,38 @@ const safeUrlSchema = z.string().superRefine((val, ctx) => {
   }
 }).or(z.literal('')).optional();
 
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email('Invalid email address');
+
+export const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(72, 'Password cannot exceed 72 characters');
+
+export const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9_]{3,20}$/, 'Username must be 3-20 characters, lowercase alphanumeric or underscore');
+
+export const nameSchema = z
+  .string()
+  .trim()
+  .min(2, 'Name must be at least 2 characters')
+  .max(60, 'Name cannot exceed 60 characters');
+
 export const registerSchema = z
   .object({
-    name: z.string().trim().optional(),
-    fullName: z.string().trim().optional(),
-    username: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .regex(/^[a-z0-9_]{3,20}$/, 'Username must be 3-20 characters, lowercase alphanumeric or underscore'),
-    email: z.string().trim().toLowerCase().pipe(z.string().email('Invalid email address')),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    role: z.enum(['DEVELOPER', 'RECRUITER']).default('DEVELOPER'),
+    name: nameSchema,
+    username: usernameSchema,
+    email: emailSchema,
+    password: passwordSchema,
+    role: z.enum(['DEVELOPER', 'RECRUITER'], {
+      errorMap: () => ({ message: 'Role must be DEVELOPER or RECRUITER' }),
+    }),
     companyName: z.string().trim().optional(),
     jobTitle: z.string().trim().optional(),
     companyWebsite: safeUrlSchema,
@@ -29,30 +49,15 @@ export const registerSchema = z
     bio: z.string().max(2000).optional(),
   })
   .superRefine((val, ctx) => {
-    const effectiveName = (val.fullName || val.name || '').trim();
-    if (!effectiveName || effectiveName.length < 2) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['fullName'],
-        message: 'Full name must be at least 2 characters',
-      });
-    } else if (effectiveName.length > 60) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['fullName'],
-        message: 'Full name cannot exceed 60 characters',
-      });
-    }
-
     if (val.role === 'RECRUITER') {
-      if (!val.companyName || val.companyName.trim().length < 2) {
+      if (!val.companyName || val.companyName.trim().length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['companyName'],
           message: 'Company name is required for recruiter registration',
         });
       }
-      if (!val.jobTitle || val.jobTitle.trim().length < 2) {
+      if (!val.jobTitle || val.jobTitle.trim().length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['jobTitle'],
@@ -63,7 +68,7 @@ export const registerSchema = z
   });
 
 export const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().pipe(z.string().email('Invalid email address')),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
 });
 

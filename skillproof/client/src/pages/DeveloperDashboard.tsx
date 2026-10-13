@@ -60,7 +60,7 @@ export const DeveloperDashboard: React.FC = () => {
   const avgScore = summary.averageVerifiedScore ?? 0;
   const projectsCount = summary.projectCount ?? 0;
 
-  const portfolioUsername = user?.username || user?.profile?.publicSlug;
+  const portfolioUsername = user?.username;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">

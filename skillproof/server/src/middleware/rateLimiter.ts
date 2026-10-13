@@ -1,17 +1,132 @@
 import { Request, Response, NextFunction } from 'express';
-import { sendError } from '../utils/response.js';
 
 interface RateLimitStore {
-  [ip: string]: { count: number; resetTime: number };
+  [key: string]: { count: number; resetTime: number };
 }
 
-interface RateLimitOptions {
+const isRateLimitEnabled = (): boolean => {
+  return process.env.RATE_LIMIT_ENABLED !== 'false';
+};
+
+const getMultiplier = (): number => {
+  return process.env.NODE_ENV !== 'production' ? 10 : 1;
+};
+
+/**
+ * Keyed by IP + email for auth attempts (login & register).
+ * Base limit: 10 requests / 15 minutes.
+ * Multiplied by 10 when NODE_ENV !== 'production'.
+ * Configurable via RATE_LIMIT_ENABLED.
+ * skipSuccessfulRequests: true
+ */
+export const createAuthAttemptLimiter = (options: {
+  baseMax?: number;
   windowMs?: number;
-  max?: number;
-  message?: string;
-}
+} = {}) => {
+  const windowMs = options.windowMs || 15 * 60 * 1000;
+  const baseMax = options.baseMax || 10;
+  const store: RateLimitStore = {};
 
-export const createRateLimiter = (optionsOrMax: number | RateLimitOptions, windowMsArg?: number) => {
+  const limiter = (req: Request, res: Response, next: NextFunction) => {
+    if (!isRateLimitEnabled()) {
+      return next();
+    }
+
+    const maxAttempts = baseMax * getMultiplier();
+    const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
+    const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : 'unknown';
+    const key = `${ip}:${rawEmail}`;
+    const now = Date.now();
+
+    if (!store[key] || now > store[key].resetTime) {
+      store[key] = { count: 0, resetTime: now + windowMs };
+    }
+
+    if (store[key].count >= maxAttempts) {
+      const remainingMs = Math.max(0, store[key].resetTime - now);
+      const minutes = Math.max(1, Math.ceil(remainingMs / (60 * 1000)));
+      const retryAfterSec = Math.max(1, Math.ceil(remainingMs / 1000));
+
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        success: false,
+        error: `Too many attempts, try again in ${minutes} minutes`,
+        message: `Too many attempts, try again in ${minutes} minutes`,
+      });
+    }
+
+    store[key].count += 1;
+
+    // skipSuccessfulRequests: true
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (store[key] && store[key].count > 0) {
+          store[key].count -= 1;
+        }
+      }
+    });
+
+    next();
+  };
+
+  limiter.clear = () => {
+    for (const k of Object.keys(store)) {
+      delete store[k];
+    }
+  };
+
+  return limiter;
+};
+
+/**
+ * check-username rate limiter: 60 per minute per IP.
+ * Multiplied by 10 in non-production.
+ */
+export const createCheckUsernameLimiter = () => {
+  const windowMs = 60 * 1000;
+  const baseMax = 60;
+  const store: RateLimitStore = {};
+
+  const limiter = (req: Request, res: Response, next: NextFunction) => {
+    if (!isRateLimitEnabled()) {
+      return next();
+    }
+
+    const maxAttempts = baseMax * getMultiplier();
+    const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
+    const now = Date.now();
+
+    if (!store[ip] || now > store[ip].resetTime) {
+      store[ip] = { count: 0, resetTime: now + windowMs };
+    }
+
+    if (store[ip].count >= maxAttempts) {
+      const remainingMs = Math.max(0, store[ip].resetTime - now);
+      const minutes = Math.max(1, Math.ceil(remainingMs / (60 * 1000)));
+      const retryAfterSec = Math.max(1, Math.ceil(remainingMs / 1000));
+
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        success: false,
+        error: `Too many attempts, try again in ${minutes} minutes`,
+        message: `Too many attempts, try again in ${minutes} minutes`,
+      });
+    }
+
+    store[ip].count += 1;
+    next();
+  };
+
+  limiter.clear = () => {
+    for (const k of Object.keys(store)) {
+      delete store[k];
+    }
+  };
+
+  return limiter;
+};
+
+export const createRateLimiter = (optionsOrMax: number | { windowMs?: number; max?: number; message?: string }, windowMsArg?: number) => {
   let maxRequests = 100;
   let windowMs = 15 * 60 * 1000;
   let customMsg = 'Too many requests, please try again later';
@@ -28,6 +143,7 @@ export const createRateLimiter = (optionsOrMax: number | RateLimitOptions, windo
   const store: RateLimitStore = {};
 
   return (req: Request, res: Response, next: NextFunction) => {
+    if (!isRateLimitEnabled()) return next();
     const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
     const now = Date.now();
 
@@ -37,72 +153,15 @@ export const createRateLimiter = (optionsOrMax: number | RateLimitOptions, windo
     }
 
     store[ip].count += 1;
-
-    if (store[ip].count > maxRequests) {
-      return sendError(res, customMsg, 429);
+    if (store[ip].count > maxRequests * getMultiplier()) {
+      const remainingMs = Math.max(0, store[ip].resetTime - now);
+      const retryAfterSec = Math.max(1, Math.ceil(remainingMs / 1000));
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({ success: false, error: customMsg, message: customMsg });
     }
 
     next();
   };
-};
-
-export const createLoginRateLimiter = (options: {
-  maxAttempts?: number;
-  windowMs?: number;
-  skipSuccessfulRequests?: boolean;
-} | number = 10, windowMsArg = 15 * 60 * 1000) => {
-  const windowMs = typeof options === 'object' ? options.windowMs || 15 * 60 * 1000 : windowMsArg;
-  const baseMax = typeof options === 'object' ? options.maxAttempts || 10 : options || 10;
-  const skipSuccessful = typeof options === 'object' ? options.skipSuccessfulRequests !== false : true;
-  const store: RateLimitStore = {};
-
-  const middleware = (req: Request, res: Response, next: NextFunction) => {
-    // Relaxed in development (100 attempts in non-production)
-    const maxAttempts = process.env.NODE_ENV === 'production' ? baseMax : 100;
-    const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
-    const email =
-      typeof req.body?.email === 'string' && req.body.email.trim().length > 0
-        ? req.body.email.trim().toLowerCase()
-        : 'unknown';
-    const key = `${ip}:${email}`;
-    const now = Date.now();
-
-    if (!store[key] || now > store[key].resetTime) {
-      store[key] = { count: 0, resetTime: now + windowMs };
-    }
-
-    if (store[key].count >= maxAttempts) {
-      const remainingMs = Math.max(0, store[key].resetTime - now);
-      const minutes = Math.max(1, Math.ceil(remainingMs / 60000));
-      return sendError(
-        res,
-        `Too many attempts, try again in ${minutes} minutes`,
-        429
-      );
-    }
-
-    store[key].count += 1;
-
-    if (skipSuccessful) {
-      res.on('finish', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          if (store[key] && store[key].count > 0) {
-            store[key].count -= 1;
-          }
-        }
-      });
-    }
-
-    next();
-  };
-
-  middleware.clear = () => {
-    for (const k of Object.keys(store)) {
-      delete store[k];
-    }
-  };
-
-  return middleware;
 };
 
 export const createUserRateLimiter = (options: {
@@ -114,7 +173,8 @@ export const createUserRateLimiter = (options: {
   const store: RateLimitStore = {};
 
   const middleware = (req: Request, res: Response, next: NextFunction) => {
-    const userId = (req as any).user?.userId;
+    if (!isRateLimitEnabled()) return next();
+    const userId = (req as any).user?.userId || (req as any).user?.id;
     const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
     const key = userId ? `user:${userId}` : `ip:${ip}`;
     const now = Date.now();
@@ -123,9 +183,13 @@ export const createUserRateLimiter = (options: {
       delete store[key];
     }
 
+    const effectiveMax = options.max * getMultiplier();
+
     if (options.countOnlyStatus !== undefined) {
-      if (store[key] && store[key].count >= options.max) {
-        return sendError(res, options.message, 429);
+      if (store[key] && store[key].count >= effectiveMax) {
+        const remainingMs = Math.max(0, store[key].resetTime - now);
+        res.setHeader('Retry-After', String(Math.max(1, Math.ceil(remainingMs / 1000))));
+        return res.status(429).json({ success: false, error: options.message, message: options.message });
       }
       res.on('finish', () => {
         if (res.statusCode === options.countOnlyStatus) {
@@ -147,66 +211,10 @@ export const createUserRateLimiter = (options: {
 
     store[key].count += 1;
 
-    if (store[key].count > options.max) {
-      return sendError(res, options.message, 429);
-    }
-
-    next();
-  };
-
-  middleware.clear = () => {
-    for (const k of Object.keys(store)) {
-      delete store[k];
-    }
-  };
-
-  return middleware;
-};
-
-export const createRegisterRateLimiter = (options: {
-  maxAttempts?: number;
-  windowMs?: number;
-  skipSuccessfulRequests?: boolean;
-} = {}) => {
-  const windowMs = options.windowMs || 15 * 60 * 1000;
-  const baseMax = options.maxAttempts || 10;
-  const store: RateLimitStore = {};
-
-  const middleware = (req: Request, res: Response, next: NextFunction) => {
-    // Relaxed in development (100 attempts in non-production)
-    const maxAttempts = process.env.NODE_ENV === 'production' ? baseMax : 100;
-    const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
-    const email =
-      typeof req.body?.email === 'string' && req.body.email.trim().length > 0
-        ? req.body.email.trim().toLowerCase()
-        : 'unknown';
-    const key = `${ip}:${email}`;
-    const now = Date.now();
-
-    if (!store[key] || now > store[key].resetTime) {
-      store[key] = { count: 0, resetTime: now + windowMs };
-    }
-
-    if (store[key].count >= maxAttempts) {
+    if (store[key].count > effectiveMax) {
       const remainingMs = Math.max(0, store[key].resetTime - now);
-      const minutes = Math.max(1, Math.ceil(remainingMs / 60000));
-      return sendError(
-        res,
-        `Too many attempts, try again in ${minutes} minutes`,
-        429
-      );
-    }
-
-    store[key].count += 1;
-
-    if (options.skipSuccessfulRequests !== false) {
-      res.on('finish', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          if (store[key] && store[key].count > 0) {
-            store[key].count -= 1;
-          }
-        }
-      });
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil(remainingMs / 1000))));
+      return res.status(429).json({ success: false, error: options.message, message: options.message });
     }
 
     next();
@@ -221,42 +229,13 @@ export const createRegisterRateLimiter = (options: {
   return middleware;
 };
 
-export const loginRateLimiter = createLoginRateLimiter(10, 15 * 60 * 1000); // 10 attempts per 15 mins per IP + email
-export const registerRateLimiter = createRegisterRateLimiter({
-  maxAttempts: 10,
-  windowMs: 15 * 60 * 1000,
-  skipSuccessfulRequests: true,
-});
-export const authRateLimiter = createRateLimiter(20, 15 * 60 * 1000); // 20 requests per 15 mins
-export const apiRateLimiter = createRateLimiter(300, 15 * 60 * 1000);  // 300 requests per 15 mins
-export const searchRateLimiter = createRateLimiter({
-  max: 60,
-  windowMs: 60 * 1000,
-  message: 'Search rate limit exceeded, please slow down.',
-});
-
-// Separate rate limiters for messaging and openings (never reusing login or global limiters)
-export const messageSendRateLimiter = createUserRateLimiter({
-  max: 30,
-  windowMs: 60 * 1000, // 30 messages / minute per user
-  message: 'Message rate limit exceeded (max 30 messages per minute). Please slow down.',
-});
-
-export const directConversationRateLimiter = createUserRateLimiter({
-  max: 10,
-  windowMs: 24 * 60 * 60 * 1000, // 10 direct conversations / day per recruiter
-  message: 'Daily limit of 10 new direct conversations per day reached.',
-  countOnlyStatus: 201,
-});
-
+// Export individual separate limiters
+export const loginRateLimiter = createAuthAttemptLimiter({ baseMax: 10, windowMs: 15 * 60 * 1000 });
+export const registerRateLimiter = createAuthAttemptLimiter({ baseMax: 10, windowMs: 15 * 60 * 1000 });
+export const checkUsernameRateLimiter = createCheckUsernameLimiter();
+export const apiRateLimiter = createRateLimiter(300, 15 * 60 * 1000);
+export const searchRateLimiter = createRateLimiter({ max: 60, windowMs: 60 * 1000, message: 'Search rate limit exceeded.' });
+export const messageSendRateLimiter = createUserRateLimiter({ max: 30, windowMs: 60 * 1000, message: 'Message rate limit exceeded.' });
+export const directConversationRateLimiter = createUserRateLimiter({ max: 10, windowMs: 24 * 60 * 60 * 1000, message: 'Daily direct conversation limit reached.', countOnlyStatus: 201 });
 export const conversationStartRateLimiter = directConversationRateLimiter;
-
-export const approachRateLimiter = createUserRateLimiter({
-  max: 5,
-  windowMs: 24 * 60 * 60 * 1000, // 5 approaches / day per developer
-  message: 'Daily limit of 5 approaches per day reached.',
-  countOnlyStatus: 201,
-});
-
-
-
+export const approachRateLimiter = createUserRateLimiter({ max: 5, windowMs: 24 * 60 * 60 * 1000, message: 'Daily approach limit reached.', countOnlyStatus: 201 });

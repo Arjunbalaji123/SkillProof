@@ -99,7 +99,7 @@ export const BookmarksPage: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {bookmarks.map((b) => {
-            const devUsername = b.username || b.publicSlug;
+            const devUsername = b.username;
             const isSelf =
               Boolean(user) &&
               (user?.id === b.developerId ||

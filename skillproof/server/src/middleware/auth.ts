@@ -1,66 +1,117 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JwtPayload } from '../utils/jwt.js';
-import { sendError } from '../utils/response.js';
 import { prisma } from '../config/db.js';
 
 export interface AuthRequest extends Request {
-  user?: JwtPayload;
+  user?: any;
+  userId?: string;
 }
 
-export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const requireAuth = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // 1. Try httpOnly cookie first
-    let token = req.cookies?.token;
-
-    // 2. Fallback to Authorization Bearer header
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.split(' ')[1];
-      }
-    }
+    const token =
+      req.cookies?.sp_session ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.substring(7)
+        : null);
 
     if (!token) {
-      return sendError(res, 'Authentication required. Please log in.', 401);
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+        message: 'Authentication required',
+      });
     }
 
-    const decoded = verifyToken(token);
+    let payload: JwtPayload;
+    try {
+      payload = verifyToken(token);
+    } catch (err: any) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired session',
+        message: 'Invalid or expired session',
+      });
+    }
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, status: true, role: true },
+      where: { id: payload.userId },
+      include: {
+        profile: true,
+        recruiterProfile: true,
+      },
     });
 
     if (!user) {
-      return sendError(res, 'User account no longer exists', 401);
+      return res.status(401).json({
+        success: false,
+        error: 'User not found',
+        message: 'User not found',
+      });
     }
 
     if (user.status === 'SUSPENDED') {
-      return sendError(res, 'Your account has been suspended. Access denied.', 403);
+      return res.status(403).json({
+        success: false,
+        error: 'This account is suspended',
+        message: 'This account is suspended',
+      });
     }
 
-    req.user = decoded;
+    req.user = user;
+    req.userId = user.id;
     next();
-  } catch (err) {
-    return sendError(res, 'Invalid or expired session. Please log in again.', 401);
+  } catch (error: any) {
+    console.error('[Auth Middleware Error]:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal authentication error',
+      message: 'Internal authentication error',
+    });
   }
 };
 
-export const optionalAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  let token = req.cookies?.token;
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
-    }
-  }
+export const optionalAuth = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const token =
+      req.cookies?.sp_session ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.substring(7)
+        : null);
 
-  if (token) {
+    if (!token) {
+      return next();
+    }
+
     try {
-      req.user = verifyToken(token);
-    } catch (_) {
-      // ignore
+      const payload = verifyToken(token);
+      const user = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        include: {
+          profile: true,
+          recruiterProfile: true,
+        },
+      });
+
+      if (user && user.status !== 'SUSPENDED') {
+        req.user = user;
+        req.userId = user.id;
+      }
+    } catch {
+      // Ignored for optional auth
     }
+
+    next();
+  } catch {
+    next();
   }
-  next();
 };
+

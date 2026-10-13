@@ -5,7 +5,7 @@ import { logAudit } from '../utils/audit.js';
 export class PortfolioService {
   /**
    * Public developer portfolio.
-   * Matches by username or publicSlug.
+   * Matches by username.
    * Clearly separates VERIFIED skills (with scores & level) from CLAIMED skills.
    * NEVER returns emails!
    */
@@ -148,7 +148,6 @@ export class PortfolioService {
       bookmarkNote,
       bio: profile.bio,
       githubUrl: profile.githubUrl,
-      publicSlug: user.username,
       redirectToUsername: user.username && user.username !== cleanId ? user.username : undefined,
       verifiedSkills,
       claimedSkills,
@@ -163,7 +162,6 @@ export class PortfolioService {
       bio?: string;
       githubUrl?: string;
       isPublic?: boolean;
-      publicSlug?: string;
       showOnLeaderboard?: boolean;
       allowRecruiterMessages?: boolean;
       notificationsPaused?: boolean;
@@ -178,7 +176,7 @@ export class PortfolioService {
       select: { username: true, role: true },
     });
 
-    const slugFromUsername = user?.username || data.publicSlug || userId.slice(0, 12);
+    const slugFromUsername = user?.username || userId.slice(0, 12);
 
     const profile = await prisma.developerProfile.upsert({
       where: { userId },

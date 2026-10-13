@@ -29,14 +29,17 @@ export interface DeveloperInterestItem {
 
 export interface User {
   id: string;
-  username?: string;
+  username: string;
   name: string;
   email?: string;
   role: UserRole;
   status?: UserStatus;
   isDemo?: boolean;
+  failedLoginCount?: number;
+  lockedUntil?: string | null;
+  lastLoginAt?: string | null;
   createdAt?: string;
-  profile?: DeveloperProfile;
+  profile?: DeveloperProfile | null;
   recruiterProfile?: RecruiterProfile | null;
   interests?: DeveloperInterestItem[];
 }
@@ -46,7 +49,6 @@ export interface DeveloperProfile {
   userId?: string;
   bio?: string | null;
   githubUrl?: string | null;
-  publicSlug?: string;
   isPublic: boolean;
   showOnLeaderboard?: boolean;
   allowRecruiterMessages?: boolean;
@@ -223,8 +225,7 @@ export interface TopicStrengthItem {
 export interface VerifiedDeveloperCard {
   id: string;
   name: string;
-  username?: string;
-  publicSlug: string;
+  username: string;
   isDemo?: boolean;
   bio?: string | null;
   githubUrl?: string | null;
@@ -255,8 +256,7 @@ export interface RecruiterBookmarkItem {
   bookmarkId: string;
   developerId: string;
   name: string;
-  username?: string;
-  publicSlug: string;
+  username: string;
   isDemo?: boolean;
   bio?: string | null;
   githubUrl?: string | null;

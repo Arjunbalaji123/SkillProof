@@ -177,11 +177,11 @@ export const EditProfilePage: React.FC = () => {
               <input
                 type="text"
                 disabled
-                value={user?.username || user?.profile?.publicSlug || ''}
+                value={user?.username || ''}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-[#CBD5E1] bg-slate-50 text-xs text-[#64748B] cursor-not-allowed font-mono"
               />
               <p className="text-[11px] text-[#94A3B8] mt-1">
-                Public link: <code>/u/{user?.username || user?.profile?.publicSlug}</code>
+                Public link: <code>/u/{user?.username}</code>
               </p>
             </div>
           </div>
