@@ -20,10 +20,11 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
+  MessageSquare,
 } from 'lucide-react';
 
 export const LeaderboardPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'global' | 'month' | 'track' | 'skill'>('global');
   const [tracks, setTracks] = useState<TrackCatalogItem[]>([]);
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
@@ -304,10 +305,15 @@ export const LeaderboardPage: React.FC = () => {
                   <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
                     Rank #2
                   </span>
-                  <h4 className="text-sm font-bold text-[#0F172A]">
+                  <h4 className="text-sm font-bold text-[#0F172A] flex items-center justify-center gap-1.5">
                     <Link to={`/u/${top2.username}`} className="hover:text-blue-600 hover:underline">
                       {top2.name}
                     </Link>
+                    {top2.isDemo && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase">
+                        Demo
+                      </span>
+                    )}
                   </h4>
                   <p className="text-xs text-[#64748B] font-mono">@{top2.username}</p>
                   <p className="text-xl font-black text-slate-700">{top2.points} pts</p>
@@ -331,10 +337,15 @@ export const LeaderboardPage: React.FC = () => {
                 <span className="inline-block px-3 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wider">
                   Champion #1
                 </span>
-                <h4 className="text-base font-black text-[#0F172A]">
+                <h4 className="text-base font-black text-[#0F172A] flex items-center justify-center gap-1.5">
                   <Link to={`/u/${top1.username}`} className="hover:text-blue-600 hover:underline">
                     {top1.name}
                   </Link>
+                  {top1.isDemo && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase">
+                      Demo
+                    </span>
+                  )}
                 </h4>
                 <p className="text-xs text-[#64748B] font-mono">@{top1.username}</p>
                 <p className="text-3xl font-black text-amber-600">{top1.points} pts</p>
@@ -359,10 +370,15 @@ export const LeaderboardPage: React.FC = () => {
                   <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
                     Rank #3
                   </span>
-                  <h4 className="text-sm font-bold text-[#0F172A]">
+                  <h4 className="text-sm font-bold text-[#0F172A] flex items-center justify-center gap-1.5">
                     <Link to={`/u/${top3.username}`} className="hover:text-blue-600 hover:underline">
                       {top3.name}
                     </Link>
+                    {top3.isDemo && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase">
+                        Demo
+                      </span>
+                    )}
                   </h4>
                   <p className="text-xs text-[#64748B] font-mono">@{top3.username}</p>
                   <p className="text-xl font-black text-amber-800">{top3.points} pts</p>
@@ -390,67 +406,113 @@ export const LeaderboardPage: React.FC = () => {
                   <th className="p-3.5">Top Level</th>
                   <th className="p-3.5">Verified Skills</th>
                   <th className="p-3.5 text-right">Points</th>
+                  <th className="p-3.5 text-right">Connect</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {entries.map((item) => (
-                  <tr
-                    key={item.userId}
-                    className={`transition hover:bg-slate-50/60 ${
-                      item.isCurrentUser ? 'bg-blue-50/50 font-semibold ring-1 ring-blue-300' : ''
-                    }`}
-                  >
-                    <td className="p-3.5 text-center">
-                      <div className="flex justify-center">{getRankBadge(item.rank)}</div>
-                    </td>
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs uppercase border border-slate-200">
-                          {item.name.slice(0, 2)}
+                {entries.map((item) => {
+                  const isSelf =
+                    Boolean(item.isCurrentUser) ||
+                    (user &&
+                      (user.id === item.userId ||
+                        (user.username &&
+                          item.username &&
+                          user.username.toLowerCase() === item.username.toLowerCase())));
+                  const canMessage = !isSelf && !item.isDemo;
+
+                  return (
+                    <tr
+                      key={item.userId}
+                      className={`transition hover:bg-slate-50/60 ${
+                        item.isCurrentUser ? 'bg-blue-50/50 font-semibold ring-1 ring-blue-300' : ''
+                      }`}
+                    >
+                      <td className="p-3.5 text-center">
+                        <div className="flex justify-center">{getRankBadge(item.rank)}</div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs uppercase border border-slate-200">
+                            {item.name.slice(0, 2)}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <Link
+                                to={`/u/${item.username}`}
+                                className="font-bold text-[#0F172A] hover:text-blue-600 hover:underline flex items-center gap-1"
+                              >
+                                {item.name}
+                              </Link>
+                              {item.isDemo && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase">
+                                  Demo
+                                </span>
+                              )}
+                              {item.isCurrentUser && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-600 text-white">
+                                  You
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-[#64748B] font-mono">@{item.username}</p>
+                          </div>
                         </div>
-                        <div>
-                          <Link
-                            to={`/u/${item.username}`}
-                            className="font-bold text-[#0F172A] hover:text-blue-600 hover:underline flex items-center gap-1"
-                          >
-                            {item.name}
-                            {item.isCurrentUser && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-600 text-white">
-                                You
-                              </span>
-                            )}
-                          </Link>
-                          <p className="text-[11px] text-[#64748B] font-mono">@{item.username}</p>
+                      </td>
+                      <td className="p-3.5">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${getLevelBadgeClass(
+                            item.level
+                          )}`}
+                        >
+                          {item.level}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex flex-wrap gap-1 max-w-md">
+                          {item.verifiedSkills.map((s) => (
+                            <span
+                              key={s}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-[#334155]"
+                            >
+                              {s}
+                            </span>
+                          ))}
                         </div>
-                      </div>
-                    </td>
-                    <td className="p-3.5">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${getLevelBadgeClass(
-                          item.level
-                        )}`}
-                      >
-                        {item.level}
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      <div className="flex flex-wrap gap-1 max-w-md">
-                        {item.verifiedSkills.map((s) => (
-                          <span
-                            key={s}
-                            className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-[#334155]"
-                          >
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-3.5 text-right font-black text-sm text-blue-600">
-                      {item.points}{' '}
-                      <span className="text-[10px] text-[#64748B] font-semibold">pts</span>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="p-3.5 text-right font-black text-sm text-blue-600">
+                        {item.points}{' '}
+                        <span className="text-[10px] text-[#64748B] font-semibold">pts</span>
+                      </td>
+                      <td className="p-3.5 text-right">
+                        {canMessage && item.username ? (
+                          isAuthenticated ? (
+                            <Link
+                              to={`/messages?to=${encodeURIComponent(item.username)}${
+                                item.verifiedSkills[0]
+                                  ? `&skill=${encodeURIComponent(item.verifiedSkills[0])}`
+                                  : ''
+                              }`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 text-[11px] font-bold transition"
+                            >
+                              <MessageSquare size={12} />
+                              <span>Message</span>
+                            </Link>
+                          ) : (
+                            <Link
+                              to="/login"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[#475569] text-[11px] font-semibold transition"
+                            >
+                              <MessageSquare size={12} />
+                              <span>Sign in to message</span>
+                            </Link>
+                          )
+                        ) : (
+                          <span className="text-[10px] text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

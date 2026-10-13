@@ -1,26 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/LoadingSkeleton';
 import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Github,
-  Award,
   FolderGit2,
-  ExternalLink,
-  Code2,
-  Calendar,
   Lock,
+  MessageSquare,
+  Bookmark,
+  BookmarkCheck,
+  Loader2,
 } from 'lucide-react';
 
 export const PublicPortfolioPage: React.FC = () => {
   const { username } = useParams<{ username: string }>(); // acts as username or slug
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
   const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [savingBookmark, setSavingBookmark] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPortfolio = async () => {
@@ -32,6 +37,7 @@ export const PublicPortfolioPage: React.FC = () => {
             return;
           }
           setPortfolio(res.data.data);
+          setIsBookmarked(Boolean(res.data.data.isBookmarked));
         }
       } catch (err: any) {
         setErrorMsg(err.response?.data?.message || 'Portfolio not found or private');
@@ -42,6 +48,36 @@ export const PublicPortfolioPage: React.FC = () => {
 
     fetchPortfolio();
   }, [username, navigate]);
+
+  const handleToggleSave = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    if (!portfolio?.id || savingBookmark) return;
+
+    setSavingBookmark(true);
+    try {
+      if (isBookmarked) {
+        await api.delete(`/recruiter/bookmarks/${portfolio.id}`);
+        setIsBookmarked(false);
+        setToastMsg(`Removed ${portfolio.name} from saved developers`);
+      } else {
+        await api.post('/recruiter/bookmarks', {
+          developerId: portfolio.id,
+          note: `Saved from @${portfolio.username}'s public profile`,
+        });
+        setIsBookmarked(true);
+        setToastMsg(`Saved ${portfolio.name} to your bookmarks`);
+      }
+      setTimeout(() => setToastMsg(null), 3000);
+    } catch (err: any) {
+      setToastMsg(err.response?.data?.message || 'Failed to update saved state');
+      setTimeout(() => setToastMsg(null), 3000);
+    } finally {
+      setSavingBookmark(false);
+    }
+  };
 
   if (loading) return <PageSkeleton />;
 
@@ -57,10 +93,36 @@ export const PublicPortfolioPage: React.FC = () => {
 
   const verifiedSkills = portfolio.verifiedSkills || [];
   const claimedSkills = portfolio.claimedSkills || [];
+  const certificates = portfolio.certificates || [];
   const projects = portfolio.projects || [];
+
+  const isSelf =
+    Boolean(user) &&
+    (user?.id === portfolio.id ||
+      (user?.username &&
+        portfolio.username &&
+        user.username.toLowerCase() === portfolio.username.toLowerCase()));
+  const canMessage = !isSelf && !portfolio.isDemo;
+
+  const resolveCertUrl = (url?: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('/uploads/')) {
+      const apiBase = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001/api';
+      const backendOrigin = apiBase.replace(/\/api\/?$/, '');
+      return `${backendOrigin}${url}`;
+    }
+    return url;
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-10">
+      {toastMsg && (
+        <div className="fixed bottom-5 right-5 z-50 bg-[#0F172A] text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 border border-slate-700">
+          <CheckCircle2 size={15} className="text-emerald-400" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
       {/* Header Profile Card */}
       <div className="p-8 rounded-3xl bg-white border border-[#E2E8F0] shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
         <div className="space-y-3">
@@ -69,11 +131,16 @@ export const PublicPortfolioPage: React.FC = () => {
             <span>Verified Trust Passport</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-black text-[#0F172A] tracking-tight">{portfolio.name}</h1>
             {portfolio.username && (
               <span className="px-2.5 py-1 rounded-xl bg-slate-100 font-mono text-xs font-bold text-[#475569] border border-slate-200">
                 @{portfolio.username}
+              </span>
+            )}
+            {portfolio.isDemo && (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold uppercase tracking-wider">
+                Demo
               </span>
             )}
           </div>
@@ -81,17 +148,67 @@ export const PublicPortfolioPage: React.FC = () => {
             {portfolio.bio || 'Verified developer benchmarked on SkillProof server-graded assessments.'}
           </p>
 
-          {portfolio.githubUrl && (
-            <a
-              href={portfolio.githubUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700"
-            >
-              <Github size={14} />
-              GitHub Profile
-            </a>
-          )}
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            {portfolio.githubUrl && (
+              <a
+                href={portfolio.githubUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-[#0F172A] transition"
+              >
+                <Github size={14} />
+                GitHub Profile
+              </a>
+            )}
+
+            {/* Save (Bookmark) Button inside Developer Page */}
+            {!isSelf && (
+              <button
+                type="button"
+                onClick={handleToggleSave}
+                disabled={savingBookmark}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition shadow-xs ${
+                  isBookmarked
+                    ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                    : 'bg-white text-[#0F172A] border-[#CBD5E1] hover:bg-slate-50'
+                }`}
+              >
+                {savingBookmark ? (
+                  <Loader2 size={14} className="animate-spin text-amber-600" />
+                ) : isBookmarked ? (
+                  <BookmarkCheck size={14} className="text-amber-600 fill-amber-500" />
+                ) : (
+                  <Bookmark size={14} className="text-slate-600" />
+                )}
+                <span>{isBookmarked ? 'Saved' : 'Save'}</span>
+              </button>
+            )}
+
+            {/* Direct Message Button (Hidden for yourself and demo accounts) */}
+            {canMessage && portfolio.username && (
+              isAuthenticated ? (
+                <Link
+                  to={`/messages?to=${encodeURIComponent(portfolio.username)}${
+                    verifiedSkills[0]?.language
+                      ? `&skill=${encodeURIComponent(verifiedSkills[0].language)}`
+                      : ''
+                  }`}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-sm shadow-blue-500/20 transition"
+                >
+                  <MessageSquare size={14} />
+                  <span>Message</span>
+                </Link>
+              ) : (
+                <Link
+                  to="/login"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 text-xs font-bold transition"
+                >
+                  <MessageSquare size={14} />
+                  <span>Sign in to message</span>
+                </Link>
+              )
+            )}
+          </div>
         </div>
 
         <div className="text-right sm:border-l sm:border-[#E2E8F0] sm:pl-8 space-y-2">
@@ -128,11 +245,34 @@ export const PublicPortfolioPage: React.FC = () => {
                 className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-lg font-extrabold text-[#0F172A]">{s.language}</span>
+                  <div>
+                    <span className="text-lg font-extrabold text-[#0F172A]">{s.language}</span>
+                    {s.claimedLevel && (
+                      <p className="text-[11px] text-[#64748B]">
+                        Self-Claimed: <strong>{s.claimedLevel}</strong> • Earned: <strong>{s.level}</strong>
+                      </p>
+                    )}
+                  </div>
                   <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                     {s.score}% • {s.level}
                   </span>
                 </div>
+
+                {s.certificateUrl && (
+                  <div className="p-2 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between text-xs">
+                    <a
+                      href={resolveCertUrl(s.certificateUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 font-semibold underline truncate max-w-[240px]"
+                    >
+                      View Certificate PDF
+                    </a>
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold uppercase">
+                      Unverified claim
+                    </span>
+                  </div>
+                )}
 
                 {s.topicBreakdown && Object.keys(s.topicBreakdown).length > 0 && (
                   <div className="pt-2 border-t border-[#E2E8F0] space-y-1.5">
@@ -170,7 +310,7 @@ export const PublicPortfolioPage: React.FC = () => {
         )}
       </div>
 
-      {/* CLAIMED SKILLS (Clearly marked unverified) */}
+      {/* CLAIMED SKILLS & CERTIFICATES (Clearly marked unverified) */}
       <div className="space-y-4">
         <div>
           <h2 className="text-xl font-black text-[#0F172A] flex items-center gap-2">
@@ -178,11 +318,11 @@ export const PublicPortfolioPage: React.FC = () => {
             Claimed Skills & Certificates (Unverified)
           </h2>
           <p className="text-xs text-[#64748B] mt-0.5">
-            Self-declared or certificate links not yet tested under randomized server examination.
+            Self-declared or certificate links not yet verified at passing benchmark under randomized server examination.
           </p>
         </div>
 
-        {claimedSkills.length === 0 ? (
+        {claimedSkills.length === 0 && certificates.length === 0 ? (
           <div className="p-6 rounded-2xl bg-slate-50 border border-[#E2E8F0] text-center text-xs text-[#64748B]">
             No unverified claims on record.
           </div>
@@ -191,24 +331,36 @@ export const PublicPortfolioPage: React.FC = () => {
             {claimedSkills.map((c: any) => (
               <div
                 key={c.id || c.language}
-                className="p-4 rounded-xl bg-white border border-[#E2E8F0] shadow-sm space-y-2 opacity-85"
+                className="p-4 rounded-xl bg-white border border-[#E2E8F0] shadow-sm space-y-2 opacity-90"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-sm text-[#0F172A]">{c.language}</span>
                   <span className="text-[10px] font-bold uppercase text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Claimed Only
+                    Unverified claim
                   </span>
                 </div>
-                <p className="text-xs text-[#64748B]">Level: {c.claimedLevel}</p>
+                <p className="text-xs text-[#64748B]">
+                  Claimed Level: <strong>{c.claimedLevel}</strong>
+                  {c.earnedLevel && (
+                    <span className="block text-[11px] text-amber-700 mt-0.5">
+                      Assessment Earned: <strong>{c.earnedLevel}</strong> ({c.lastScore}%)
+                    </span>
+                  )}
+                </p>
                 {c.certificateUrl && (
-                  <a
-                    href={c.certificateUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] text-blue-600 underline truncate block"
-                  >
-                    View Claimed Certificate Link
-                  </a>
+                  <div className="pt-1 flex items-center justify-between gap-2">
+                    <a
+                      href={resolveCertUrl(c.certificateUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-blue-600 font-semibold underline truncate block"
+                    >
+                      View Certificate PDF
+                    </a>
+                    <span className="text-[9px] font-bold uppercase text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                      Unverified claim
+                    </span>
+                  </div>
                 )}
               </div>
             ))}

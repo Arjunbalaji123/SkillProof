@@ -14,6 +14,7 @@ export interface User {
   email: string;
   role: UserRole;
   status?: UserStatus;
+  isDemo?: boolean;
   createdAt?: string;
   profile?: DeveloperProfile;
 }
@@ -33,6 +34,7 @@ export interface LeaderboardEntryItem {
   userId: string;
   username: string;
   name: string;
+  isDemo?: boolean;
   avatar?: string;
   points: number;
   level: string;
@@ -60,6 +62,7 @@ export interface LeaderboardResponse {
 export interface UserSearchResult {
   username: string;
   name: string;
+  isDemo?: boolean;
   avatar?: string | null;
   topSkill?: {
     language: string;
@@ -189,7 +192,9 @@ export interface TopicStrengthItem {
 export interface VerifiedDeveloperCard {
   id: string;
   name: string;
+  username?: string;
   publicSlug: string;
+  isDemo?: boolean;
   bio?: string | null;
   githubUrl?: string | null;
   verifiedSkills: {
@@ -217,7 +222,9 @@ export interface RecruiterBookmarkItem {
   bookmarkId: string;
   developerId: string;
   name: string;
+  username?: string;
   publicSlug: string;
+  isDemo?: boolean;
   bio?: string | null;
   githubUrl?: string | null;
   note?: string;

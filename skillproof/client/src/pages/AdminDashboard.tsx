@@ -22,7 +22,16 @@ import {
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
-    'stats' | 'catalog' | 'pool' | 'questions' | 'flags' | 'claims' | 'users' | 'audit'
+    | 'stats'
+    | 'proctoring'
+    | 'catalog'
+    | 'pool'
+    | 'questions'
+    | 'flags'
+    | 'claims'
+    | 'users'
+    | 'message-reports'
+    | 'audit'
   >('stats');
   const [stats, setStats] = useState<any>(null);
   const [questions, setQuestions] = useState<any[]>([]);
@@ -32,6 +41,13 @@ export const AdminDashboard: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [catalog, setCatalog] = useState<TrackCatalogItem[]>([]);
   const [poolHealth, setPoolHealth] = useState<PoolHealthItem[]>([]);
+  const [proctoringData, setProctoringData] = useState<{
+    lockouts: any[];
+    terminatedAssessments: any[];
+    recentEvents: any[];
+  }>({ lockouts: [], terminatedAssessments: [], recentEvents: [] });
+  const [messageReports, setMessageReports] = useState<any[]>([]);
+  const [liftReasons, setLiftReasons] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Pool Health filter state
@@ -92,6 +108,8 @@ export const AdminDashboard: React.FC = () => {
         auditRes,
         catalogRes,
         poolRes,
+        proctorRes,
+        msgReportsRes,
       ] = await Promise.all([
         api.get('/admin/stats'),
         api.get('/admin/questions'),
@@ -101,6 +119,8 @@ export const AdminDashboard: React.FC = () => {
         api.get('/admin/audit'),
         api.get('/admin/catalog'),
         api.get('/admin/pool-health'),
+        api.get('/admin/proctoring').catch(() => ({ data: { success: false } })),
+        api.get('/admin/message-reports').catch(() => ({ data: { success: false } })),
       ]);
 
       if (statsRes.data.success) setStats(statsRes.data.data);
@@ -111,6 +131,8 @@ export const AdminDashboard: React.FC = () => {
       if (auditRes.data.success) setAuditLogs(auditRes.data.data);
       if (catalogRes.data.success) setCatalog(catalogRes.data.data);
       if (poolRes.data.success) setPoolHealth(poolRes.data.data);
+      if (proctorRes.data?.success) setProctoringData(proctorRes.data.data);
+      if (msgReportsRes.data?.success) setMessageReports(msgReportsRes.data.data || []);
     } catch (err) {
       console.error('Failed to load admin console data:', err);
     } finally {
@@ -376,6 +398,60 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Proctoring admin handlers
+  const handleLiftLockout = async (lockoutId: string) => {
+    const reason = (liftReasons[lockoutId] || '').trim() || 'Appeal approved by administrator';
+    try {
+      await api.post(`/admin/proctoring/lockouts/${lockoutId}/lift`, { reason });
+      const [proctorRes, auditRes] = await Promise.all([
+        api.get('/admin/proctoring'),
+        api.get('/admin/audit'),
+      ]);
+      if (proctorRes.data.success) setProctoringData(proctorRes.data.data);
+      if (auditRes.data.success) setAuditLogs(auditRes.data.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to lift lockout');
+    }
+  };
+
+  const handleConfirmViolation = async (lockoutId: string) => {
+    try {
+      await api.post(`/admin/proctoring/lockouts/${lockoutId}/confirm`, {
+        notes: 'Violation confirmed after reviewing proctor events and snapshots',
+      });
+      const [proctorRes, auditRes] = await Promise.all([
+        api.get('/admin/proctoring'),
+        api.get('/admin/audit'),
+      ]);
+      if (proctorRes.data.success) setProctoringData(proctorRes.data.data);
+      if (auditRes.data.success) setAuditLogs(auditRes.data.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to confirm violation');
+    }
+  };
+
+  const handleMessageReportAction = async (
+    reportId: string,
+    action: 'resolve' | 'warn' | 'suspend'
+  ) => {
+    try {
+      await api.patch(`/admin/message-reports/${reportId}`, {
+        action,
+        notes: `Admin action: ${action}`,
+      });
+      const [reportsRes, usersRes, auditRes] = await Promise.all([
+        api.get('/admin/message-reports'),
+        api.get('/admin/users'),
+        api.get('/admin/audit'),
+      ]);
+      if (reportsRes.data?.success) setMessageReports(reportsRes.data.data || []);
+      if (usersRes.data?.success) setUsers(usersRes.data.data);
+      if (auditRes.data?.success) setAuditLogs(auditRes.data.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to process message report');
+    }
+  };
+
   if (loading) return <PageSkeleton />;
 
   const lowPoolCount = poolHealth.filter((p) => p.isLow).length;
@@ -413,7 +489,7 @@ export const AdminDashboard: React.FC = () => {
       <div>
         <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">Admin Console</h1>
         <p className="text-sm text-[#64748B] mt-1">
-          Role-based skill catalog, blueprint question health, balanced pool curation, certificate claims, and assessment results.
+          Role-based skill catalog, camera proctoring review, blueprint question health, certificate claims, and assessment results.
         </p>
       </div>
 
@@ -421,6 +497,10 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex flex-wrap gap-2 border-b border-[#E2E8F0] pb-3">
         {[
           { id: 'stats', label: 'Overview Stats' },
+          {
+            id: 'proctoring',
+            label: `Proctoring (${proctoringData.lockouts?.length || 0})`,
+          },
           { id: 'catalog', label: `Skill Catalog (${catalog.length} Tracks)` },
           {
             id: 'pool',
@@ -433,6 +513,10 @@ export const AdminDashboard: React.FC = () => {
           { id: 'flags', label: `Flagged Queue (${flags.length})` },
           { id: 'claims', label: `Certificate Claims (${claims.length})` },
           { id: 'users', label: `Users (${users.length})` },
+          {
+            id: 'message-reports',
+            label: `Message reports (${messageReports.filter((r) => !r.resolved).length})`,
+          },
           { id: 'audit', label: 'Audit Trail' },
         ].map((tab) => (
           <button
@@ -1476,6 +1560,342 @@ export const AdminDashboard: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* TAB: PROCTORING (TERMINATED ATTEMPTS, LOCKOUTS, APPEALS & VIOLATION SNAPSHOTS) */}
+      {activeTab === 'proctoring' && (
+        <div className="space-y-8">
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-[#0F172A]">
+                Terminated Assessments &amp; Skill Lockouts
+              </h3>
+              <p className="text-xs text-[#64748B]">
+                Review 3-strike terminated attempts, candidate appeals, and violation snapshots. Lifting a lockout immediately unlocks the skill and restores the attempt toward the 30-day limit.
+              </p>
+            </div>
+
+            {(proctoringData.lockouts || []).length === 0 ? (
+              <div className="p-10 text-center bg-white rounded-2xl border border-[#E2E8F0] text-xs text-[#64748B]">
+                No proctoring skill lockouts or terminated assessments recorded.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {proctoringData.lockouts.map((lockout: any) => {
+                  const isExpired = new Date(lockout.until).getTime() <= Date.now();
+                  const events = lockout.assessment?.proctorEvents || [];
+
+                  return (
+                    <div
+                      key={lockout.id}
+                      className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-black text-[#0F172A]">
+                              {lockout.user?.name} (@{lockout.user?.username})
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold">
+                              {lockout.skillCatalog?.name || lockout.assessment?.language}
+                            </span>
+                            {lockout.liftedByAdmin ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold">
+                                Lockout Lifted (Attempt Restored)
+                              </span>
+                            ) : isExpired ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold">
+                                Expired
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 text-[11px] font-bold">
+                                Locked until {new Date(lockout.until).toLocaleString()}
+                              </span>
+                            )}
+                            {lockout.confirmedByAdmin && (
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold">
+                                Confirmed Violation
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#64748B]">{lockout.reason}</p>
+                          {lockout.liftedReason && (
+                            <p className="text-xs text-emerald-700 font-semibold">
+                              Lifted Reason: {lockout.liftedReason}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Admin Actions: Lift Lockout (with reason) & Confirm Violation */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!lockout.liftedByAdmin && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="Reason to lift lockout..."
+                                value={liftReasons[lockout.id] || ''}
+                                onChange={(e) =>
+                                  setLiftReasons((prev) => ({
+                                    ...prev,
+                                    [lockout.id]: e.target.value,
+                                  }))
+                                }
+                                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              />
+                              <button
+                                onClick={() => handleLiftLockout(lockout.id)}
+                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+                              >
+                                Lift lockout
+                              </button>
+                            </div>
+                          )}
+
+                          {!lockout.confirmedByAdmin && (
+                            <button
+                              onClick={() => handleConfirmViolation(lockout.id)}
+                              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition shadow-sm"
+                            >
+                              Confirm violation
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Candidate Appeal Box */}
+                      {lockout.appealText && (
+                        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs space-y-1">
+                          <p className="font-bold text-amber-900">
+                            Candidate Appeal ({lockout.appealedAt ? new Date(lockout.appealedAt).toLocaleString() : 'Submitted'}):
+                          </p>
+                          <p className="text-amber-950 italic">&ldquo;{lockout.appealText}&rdquo;</p>
+                        </div>
+                      )}
+
+                      {/* Violation Events & Snapshots for this Attempt */}
+                      {events.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold uppercase text-[#64748B]">
+                            Recorded Proctor Events ({events.length})
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                            {events.map((ev: any) => (
+                              <div
+                                key={ev.id}
+                                className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-black text-[10px]">
+                                    {ev.type}
+                                  </span>
+                                  <span className="text-[10px] text-[#64748B]">
+                                    {ev.counted ? 'Counted Strike' : 'Cooldown (Ignored)'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-[#64748B]">
+                                  {new Date(ev.createdAt).toLocaleString()}
+                                </p>
+                                {ev.snapshotUrl && (
+                                  <img
+                                    src={ev.snapshotUrl}
+                                    alt={`Violation ${ev.type}`}
+                                    className="w-full h-28 object-cover rounded-lg border border-slate-300 bg-black"
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* All Recent Proctor Events */}
+          <div className="space-y-3">
+            <h3 className="text-base font-bold text-[#0F172A]">
+              Recent Violation Events Log ({proctoringData.recentEvents?.length || 0})
+            </h3>
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+                  <tr>
+                    <th className="p-3">Time</th>
+                    <th className="p-3">Candidate</th>
+                    <th className="p-3">Skill</th>
+                    <th className="p-3">Type</th>
+                    <th className="p-3">Counted</th>
+                    <th className="p-3">Snapshot</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E2E8F0]">
+                  {(proctoringData.recentEvents || []).map((ev: any) => (
+                    <tr key={ev.id} className="hover:bg-slate-50/50">
+                      <td className="p-3 text-[#64748B]">
+                        {new Date(ev.createdAt).toLocaleString()}
+                      </td>
+                      <td className="p-3 font-bold text-[#0F172A]">
+                        {ev.user?.name} (@{ev.user?.username})
+                      </td>
+                      <td className="p-3 font-semibold text-[#0F172A]">
+                        {ev.assessment?.language || '-'}
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold text-[10px]">
+                          {ev.type}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        {ev.counted ? (
+                          <span className="text-red-700 font-bold">Yes (Strike)</span>
+                        ) : (
+                          <span className="text-slate-400">No (20s Cooldown)</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {ev.snapshotUrl ? (
+                          <a
+                            href={ev.snapshotUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-block"
+                          >
+                            <img
+                              src={ev.snapshotUrl}
+                              alt={ev.type}
+                              className="w-16 h-12 object-cover rounded border border-slate-300"
+                            />
+                          </a>
+                        ) : (
+                          <span className="text-slate-400">None</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: MESSAGE REPORTS (5-Message Context Moderation) */}
+      {activeTab === 'message-reports' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-[#0F172A]">
+                Direct Message Reports ({messageReports.length})
+              </h3>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                Privacy-preserving moderation: admins only see reported messages with up to 5 surrounding messages of context, never other private chats.
+              </p>
+            </div>
+          </div>
+
+          {messageReports.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
+              No message reports filed.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messageReports.map((rep: any) => (
+                <div
+                  key={rep.id}
+                  className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            rep.resolved
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-red-100 text-red-800 border border-red-200'
+                          }`}
+                        >
+                          {rep.resolved ? 'Resolved' : 'Pending Review'}
+                        </span>
+                        <span className="text-xs font-extrabold text-[#0F172A]">
+                          Reported Sender: {rep.reportedUser?.name} (@{rep.reportedUser?.username})
+                        </span>
+                        <span className="text-[11px] text-[#64748B]">
+                          • Reported by @{rep.reporter?.username} on{' '}
+                          {new Date(rep.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-xs text-red-700 font-semibold">
+                        Report Reason: &ldquo;{rep.reason}&rdquo;
+                      </p>
+                    </div>
+
+                    {/* Moderation Actions */}
+                    <div className="flex items-center gap-2">
+                      {!rep.resolved && (
+                        <button
+                          type="button"
+                          onClick={() => handleMessageReportAction(rep.id, 'resolve')}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0F172A] text-xs font-bold transition"
+                        >
+                          Resolve
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleMessageReportAction(rep.id, 'warn')}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs"
+                      >
+                        Warn Sender
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMessageReportAction(rep.id, 'suspend')}
+                        className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs"
+                      >
+                        Suspend Sender
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 5-Message Context Window */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-bold uppercase text-[#64748B]">
+                      Context Snapshot ({rep.contextMessages?.length || 0} of max 5 messages)
+                    </p>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+                      {(rep.contextMessages || []).map((cm: any) => (
+                        <div
+                          key={cm.id}
+                          className={`p-2.5 rounded-lg text-xs ${
+                            cm.isReportedMessage
+                              ? 'bg-red-50 border border-red-300 text-red-950 font-semibold'
+                              : 'bg-white border border-slate-200 text-[#334155]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] text-[#64748B] mb-0.5">
+                            <span className="font-bold text-[#0F172A]">
+                              {cm.senderName} (@{cm.senderUsername})
+                              {cm.isReportedMessage && (
+                                <span className="ml-2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] uppercase font-extrabold">
+                                  Reported Message
+                                </span>
+                              )}
+                            </span>
+                            <span>{new Date(cm.createdAt).toLocaleString()}</span>
+                          </div>
+                          <p className="whitespace-pre-wrap break-words">{cm.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

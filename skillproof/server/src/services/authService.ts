@@ -5,31 +5,35 @@ import { signToken } from '../utils/jwt.js';
 
 export class AuthService {
   static async register(data: { name: string; username?: string; email: string; password: string; role?: string }) {
-    const emailNormalized = data.email.trim().toLowerCase();
+    const emailNormalized = (data.email || '').trim().toLowerCase();
 
-    const existing = await prisma.user.findUnique({
-      where: { email: emailNormalized },
-    });
-
-    if (existing) {
-      throw new Error('An account with this email already exists.');
-    }
-
-    // Sanitize or use username
-    let usernameNormalized = data.username
-      ? data.username.trim().toLowerCase()
-      : data.name.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20);
+    // Do NOT generate username or publicSlug from data.name. Require explicit username.
+    const usernameNormalized = (data.username || '').trim().toLowerCase();
 
     // Validate regex: 3-20 chars, ^[a-z0-9_]+$
     if (!/^[a-z0-9_]{3,20}$/.test(usernameNormalized)) {
-      throw new Error('Username must be 3-20 characters long, containing only lowercase letters, numbers, and underscores.');
+      const err: any = new Error('Username must be 3-20 characters long, containing only lowercase letters, numbers, and underscores.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const existingEmail = await prisma.user.findFirst({
+      where: { email: emailNormalized },
+    });
+
+    if (existingEmail) {
+      const err: any = new Error('Email already in use. Please sign in.');
+      err.statusCode = 409;
+      throw err;
     }
 
     const existingUsername = await prisma.user.findUnique({
       where: { username: usernameNormalized },
     });
     if (existingUsername) {
-      throw new Error('Username is already taken.');
+      const err: any = new Error('Username already taken');
+      err.statusCode = 409;
+      throw err;
     }
 
     // Default role is DEVELOPER; prevent self-assigning ADMIN unless specified
@@ -39,26 +43,86 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(data.password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        name: data.name.trim(),
-        username: usernameNormalized,
-        email: emailNormalized,
-        passwordHash,
-        role: assignedRole,
-        profile: assignedRole === 'DEVELOPER' ? {
-          create: {
-            publicSlug: usernameNormalized,
-            bio: 'Software developer exploring verified skill benchmarks.',
-            isPublic: true,
-            showOnLeaderboard: true,
+    const createAccountInTx = async (slugToUse: string) => {
+      return prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            name: data.name.trim(),
+            username: usernameNormalized,
+            email: emailNormalized,
+            passwordHash,
+            role: assignedRole,
           },
-        } : undefined,
-      },
-      include: {
-        profile: true,
-      },
-    });
+        });
+
+        let createdProfile = null;
+        if (assignedRole === 'DEVELOPER') {
+          createdProfile = await tx.developerProfile.create({
+            data: {
+              userId: createdUser.id,
+              publicSlug: slugToUse,
+              bio: 'Software developer exploring verified skill benchmarks.',
+              isPublic: true,
+              showOnLeaderboard: true,
+            },
+          });
+        }
+
+        return {
+          ...createdUser,
+          profile: createdProfile,
+        };
+      });
+    };
+
+    let user;
+    try {
+      // Set publicSlug = username (already validated unique)
+      user = await createAccountInTx(usernameNormalized);
+    } catch (err: any) {
+      const isP2002 = err?.code === 'P2002' || (typeof err?.message === 'string' && err.message.includes('Unique constraint failed'));
+      if (isP2002) {
+        const target = Array.isArray(err?.meta?.target)
+          ? err.meta.target.join(',')
+          : String(err?.meta?.target || err?.message || '');
+
+        if (target.includes('publicSlug')) {
+          // Retry once with a numeric suffix and also sync any stale DeveloperProfile row that was holding usernameNormalized
+          const staleProfile = await prisma.developerProfile.findUnique({
+            where: { publicSlug: usernameNormalized },
+            include: { user: true },
+          });
+          if (staleProfile && staleProfile.user && staleProfile.user.username !== usernameNormalized) {
+            await prisma.developerProfile.update({
+              where: { id: staleProfile.id },
+              data: { publicSlug: staleProfile.user.username },
+            });
+            user = await createAccountInTx(usernameNormalized);
+          } else {
+            const suffix = Math.floor(100 + Math.random() * 900);
+            const retrySlug = `${usernameNormalized}_${suffix}`;
+            user = await createAccountInTx(retrySlug);
+          }
+        } else if (target.includes('username')) {
+          const friendly: any = new Error('Username already taken');
+          friendly.statusCode = 409;
+          throw friendly;
+        } else if (target.includes('email')) {
+          const friendly: any = new Error('Email already in use. Please sign in.');
+          friendly.statusCode = 409;
+          throw friendly;
+        } else {
+          const friendly: any = new Error('An account with these details already exists.');
+          friendly.statusCode = 409;
+          throw friendly;
+        }
+      } else {
+        console.error('[AuthService.register Error]:', err);
+        const friendly: any = new Error('Registration could not be completed. Please try again.');
+        friendly.statusCode = err?.statusCode || 500;
+        throw friendly;
+      }
+    }
 
     await logAudit(user.id, 'USER_REGISTER', 'User', user.id, { role: user.role, username: user.username });
 
@@ -73,9 +137,9 @@ export class AuthService {
   }
 
   static async login(data: { email: string; password: string }) {
-    const emailNormalized = data.email.trim().toLowerCase();
+    const emailNormalized = (data.email || '').trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email: emailNormalized },
       include: {
         profile: true,
@@ -83,16 +147,45 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new Error('Invalid email or password credentials');
+      // Fallback case-insensitive / trimmed lookup in case an older row wasn't normalized
+      const allMatching = await prisma.user.findMany({
+        include: { profile: true },
+      });
+      user = allMatching.find((u) => u.email.trim().toLowerCase() === emailNormalized) || null;
+    }
+
+    if (!user || !user.passwordHash) {
+      const err: any = new Error('Invalid email or password credentials');
+      err.statusCode = 401;
+      throw err;
     }
 
     if (user.status === 'SUSPENDED') {
-      throw new Error('Account suspended. Please contact platform administrators.');
+      const err: any = new Error('Account suspended. Please contact platform administrators.');
+      err.statusCode = 403;
+      throw err;
     }
 
     const validPassword = await bcrypt.compare(data.password, user.passwordHash);
     if (!validPassword) {
-      throw new Error('Invalid email or password credentials');
+      const err: any = new Error('Invalid email or password credentials');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    // Ensure DeveloperProfile exists if missing for a DEVELOPER account
+    if (user.role === 'DEVELOPER' && !user.profile) {
+      const fallbackSlug = user.username || emailNormalized.split('@')[0].replace(/[^a-z0-9_]/g, '_');
+      const createdProfile = await prisma.developerProfile.create({
+        data: {
+          userId: user.id,
+          bio: 'Software Engineer',
+          publicSlug: fallbackSlug,
+          isPublic: true,
+          showOnLeaderboard: true,
+        },
+      });
+      user = { ...user, profile: createdProfile };
     }
 
     await logAudit(user.id, 'USER_LOGIN', 'User', user.id);
@@ -101,7 +194,7 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
-      username: user.username,
+      username: user.username || emailNormalized.split('@')[0],
     });
 
     return { user, token };

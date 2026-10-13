@@ -6,6 +6,8 @@ import { QuestionService } from '../services/questionService.js';
 import { AuthService } from '../services/authService.js';
 import { runLeaderboardUnitTests } from './leaderboardUnitTests.js';
 import { runEndToEndFlowTest } from './endToEndFlowTest.js';
+import { runProctoringTests } from './proctoringTests.js';
+import { runMessagingTests } from './messagingTests.js';
 
 export async function runSkillProofTests() {
   console.log('🧪 Starting SkillProof v2 Test Suite...');
@@ -136,9 +138,11 @@ export async function runSkillProofTests() {
     const admin = await prisma.user.findUnique({ where: { email: 'admin@skillproof.dev' } });
     assert(admin !== null && admin.role === 'ADMIN', 'Admin user exists');
 
-    const dev = await prisma.user.findUnique({ where: { email: 'arjun@skillproof.dev' }, include: { profile: true, skills: true } });
-    assert(dev !== null && dev.role === 'DEVELOPER', 'Developer Arjun exists');
-    assert(dev.skills.length >= 2, 'Arjun has seeded skills');
+    const dev =
+      (await prisma.user.findUnique({ where: { email: 'dev001@demo.skillproof.test' }, include: { profile: true, skills: true } })) ||
+      (await prisma.user.findUnique({ where: { email: 'arjun@skillproof.dev' }, include: { profile: true, skills: true } }));
+    assert(dev !== null && dev.role === 'DEVELOPER', 'Demo Developer exists');
+    assert(dev.skills.length >= 2, 'Demo developer has seeded skills');
 
     const verifiedSkill = dev.skills.find((s) => s.status === 'VERIFIED');
     const claimedSkill = dev.skills.find((s) => s.status === 'CLAIMED');
@@ -151,7 +155,9 @@ export async function runSkillProofTests() {
 
   // 5. Question selection randomization test
   await test('QuestionService: Selects 20 questions with 8 Easy, 8 Medium, 4 Hard', async () => {
-    const dev = await prisma.user.findUnique({ where: { email: 'arjun@skillproof.dev' } });
+    const dev =
+      (await prisma.user.findUnique({ where: { email: 'dev001@demo.skillproof.test' } })) ||
+      (await prisma.user.findUnique({ where: { email: 'arjun@skillproof.dev' } }));
     const questions = await QuestionService.selectQuestionsForAssessment({
       language: 'JavaScript',
       userId: dev!.id,
@@ -192,7 +198,7 @@ export async function runSkillProofTests() {
       const badRes = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'arjun@skillproof.dev', password: 'bad' }),
+        body: JSON.stringify({ email: 'dev001@demo.skillproof.test', password: 'bad' }),
       });
       assert.strictEqual(badRes.status, 401);
       const badData: any = await badRes.json();
@@ -202,7 +208,7 @@ export async function runSkillProofTests() {
       const devRes = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: '  ARJUN@SKILLPROOF.DEV  ', password: 'Dev@123' }),
+        body: JSON.stringify({ email: '  DEV001@DEMO.SKILLPROOF.TEST  ', password: 'Dev@123' }),
       });
       assert.strictEqual(devRes.status, 200);
       const cookie = devRes.headers.get('set-cookie')?.split(';')[0] || '';
@@ -274,7 +280,13 @@ export async function runSkillProofTests() {
   // 8. Leaderboard & Points Unit Tests
   await runLeaderboardUnitTests();
 
-  // 9. Full End-to-End Lifecycle & Consistency Test
+  // 9. Camera Proctoring & Skill Lockout Unit Tests
+  await runProctoringTests();
+
+  // 10. Direct Messaging Unit & Integration Tests
+  await runMessagingTests();
+
+  // 11. Full End-to-End Lifecycle & Consistency Test
   await runEndToEndFlowTest();
 
   console.log(`\n========================================`);

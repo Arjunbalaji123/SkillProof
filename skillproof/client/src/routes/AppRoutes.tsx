@@ -21,6 +21,7 @@ import { AssessmentPlayerPage } from '../pages/AssessmentPlayerPage';
 import { PublicPortfolioPage } from '../pages/PublicPortfolioPage';
 import { LeaderboardPage } from '../pages/LeaderboardPage';
 import { BookmarksPage } from '../pages/BookmarksPage';
+import { MessagesPage } from '../pages/MessagesPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { UnauthorizedPage, ForbiddenPage, InternalServerErrorPage } from '../pages/ErrorPages';
 
@@ -116,11 +117,29 @@ export const AppRoutes: React.FC = () => {
           }
         />
 
-        {/* Recruiter Routes */}
+        {/* Direct Messaging Routes (ProtectedRoute + AppLayout) */}
+        <Route
+          path="/messages"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
+              <MessagesPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/messages/:conversationId"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
+              <MessagesPage />
+            </RoleRoute>
+          }
+        />
+
+        {/* Recruiter & Saved Developers Routes */}
         <Route
           path="/recruiters/bookmarks"
           element={
-            <RoleRoute allowedRoles={['RECRUITER', 'ADMIN']}>
+            <RoleRoute allowedRoles={['DEVELOPER', 'RECRUITER', 'ADMIN']}>
               <BookmarksPage />
             </RoleRoute>
           }

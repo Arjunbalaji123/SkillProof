@@ -190,12 +190,21 @@ export const SkillsManagerPage: React.FC = () => {
                   <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 text-xs flex items-center justify-between text-amber-800">
                     <span className="flex items-center gap-1.5 truncate">
                       <LinkIcon size={14} />
-                      <a href={skill.certificateUrl} target="_blank" rel="noreferrer" className="underline truncate max-w-[240px]">
+                      <a
+                        href={
+                          skill.certificateUrl.startsWith('/uploads/')
+                            ? `${((import.meta as any).env?.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api\/?$/, '')}${skill.certificateUrl}`
+                            : skill.certificateUrl
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline truncate max-w-[220px]"
+                      >
                         {skill.certificateUrl}
                       </a>
                     </span>
-                    <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-                      Unverified
+                    <span className="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded">
+                      Unverified claim
                     </span>
                   </div>
                 )}

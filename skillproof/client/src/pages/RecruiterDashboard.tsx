@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/LoadingSkeleton';
 import { VerifiedDeveloperCard } from '../types';
 import {
   Search,
-  Filter,
   Bookmark,
   BookmarkCheck,
   CheckCircle2,
-  AlertCircle,
   ExternalLink,
-  Code2,
   FolderGit2,
+  MessageSquare,
 } from 'lucide-react';
 
 export const RecruiterDashboard: React.FC = () => {
+  const { user, isAuthenticated } = useAuth();
   const [developers, setDevelopers] = useState<VerifiedDeveloperCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState('ALL');
@@ -142,103 +142,144 @@ export const RecruiterDashboard: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {developers.map((dev) => (
-            <div
-              key={dev.id}
-              className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex flex-col justify-between space-y-5 hover:shadow-md transition"
-            >
-              <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="text-lg font-black text-[#0F172A]">{dev.name}</h3>
-                    <p className="text-xs text-[#64748B]">@{dev.publicSlug}</p>
-                  </div>
+          {developers.map((dev) => {
+            const devUsername = dev.username || dev.publicSlug;
+            const isSelf =
+              Boolean(user) &&
+              (user?.id === dev.id ||
+                (user?.username &&
+                  devUsername &&
+                  user.username.toLowerCase() === devUsername.toLowerCase()));
+            const canMessage = !isSelf && !dev.isDemo;
 
-                  <button
-                    onClick={() => toggleBookmark(dev)}
-                    disabled={bookmarkingId === dev.id}
-                    className={`p-2 rounded-xl border transition ${
-                      dev.isBookmarked
-                        ? 'bg-blue-50 border-blue-200 text-blue-600'
-                        : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
-                    }`}
-                    title={dev.isBookmarked ? 'Candidate Saved' : 'Save Candidate'}
-                  >
-                    {dev.isBookmarked ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
-                  </button>
-                </div>
-
-                <p className="text-xs text-[#475569] line-clamp-2 leading-relaxed">
-                  {dev.bio || 'Verified developer benchmarked on technical assessments.'}
-                </p>
-
-                {/* Verified Skills Pill Badges with Topic Strengths */}
-                <div className="space-y-2 pt-2 border-t border-[#E2E8F0]">
-                  <p className="text-[11px] font-bold text-[#64748B] uppercase">Verified Benchmarks & Topic Strengths</p>
-                  <div className="space-y-2">
-                    {dev.verifiedSkills.map((vs, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                          <CheckCircle2 size={12} />
-                          {vs.language}: {vs.score}% ({vs.latestLevel})
-                        </span>
-                        {vs.topicStrengths && vs.topicStrengths.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-0.5">
-                            {vs.topicStrengths.map((ts: any) => (
-                              <span
-                                key={ts.topic}
-                                className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                                  ts.strength === 'Strong'
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
-                                    : ts.strength === 'Proficient'
-                                    ? 'bg-blue-50 text-blue-800 border-blue-200 font-medium'
-                                    : 'bg-amber-50 text-amber-800 border-amber-200 font-medium'
-                                }`}
-                              >
-                                {ts.topic}: <strong>{ts.accuracy}%</strong>
-                              </span>
-                            ))}
-                          </div>
+            return (
+              <div
+                key={dev.id}
+                className="p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex flex-col justify-between space-y-5 hover:shadow-md transition"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-black text-[#0F172A]">{dev.name}</h3>
+                        {dev.isDemo && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                            Demo
+                          </span>
                         )}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <p className="text-xs text-[#64748B] font-mono">@{devUsername}</p>
+                    </div>
 
-                {/* Unverified Claims */}
-                {dev.claimedSkills.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-amber-700 uppercase">Unverified Claims</p>
-                    <div className="flex flex-wrap gap-1">
-                      {dev.claimedSkills.map((cs, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200"
-                        >
-                          {cs.language} (Claimed)
-                        </span>
+                    <button
+                      onClick={() => toggleBookmark(dev)}
+                      disabled={bookmarkingId === dev.id}
+                      className={`p-2 rounded-xl border transition ${
+                        dev.isBookmarked
+                          ? 'bg-blue-50 border-blue-200 text-blue-600'
+                          : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                      }`}
+                      title={dev.isBookmarked ? 'Candidate Saved' : 'Save Candidate'}
+                    >
+                      {dev.isBookmarked ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-[#475569] line-clamp-2 leading-relaxed">
+                    {dev.bio || 'Verified developer benchmarked on technical assessments.'}
+                  </p>
+
+                  {/* Verified Skills Pill Badges with Topic Strengths */}
+                  <div className="space-y-2 pt-2 border-t border-[#E2E8F0]">
+                    <p className="text-[11px] font-bold text-[#64748B] uppercase">Verified Benchmarks & Topic Strengths</p>
+                    <div className="space-y-2">
+                      {dev.verifiedSkills.map((vs, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                            <CheckCircle2 size={12} />
+                            {vs.language}: {vs.score}% ({vs.latestLevel})
+                          </span>
+                          {vs.topicStrengths && vs.topicStrengths.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {vs.topicStrengths.map((ts: any) => (
+                                <span
+                                  key={ts.topic}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                    ts.strength === 'Strong'
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
+                                      : ts.strength === 'Proficient'
+                                      ? 'bg-blue-50 text-blue-800 border-blue-200 font-medium'
+                                      : 'bg-amber-50 text-amber-800 border-amber-200 font-medium'
+                                  }`}
+                                >
+                                  {ts.topic}: <strong>{ts.accuracy}%</strong>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
-                )}
-              </div>
 
-              {/* Actions Footer */}
-              <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
-                <span className="text-xs text-[#64748B] flex items-center gap-1">
-                  <FolderGit2 size={14} /> {dev.projectCount} Projects
-                </span>
+                  {/* Unverified Claims */}
+                  {dev.claimedSkills.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-amber-700 uppercase">Unverified Claims</p>
+                      <div className="flex flex-wrap gap-1">
+                        {dev.claimedSkills.map((cs, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200"
+                          >
+                            {cs.language} (Claimed)
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                <Link
-                  to={`/developer/${dev.publicSlug}`}
-                  target="_blank"
-                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition"
-                >
-                  <ExternalLink size={12} /> View Passport
-                </Link>
+                {/* Actions Footer */}
+                <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between gap-2">
+                  <span className="text-xs text-[#64748B] flex items-center gap-1">
+                    <FolderGit2 size={14} /> {dev.projectCount} Projects
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    {canMessage && devUsername && (
+                      isAuthenticated ? (
+                        <Link
+                          to={`/messages?to=${encodeURIComponent(devUsername)}${
+                            dev.verifiedSkills[0]?.language
+                              ? `&skill=${encodeURIComponent(dev.verifiedSkills[0].language)}`
+                              : ''
+                          }`}
+                          className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] border border-blue-200 font-bold text-xs flex items-center gap-1 transition"
+                        >
+                          <MessageSquare size={12} /> Message
+                        </Link>
+                      ) : (
+                        <Link
+                          to="/login"
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#475569] font-semibold text-xs flex items-center gap-1 transition"
+                        >
+                          <MessageSquare size={12} /> Sign in to message
+                        </Link>
+                      )
+                    )}
+                    <Link
+                      to={`/u/${devUsername}`}
+                      target="_blank"
+                      className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition"
+                    >
+                      <ExternalLink size={12} /> View Passport
+                    </Link>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

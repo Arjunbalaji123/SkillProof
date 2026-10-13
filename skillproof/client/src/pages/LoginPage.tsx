@@ -5,14 +5,14 @@ import { PageSkeleton } from '../components/LoadingSkeleton';
 import { ShieldCheck, Mail, Lock, ArrowRight, AlertCircle, Zap } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   const { login, user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [email, setEmail] = useState<string>(() => (location.state as any)?.email || '');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Helper to determine destination path for a role
   const getDestination = (role?: string) => {
@@ -35,7 +35,7 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(email.trim().toLowerCase(), password);
       // AuthProvider updates user, navigation happens via useEffect or here
     } catch (err: any) {
       console.error('Backend Login Error:', err?.response?.data || err?.message || err);

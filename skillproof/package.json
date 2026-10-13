@@ -10,6 +10,8 @@
     "build": "npm --prefix server run build && npm --prefix client run build",
     "db:migrate": "npm --prefix server run db:migrate",
     "db:seed": "npm --prefix server run db:seed",
+    "leaderboard:rebuild": "npm --prefix server run leaderboard:rebuild",
+    "user:reset": "npm --prefix server run user:reset --",
     "test": "npm --prefix server run test",
     "install:all": "npm install && npm --prefix server install && npm --prefix client install"
   },

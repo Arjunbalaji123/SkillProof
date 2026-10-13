@@ -27,7 +27,17 @@ model User {
   bookmarksReceived  Bookmark[]          @relation("DeveloperBookmarks")
   questionFlags      QuestionFlag[]
   auditLogs          AuditLog[]
-  leaderboardEntries LeaderboardEntry[]
+  leaderboardEntries       LeaderboardEntry[]
+  proctorEvents            ProctorEvent[]
+  skillLockouts            SkillLockout[]
+  conversationsAsA         Conversation[]            @relation("ConversationUserA")
+  conversationsAsB         Conversation[]            @relation("ConversationUserB")
+  conversationParticipants ConversationParticipant[]
+  messagesSent             Message[]
+  blocksCreated            UserBlock[]               @relation("UserBlocker")
+  blocksReceived           UserBlock[]               @relation("UserBlocked")
+  messageReportsCreated    MessageReport[]           @relation("MessageReporter")
+  messageReportsResolved   MessageReport[]           @relation("MessageReportResolver")
 }
 
 model DeveloperProfile {
@@ -87,6 +97,7 @@ model SkillCatalog {
   skills        Skill[]
   questions     Question[]
   assessments   Assessment[]
+  lockouts      SkillLockout[]
 
   @@index([trackId])
 }
@@ -169,11 +180,12 @@ model Assessment {
   startedAt       DateTime             @default(now())
   submittedAt     DateTime?
   durationSec     Int                  @default(1800) // 30 minutes default
-  status          String               @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED | EXPIRED
+  status          String               @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED | EXPIRED | TERMINATED
   scorePercent    Float?
   weightedPercent Float?
   level           String?              // Beginner, Basic, Intermediate, Advanced, Expert
   tabSwitchCount  Int                  @default(0)
+  lastHeartbeatAt DateTime?
   topicBreakdown  String?              // JSON object of topic accuracy
   coverage        String?              // JSON object { topicsCovered, questionsAnswered, attemptsCount }
   confidence      String?              // Low | Medium | High
@@ -181,9 +193,48 @@ model Assessment {
   updatedAt       DateTime             @updatedAt
 
   questions       AssessmentQuestion[]
+  proctorEvents   ProctorEvent[]
+  skillLockouts   SkillLockout[]
 
   @@index([userId, language])
   @@index([skillCatalogId])
+}
+
+model ProctorEvent {
+  id           String     @id @default(uuid())
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String     // PHONE | BOOK | NO_FACE | MULTI_FACE | CAMERA_OFF | NO_HEARTBEAT
+  snapshotUrl  String?
+  createdAt    DateTime   @default(now())
+  counted      Boolean    @default(false)
+
+  @@index([assessmentId, createdAt])
+  @@index([userId])
+}
+
+model SkillLockout {
+  id               String       @id @default(uuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillCatalogId   String
+  skillCatalog     SkillCatalog @relation(fields: [skillCatalogId], references: [id], onDelete: Cascade)
+  reason           String
+  until            DateTime
+  assessmentId     String
+  assessment       Assessment   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  liftedByAdmin    Boolean      @default(false)
+  liftedReason     String?
+  confirmedByAdmin Boolean      @default(false)
+  appealText       String?
+  appealedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([userId, skillCatalogId])
+  @@index([assessmentId])
 }
 
 model AssessmentQuestion {
@@ -255,3 +306,84 @@ model AuditLog {
   @@index([actorId])
   @@index([entity, entityId])
 }
+
+model Conversation {
+  id            String                    @id @default(uuid())
+  userAId       String
+  userA         User                      @relation("ConversationUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId       String
+  userB         User                      @relation("ConversationUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  createdAt     DateTime                  @default(now())
+  lastMessageAt DateTime                  @default(now())
+
+  participants  ConversationParticipant[]
+  messages      Message[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@index([lastMessageAt])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status         String       @default("ACTIVE") // ACTIVE | REQUEST | DECLINED | ARCHIVED
+  lastReadAt     DateTime?
+  muted          Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([userId, status])
+}
+
+model Message {
+  id             String          @id @default(uuid())
+  conversationId String
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User            @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body           String
+  createdAt      DateTime        @default(now())
+  deletedAt      DateTime?
+
+  reports        MessageReport[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blocker   User     @relation("UserBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("UserBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+model MessageReport {
+  id         String   @id @default(uuid())
+  messageId  String
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  reporterId String
+  reporter   User     @relation("MessageReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reason     String
+  resolved   Boolean  @default(false)
+  resolvedBy String?
+  resolver   User?    @relation("MessageReportResolver", fields: [resolvedBy], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([messageId])
+  @@index([reporterId])
+  @@index([resolved])
+}
+

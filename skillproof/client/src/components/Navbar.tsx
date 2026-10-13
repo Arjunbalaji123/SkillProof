@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { getSocket, disconnectSocket } from '../services/socket';
 import { NotificationBell } from './NotificationBell';
 import { UserSearchResult } from '../types';
 import {
@@ -21,13 +22,14 @@ import {
   Trophy,
   Loader2,
   RefreshCw,
-  AtSign,
+  MessageSquare,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { user, isAuthenticated, logout, isDeveloper, isRecruiter, isAdmin } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -39,6 +41,49 @@ export const Navbar: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch unread message count & subscribe to Socket.IO / 30s fallback polling
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUnreadMessageCount(0);
+      disconnectSocket();
+      return;
+    }
+
+    const fetchUnread = async () => {
+      try {
+        const res = await api.get('/messages/unread-count');
+        if (res.data?.success) {
+          setUnreadMessageCount(res.data.data.total || 0);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    fetchUnread();
+
+    const socket = getSocket();
+    const handleUpdate = () => {
+      fetchUnread();
+    };
+
+    socket.on('message:new', handleUpdate);
+    socket.on('conversation:updated', handleUpdate);
+
+    // Fall back to polling /api/messages/unread-count every 30 seconds if socket is not connected
+    const timer = setInterval(() => {
+      if (!socket.connected) {
+        fetchUnread();
+      }
+    }, 30000);
+
+    return () => {
+      socket.off('message:new', handleUpdate);
+      socket.off('conversation:updated', handleUpdate);
+      clearInterval(timer);
+    };
+  }, [isAuthenticated, location.pathname]);
 
   // 300ms debounced search
   useEffect(() => {
@@ -116,18 +161,38 @@ export const Navbar: React.FC = () => {
     navigate(`/u/${username}`);
   };
 
+  const handleMessageUserFromSearch = (
+    e: React.MouseEvent,
+    username: string,
+    topSkill?: string
+  ) => {
+    e.stopPropagation();
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSelectedIndex(-1);
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    const skillQuery = topSkill ? `&skill=${encodeURIComponent(topSkill)}` : '';
+    navigate(`/messages?to=${encodeURIComponent(username)}${skillQuery}`);
+  };
+
   const handleLogout = async () => {
+    disconnectSocket();
     await logout();
     navigate('/login');
   };
 
   const handleSwitchAccount = async () => {
     setIsUserMenuOpen(false);
+    disconnectSocket();
     await logout();
     navigate('/login');
   };
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) =>
+    location.pathname === path || (path === '/messages' && location.pathname.startsWith('/messages'));
   const isHomePage = location.pathname === '/';
 
   return (
@@ -180,36 +245,61 @@ export const Navbar: React.FC = () => {
                     No users found matching "{searchQuery}"
                   </div>
                 ) : (
-                  searchResults.map((u, idx) => (
-                    <button
-                      key={u.username}
-                      type="button"
-                      onClick={() => handleSelectUser(u.username)}
-                      onMouseEnter={() => setSelectedIndex(idx)}
-                      className={`w-full p-3 text-left flex items-center justify-between gap-3 transition ${
-                        selectedIndex === idx ? 'bg-blue-50/80' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
-                          {u.name.charAt(0).toUpperCase()}
+                  searchResults.map((u, idx) => {
+                    const isSelf = user?.username?.toLowerCase() === u.username.toLowerCase();
+                    const canMessage = !isSelf && !u.isDemo;
+                    return (
+                      <div
+                        key={u.username}
+                        onClick={() => handleSelectUser(u.username)}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        className={`w-full p-3 text-left flex items-center justify-between gap-2 cursor-pointer transition ${
+                          selectedIndex === idx ? 'bg-blue-50/80' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
+                            {u.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold text-[#0F172A] truncate">{u.name}</p>
+                              {u.isDemo && (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                                  Demo
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] font-mono text-slate-500 truncate">@{u.username}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-[#0F172A] truncate">{u.name}</p>
-                          <p className="text-[11px] font-mono text-slate-500 truncate">@{u.username}</p>
-                        </div>
-                      </div>
 
-                      <div className="text-right shrink-0">
-                        <span className="text-xs font-black text-blue-600">{u.points} pts</span>
-                        {u.topSkill && (
-                          <p className="text-[10px] text-slate-500">
-                            {u.topSkill.language} ({u.topSkill.level})
-                          </p>
-                        )}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right">
+                            <span className="text-xs font-black text-blue-600">{u.points} pts</span>
+                            {u.topSkill && (
+                              <p className="text-[10px] text-slate-500">
+                                {u.topSkill.language} ({u.topSkill.level})
+                              </p>
+                            )}
+                          </div>
+                          {canMessage && (
+                            <button
+                              type="button"
+                              onClick={(e) =>
+                                handleMessageUserFromSearch(e, u.username, u.topSkill?.language)
+                              }
+                              title={isAuthenticated ? `Message @${u.username}` : 'Sign in to message'}
+                              className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#2563EB] text-[10px] font-bold flex items-center gap-1 border border-blue-200 transition"
+                            >
+                              <MessageSquare size={11} />
+                              <span>Message</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -312,6 +402,26 @@ export const Navbar: React.FC = () => {
                         Saved Developers
                       </Link>
                     </>
+                  )}
+
+                  {/* MESSAGES NAV ITEM (For Developer and Recruiter, not on Login/Register/Landing) */}
+                  {(isDeveloper || isRecruiter) && (
+                    <Link
+                      to="/messages"
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                        isActive('/messages')
+                          ? 'bg-blue-50 text-[#2563EB] font-bold'
+                          : 'text-[#475569] hover:text-[#0F172A] hover:bg-slate-100'
+                      }`}
+                    >
+                      <MessageSquare size={15} />
+                      <span>Messages</span>
+                      {unreadMessageCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-[#2563EB] text-white text-[10px] font-extrabold leading-tight">
+                          {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                        </span>
+                      )}
+                    </Link>
                   )}
 
                   {/* ADMIN NAV */}
@@ -529,6 +639,21 @@ export const Navbar: React.FC = () => {
                     Saved Developers
                   </Link>
                 </>
+              )}
+
+              {(isDeveloper || isRecruiter) && (
+                <Link
+                  to="/messages"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-slate-100"
+                >
+                  <span>💬 Messages</span>
+                  {unreadMessageCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-[#2563EB] text-white text-[10px] font-extrabold">
+                      {unreadMessageCount}
+                    </span>
+                  )}
+                </Link>
               )}
 
               {isAdmin && (

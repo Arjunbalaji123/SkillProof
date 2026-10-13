@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
 import path from 'path';
 import cookieParser from 'cookie-parser';
@@ -9,7 +10,12 @@ import apiRoutes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 import { prisma } from './config/db.js';
-import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
+import { loginRateLimiter, authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
+import { requireAuth } from './middleware/auth.js';
+import { requireAdmin } from './middleware/role.js';
+import { ProctorService } from './services/proctorService.js';
+import { SocketService } from './services/socketService.js';
+import { serveProctorSnapshot } from './controllers/adminController.js';
 
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is missing.');
@@ -17,8 +23,12 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express();
+const httpServer = http.createServer(app);
+SocketService.init(httpServer);
+
 const PORT = process.env.PORT || 5000;
 const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR || '../uploads');
+const serverUploadsDir = path.resolve(process.cwd(), 'uploads');
 
 // Security Headers Middleware & HTTP Caching Policy
 app.use((req, res, next) => {
@@ -27,11 +37,13 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-  // Disable caching for dynamic developer, skills, dashboard, and assessment routes to avoid stale 304 responses
+  // Disable caching for dynamic developer, skills, dashboard, assessment, and messaging routes to avoid stale 304 responses
   if (
     req.path.startsWith('/api/dashboard') ||
     req.path.startsWith('/api/skills') ||
-    req.path.startsWith('/api/assessments')
+    req.path.startsWith('/api/assessments') ||
+    req.path.startsWith('/api/messages') ||
+    req.path.startsWith('/api/admin')
   ) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -44,20 +56,30 @@ app.use((req, res, next) => {
 // Request Logging & Security Middleware
 app.use(requestLogger);
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: [
+    process.env.CLIENT_URL || 'http://localhost:5173',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ],
   credentials: true,
 }));
 app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
-// Serve static file uploads safely (excluding raw access to sensitive proof PDFs)
+// Proctor snapshots are accessible ONLY to admins
+app.get('/uploads/proctor/:filename', requireAuth, requireAdmin, serveProctorSnapshot);
+
+// Serve static file uploads safely (excluding raw access to sensitive proof PDFs and proctor snapshots)
 app.use('/uploads', (req, res, next) => {
-  if (req.path.startsWith('/proof_')) {
-    return res.status(403).json({ success: false, message: 'Access denied. Use protected document endpoint.' });
+  if (req.path.startsWith('/proof_') || req.path.startsWith('/proctor')) {
+    return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
   }
   next();
 }, express.static(uploadDir, {
+  dotfiles: 'ignore',
+  index: false,
+}), express.static(serverUploadsDir, {
   dotfiles: 'ignore',
   index: false,
 }));
@@ -86,7 +108,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Apply Rate Limiters & API Routes
-app.use('/api/auth/login', authRateLimiter);
+app.use('/api/auth/login', loginRateLimiter);
 app.use('/api/auth/register', authRateLimiter);
 app.use('/api', apiRateLimiter, apiRoutes);
 
@@ -94,11 +116,23 @@ app.use('/api', apiRateLimiter, apiRoutes);
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 SKILLPROOF Server running at http://0.0.0.0:${PORT}`);
+  // Run initial 30-day proctor snapshot cleanup and schedule periodic jobs
+  ProctorService.cleanupExpiredSnapshots().catch(() => {});
+  setInterval(() => {
+    ProctorService.cleanupExpiredSnapshots().catch(() => {});
+  }, 6 * 60 * 60 * 1000); // every 6 hours
+
+  setInterval(() => {
+    ProctorService.monitorActiveHeartbeats().catch(() => {});
+  }, 10 * 1000); // every 10 seconds
+
+  httpServer.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 SKILLPROOF Server & Socket.IO running at http://0.0.0.0:${PORT}`);
     console.log(`📁 Static Uploads directory: ${uploadDir}`);
   });
 }
 
+export { httpServer };
 export default app;
+
 

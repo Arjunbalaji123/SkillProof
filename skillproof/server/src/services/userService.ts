@@ -60,6 +60,14 @@ export class UserService {
           where: { status: 'VERIFIED' },
           orderBy: { bestScore: 'desc' },
           take: 1,
+          include: {
+            assessments: {
+              where: { status: 'SUBMITTED' },
+              orderBy: { weightedPercent: 'desc' },
+              take: 1,
+              select: { level: true },
+            },
+          },
         },
       },
       take: 8,
@@ -68,15 +76,18 @@ export class UserService {
     const results = [];
     for (const u of users) {
       const breakdown = await LeaderboardService.calculateUserPoints(u.id);
+      const top = u.skills[0];
+      const earnedLevel = top?.assessments?.[0]?.level || top?.claimedLevel || 'Basic';
 
       results.push({
         username: u.username,
         name: u.name,
-        topSkill: u.skills[0]
+        isDemo: Boolean(u.isDemo),
+        topSkill: top
           ? {
-              language: u.skills[0].language,
-              level: u.skills[0].claimedLevel,
-              score: u.skills[0].bestScore || 0,
+              language: top.language,
+              level: earnedLevel,
+              score: top.bestScore || 0,
             }
           : null,
         points: breakdown?.points || 0,

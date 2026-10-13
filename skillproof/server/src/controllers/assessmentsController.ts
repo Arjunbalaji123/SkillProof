@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { AssessmentService } from '../services/assessmentService.js';
 import { QuestionService } from '../services/questionService.js';
+import { ProctorService } from '../services/proctorService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 
 export const startAssessment = async (req: AuthRequest, res: Response) => {
@@ -15,6 +16,8 @@ export const startAssessment = async (req: AuthRequest, res: Response) => {
       {
         cooldownRemainingMs: err.cooldownRemainingMs,
         nextAvailableDate: err.nextAvailableDate,
+        lockedUntil: err.lockedUntil || err.nextAvailableDate,
+        lockoutId: err.lockoutId || null,
       },
     ]);
   }
@@ -41,6 +44,53 @@ export const recordTabSwitch = async (req: AuthRequest, res: Response) => {
     return sendSuccess(res, 'Tab switch event recorded', result);
   } catch (err: any) {
     return sendError(res, err.message || 'Failed to record event', 400);
+  }
+};
+
+export const recordProctorEvent = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const assessmentId = req.params.id as string;
+    const { type, snapshot } = req.body;
+    const result = await ProctorService.recordProctorEvent(userId, assessmentId, type, snapshot);
+    return sendSuccess(res, 'Proctor event processed', result);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to record proctor event', err.statusCode || 400);
+  }
+};
+
+export const recordHeartbeat = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const assessmentId = req.params.id as string;
+    const { cameraStatus, cameraActive } = req.body;
+    const statusStr = cameraStatus || (cameraActive === false ? 'off' : 'ok');
+    const result = await ProctorService.recordHeartbeat(userId, assessmentId, statusStr);
+    return sendSuccess(res, 'Heartbeat processed', result);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to process heartbeat', err.statusCode || 400);
+  }
+};
+
+export const getUserLockouts = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const lockouts = await ProctorService.getUserLockouts(userId);
+    return sendSuccess(res, 'Active skill lockouts retrieved', lockouts);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to retrieve skill lockouts', 500);
+  }
+};
+
+export const submitLockoutAppeal = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const lockoutId = req.params.id as string;
+    const { appealText } = req.body;
+    const updated = await ProctorService.submitAppeal(userId, lockoutId, appealText);
+    return sendSuccess(res, 'Lockout appeal submitted for admin review', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to submit appeal', err.statusCode || 400);
   }
 };
 
@@ -99,3 +149,4 @@ export const flagQuestion = async (req: AuthRequest, res: Response) => {
     return sendError(res, err.message || 'Failed to flag question', 400);
   }
 };
+

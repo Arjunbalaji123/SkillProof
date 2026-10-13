@@ -1,7 +1,11 @@
+import fs from 'fs';
+import path from 'path';
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { AdminService } from '../services/adminService.js';
 import { QuestionService } from '../services/questionService.js';
+import { ProctorService } from '../services/proctorService.js';
+import { MessageService } from '../services/messageService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 
 export const getStats = async (_req: AuthRequest, res: Response) => {
@@ -237,3 +241,87 @@ export const getQuestionPoolHealth = async (_req: AuthRequest, res: Response) =>
     return sendError(res, err.message || 'Failed to fetch question pool health', 500);
   }
 };
+
+// ==========================================
+// Proctoring & Lockout Administration
+// ==========================================
+export const getProctoringOverview = async (_req: AuthRequest, res: Response) => {
+  try {
+    const data = await ProctorService.getAdminProctoringData();
+    return sendSuccess(res, 'Proctoring overview retrieved', data);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch proctoring overview', 500);
+  }
+};
+
+export const liftLockout = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const lockoutId = req.params.id as string;
+    const { reason } = req.body;
+    const updated = await ProctorService.liftLockout(adminId, lockoutId, reason);
+    return sendSuccess(res, 'Skill lockout lifted and attempt restored', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to lift lockout', err.statusCode || 400);
+  }
+};
+
+export const confirmViolation = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const lockoutId = req.params.id as string;
+    const { notes } = req.body;
+    const updated = await ProctorService.confirmViolation(adminId, lockoutId, notes);
+    return sendSuccess(res, 'Violation confirmed', updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to confirm violation', err.statusCode || 400);
+  }
+};
+
+export const serveProctorSnapshot = async (req: AuthRequest, res: Response) => {
+  try {
+    const filename = path.basename(req.params.filename as string);
+    const filePath = path.join(ProctorService.getSnapshotDir(), filename);
+    if (!fs.existsSync(filePath)) {
+      return sendError(res, 'Snapshot not found', 404);
+    }
+    return res.sendFile(filePath);
+  } catch (err: any) {
+    return sendError(res, 'Failed to serve snapshot', 500);
+  }
+};
+
+// ==========================================
+// Direct Message Reports Moderation
+// ==========================================
+export const getMessageReports = async (req: AuthRequest, res: Response) => {
+  try {
+    const resolvedParam = req.query.resolved;
+    const resolvedFilter =
+      resolvedParam === 'true' ? true : resolvedParam === 'false' ? false : undefined;
+    const reports = await MessageService.getAdminMessageReports(resolvedFilter);
+    return sendSuccess(res, 'Message reports retrieved', reports);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to fetch message reports', 500);
+  }
+};
+
+export const resolveMessageReport = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const reportId = String(req.params.id || '');
+    const action = (req.body.action || 'resolve') as 'resolve' | 'warn' | 'suspend';
+    const note = req.body.note;
+    const updated = await MessageService.resolveAdminMessageReport(
+      adminId,
+      reportId,
+      action,
+      note
+    );
+    return sendSuccess(res, `Message report processed (${action})`, updated);
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to resolve message report', err.statusCode || 400);
+  }
+};
+
+

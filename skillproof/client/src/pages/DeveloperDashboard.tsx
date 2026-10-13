@@ -60,7 +60,7 @@ export const DeveloperDashboard: React.FC = () => {
   const avgScore = summary.averageVerifiedScore ?? 0;
   const projectsCount = summary.projectCount ?? 0;
 
-  const publicSlug = user?.profile?.publicSlug;
+  const portfolioUsername = user?.username || user?.profile?.publicSlug;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -82,9 +82,9 @@ export const DeveloperDashboard: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {publicSlug && (
+            {portfolioUsername && (
               <Link
-                to={`/developer/${publicSlug}`}
+                to={`/u/${portfolioUsername}`}
                 target="_blank"
                 className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition flex items-center gap-2"
               >

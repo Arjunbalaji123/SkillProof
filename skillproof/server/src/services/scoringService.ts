@@ -221,27 +221,56 @@ export class ScoringService {
 
   /**
    * Retake policy validation:
+   * - Active SkillLockout (2-day lockout after 3 proctoring violations, unless lifted by admin)
    * - 7-day cooldown per language after last submitted assessment
-   * - Max 3 attempts in any rolling 30-day window
+   * - Max 3 attempts (SUBMITTED + non-lifted TERMINATED) in any rolling 30-day window
+   * - When multiple restrictions apply, the longer one wins.
    */
-  static evaluateRetakeEligibility(pastAssessments: { startedAt: Date; submittedAt: Date | null; status: string }[]): {
+  static evaluateRetakeEligibility(
+    pastAssessments: {
+      startedAt: Date;
+      submittedAt: Date | null;
+      status: string;
+      liftedByAdmin?: boolean;
+    }[],
+    activeLockoutUntil?: Date | null,
+    nowOverride?: Date
+  ): {
     eligible: boolean;
     reason?: string;
     cooldownRemainingMs?: number;
     nextAvailableDate?: Date;
   } {
-    const now = new Date().getTime();
+    const now = (nowOverride ? new Date(nowOverride) : new Date()).getTime();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
     const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-    // Only SUBMITTED attempts count towards retake cooldown and 30-day limits
-    const finishedAssessments = pastAssessments.filter(
+    const restrictions: {
+      reason: string;
+      cooldownRemainingMs: number;
+      nextAvailableDate: Date;
+    }[] = [];
+
+    // 0. Check active SkillLockout
+    if (activeLockoutUntil) {
+      const lockoutTime = new Date(activeLockoutUntil).getTime();
+      if (lockoutTime > now) {
+        const nextDate = new Date(lockoutTime);
+        restrictions.push({
+          reason: `Skill locked due to proctoring violations. You can retake this skill on ${nextDate.toLocaleDateString()} (${nextDate.toISOString()}).`,
+          cooldownRemainingMs: lockoutTime - now,
+          nextAvailableDate: nextDate,
+        });
+      }
+    }
+
+    // 1. Check 7-day cooldown from the most recent SUBMITTED attempt
+    const submittedAssessments = pastAssessments.filter(
       (a) => a.status === 'SUBMITTED' && a.submittedAt !== null
     );
 
-    // 1. Check 7-day cooldown from the most recent completed attempt
-    if (finishedAssessments.length > 0) {
-      const mostRecent = finishedAssessments.reduce((latest, current) => {
+    if (submittedAssessments.length > 0) {
+      const mostRecent = submittedAssessments.reduce((latest, current) => {
         const currentDate = current.submittedAt ? new Date(current.submittedAt).getTime() : new Date(current.startedAt).getTime();
         const latestDate = latest.submittedAt ? new Date(latest.submittedAt).getTime() : new Date(latest.startedAt).getTime();
         return currentDate > latestDate ? current : latest;
@@ -255,39 +284,59 @@ export class ScoringService {
       if (timeSinceLast < SEVEN_DAYS_MS) {
         const remaining = SEVEN_DAYS_MS - timeSinceLast;
         const nextDate = new Date(mostRecentTime + SEVEN_DAYS_MS);
-        return {
-          eligible: false,
+        restrictions.push({
           reason: `7-day cooldown in effect. You can retake this assessment on ${nextDate.toLocaleDateString()}.`,
           cooldownRemainingMs: remaining,
           nextAvailableDate: nextDate,
-        };
+        });
       }
     }
 
-    // 2. Check 3 attempts in rolling 30 days
-    const recentThirtyDayAttempts = finishedAssessments.filter((a) => {
-      const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startedAt).getTime();
-      return now - aTime <= THIRTY_DAYS_MS;
-    });
+    // 2. Check 3 attempts in rolling 30 days (SUBMITTED + non-lifted TERMINATED)
+    const countableAttempts = pastAssessments.filter(
+      (a) =>
+        (a.status === 'SUBMITTED' && a.submittedAt !== null) ||
+        (a.status === 'TERMINATED' && !a.liftedByAdmin)
+    );
 
-    if (recentThirtyDayAttempts.length >= 3) {
-      // Find oldest among the 3 to see when cooldown clears
-      const oldestOfThree = recentThirtyDayAttempts.reduce((earliest, current) => {
-        const cTime = current.submittedAt ? new Date(current.submittedAt).getTime() : new Date(current.startedAt).getTime();
-        const eTime = earliest.submittedAt ? new Date(earliest.submittedAt).getTime() : new Date(earliest.startedAt).getTime();
-        return cTime < eTime ? current : earliest;
+    const recentThirtyDayAttempts = countableAttempts
+      .filter((a) => {
+        const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startedAt).getTime();
+        return now - aTime <= THIRTY_DAYS_MS;
+      })
+      .sort((a, b) => {
+        const bTime = b.submittedAt ? new Date(b.submittedAt).getTime() : new Date(b.startedAt).getTime();
+        const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startedAt).getTime();
+        return bTime - aTime;
       });
 
-      const oldestTime = oldestOfThree.submittedAt
-        ? new Date(oldestOfThree.submittedAt).getTime()
-        : new Date(oldestOfThree.startedAt).getTime();
+    if (recentThirtyDayAttempts.length >= 3) {
+      // Find the 3rd most recent attempt to determine when the rolling 30-day window drops below 3
+      const thirdMostRecent = recentThirtyDayAttempts[2];
+      const oldestTime = thirdMostRecent.submittedAt
+        ? new Date(thirdMostRecent.submittedAt).getTime()
+        : new Date(thirdMostRecent.startedAt).getTime();
       const nextDate = new Date(oldestTime + THIRTY_DAYS_MS);
 
+      if (nextDate.getTime() > now) {
+        restrictions.push({
+          reason: `Maximum limit of 3 assessment attempts reached within 30 days. Next attempt opens on ${nextDate.toLocaleDateString()}.`,
+          cooldownRemainingMs: Math.max(0, nextDate.getTime() - now),
+          nextAvailableDate: nextDate,
+        });
+      }
+    }
+
+    if (restrictions.length > 0) {
+      // The longer restriction wins
+      const longest = restrictions.reduce((prev, curr) =>
+        curr.nextAvailableDate.getTime() > prev.nextAvailableDate.getTime() ? curr : prev
+      );
       return {
         eligible: false,
-        reason: `Maximum limit of 3 assessment attempts reached within 30 days. Next attempt opens on ${nextDate.toLocaleDateString()}.`,
-        cooldownRemainingMs: Math.max(0, oldestTime + THIRTY_DAYS_MS - now),
-        nextAvailableDate: nextDate,
+        reason: longest.reason,
+        cooldownRemainingMs: longest.cooldownRemainingMs,
+        nextAvailableDate: longest.nextAvailableDate,
       };
     }
 

@@ -32,14 +32,6 @@ export class RecruiterService {
         status: 'ACTIVE',
         profile: {
           isPublic: true,
-          ...(filter.search
-            ? {
-                OR: [
-                  { publicSlug: { contains: filter.search } },
-                  { bio: { contains: filter.search } },
-                ],
-              }
-            : {}),
         },
         skills: {
           some: skillWhere,
@@ -48,7 +40,8 @@ export class RecruiterService {
           ? {
               OR: [
                 { name: { contains: filter.search } },
-                { profile: { publicSlug: { contains: filter.search } } },
+                { username: { contains: filter.search } },
+                { profile: { bio: { contains: filter.search } } },
               ],
             }
           : {}),
@@ -106,7 +99,9 @@ export class RecruiterService {
       return {
         id: dev.id,
         name: dev.name,
-        publicSlug: dev.profile?.publicSlug,
+        username: dev.username,
+        publicSlug: dev.username,
+        isDemo: Boolean(dev.isDemo),
         bio: dev.profile?.bio,
         githubUrl: dev.profile?.githubUrl,
         verifiedSkills,
@@ -150,7 +145,9 @@ export class RecruiterService {
       bookmarkId: b.id,
       developerId: b.developerId,
       name: b.developer.name,
-      publicSlug: b.developer.profile?.publicSlug,
+      username: b.developer.username,
+      publicSlug: b.developer.username,
+      isDemo: Boolean(b.developer.isDemo),
       bio: b.developer.profile?.bio,
       githubUrl: b.developer.profile?.githubUrl,
       note: b.note,

@@ -73,11 +73,21 @@ export const RegisterPage: React.FC = () => {
           });
         }
       } catch (err: any) {
-        setUsernameStatus({
-          checking: false,
-          available: false,
-          message: err.response?.data?.message || 'Username check failed',
-        });
+        // Only mark unavailable if backend explicitly returned 400 with available: false.
+        // Never block the register button when the username check has a network or proxy error.
+        if (err.response && err.response.status === 400 && err.response.data?.data?.available === false) {
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: err.response.data?.data?.message || err.response.data?.message || 'Invalid username',
+          });
+        } else {
+          setUsernameStatus({
+            checking: false,
+            available: null,
+            message: '',
+          });
+        }
       }
     }, 300);
 
@@ -88,6 +98,12 @@ export const RegisterPage: React.FC = () => {
     e.preventDefault();
     setError(null);
 
+    const cleanUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      setError('Username must be 3-20 lowercase alphanumeric characters or underscores.');
+      return;
+    }
+
     if (usernameStatus.available === false) {
       setError(usernameStatus.message || 'Please choose an available username.');
       return;
@@ -95,14 +111,20 @@ export const RegisterPage: React.FC = () => {
 
     setIsLoading(true);
     try {
-      await register(name, email, password, role, username.trim().toLowerCase());
+      await register(name.trim(), email.trim().toLowerCase(), password, role, cleanUsername);
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      if (err.response?.status === 409) {
+        setError(err.response.data?.message || 'Email already in use');
+      } else {
+        setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
+  const isEmailAlreadyInUse = Boolean(error && error.toLowerCase().includes('email already in use'));
 
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
@@ -120,9 +142,20 @@ export const RegisterPage: React.FC = () => {
         </div>
 
         {error && (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
-            <AlertCircle size={16} className="shrink-0" />
-            <span>{error}</span>
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{error}</span>
+            </div>
+            {isEmailAlreadyInUse && (
+              <Link
+                to="/login"
+                state={{ email: email.trim().toLowerCase() }}
+                className="shrink-0 font-bold text-indigo-400 hover:text-indigo-300 underline ml-2"
+              >
+                Sign in →
+              </Link>
+            )}
           </div>
         )}
 

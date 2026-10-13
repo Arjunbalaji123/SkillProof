@@ -12,6 +12,7 @@
     "db:seed": "tsx src/seed.ts",
     "db:generate": "prisma generate",
     "leaderboard:rebuild": "tsx src/scripts/rebuildLeaderboard.ts",
+    "user:reset": "tsx src/scripts/resetUser.ts",
     "test": "NODE_ENV=test tsx src/tests/runTests.ts"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "express": "^4.21.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.8.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {

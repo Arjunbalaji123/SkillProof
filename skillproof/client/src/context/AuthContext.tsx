@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
+import { proctorCamera } from '../services/proctorCamera';
 
 interface AuthContextType {
   user: User | null;
@@ -47,19 +48,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      const res = await api.post('/auth/login', { email, password });
-      if (res.data.success) {
-        const { token: newToken, user: userData } = res.data.data;
-        if (newToken) {
-          localStorage.setItem('skillproof_token', newToken);
-          setToken(newToken);
-        }
-        setUser(userData);
+    const normalizedEmail = email.trim().toLowerCase();
+    const res = await api.post('/auth/login', { email: normalizedEmail, password });
+    if (res.data.success) {
+      const { token: newToken, user: userData } = res.data.data;
+      if (newToken) {
+        localStorage.setItem('skillproof_token', newToken);
+        setToken(newToken);
       }
-    } finally {
-      setIsLoading(false);
+      setUser(userData);
     }
   };
 
@@ -70,23 +67,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role: string = 'DEVELOPER',
     username?: string
   ) => {
-    setIsLoading(true);
-    try {
-      const res = await api.post('/auth/register', { name, email, password, role, username });
-      if (res.data.success) {
-        const { token: newToken, user: userData } = res.data.data;
-        if (newToken) {
-          localStorage.setItem('skillproof_token', newToken);
-          setToken(newToken);
-        }
-        setUser(userData);
+    const normalizedEmail = email.trim().toLowerCase();
+    const res = await api.post('/auth/register', { name: name.trim(), email: normalizedEmail, password, role, username });
+    if (res.data.success) {
+      const { token: newToken, user: userData } = res.data.data;
+      if (newToken) {
+        localStorage.setItem('skillproof_token', newToken);
+        setToken(newToken);
       }
-    } finally {
-      setIsLoading(false);
+      setUser(userData);
     }
   };
 
   const logout = async () => {
+    proctorCamera.stopCamera();
     try {
       await api.post('/auth/logout');
     } catch (_) {

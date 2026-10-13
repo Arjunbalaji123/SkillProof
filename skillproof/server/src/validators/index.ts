@@ -2,10 +2,10 @@ import { z } from 'zod';
 
 const safeUrlSchema = z.string().superRefine((val, ctx) => {
   if (!val) return;
-  if (!/^https?:\/\//i.test(val)) {
+  if (!/^https?:\/\//i.test(val) && !val.startsWith('/uploads/')) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'URL must start with http:// or https://',
+      message: 'URL must start with http://, https://, or /uploads/',
     });
   }
 }).or(z.literal('')).optional();
@@ -86,3 +86,46 @@ export const adminQuestionSchema = z.object({
 export const adminUserStatusSchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED']),
 });
+
+export const proctorEventSchema = z.object({
+  type: z.enum(['PHONE', 'BOOK', 'NO_FACE', 'MULTI_FACE', 'CAMERA_OFF', 'NO_HEARTBEAT']),
+  snapshot: z.string().optional().nullable(),
+});
+
+export const proctorHeartbeatSchema = z.object({
+  cameraStatus: z.string().optional(),
+  cameraActive: z.boolean().optional(),
+});
+
+export const lockoutAppealSchema = z.object({
+  appealText: z.string().min(3, 'Appeal explanation must be at least 3 characters').max(2000),
+});
+
+export const liftLockoutSchema = z.object({
+  reason: z.string().min(3, 'Reason for lifting lockout is required').max(1000),
+});
+
+export const confirmViolationSchema = z.object({
+  notes: z.string().max(1000).optional(),
+});
+
+export const startConversationSchema = z.object({
+  recipientUsername: z.string().trim().min(1, 'Recipient username is required').optional(),
+  recipientId: z.string().trim().min(1).optional(),
+  body: z.string().min(1, 'Message body cannot be empty').max(2000, 'Message cannot exceed 2000 characters'),
+});
+
+export const sendMessageSchema = z.object({
+  body: z.string().min(1, 'Message body cannot be empty').max(2000, 'Message cannot exceed 2000 characters'),
+});
+
+export const reportMessageSchema = z.object({
+  reason: z.string().min(3, 'Reason must be at least 3 characters').max(500, 'Reason cannot exceed 500 characters'),
+});
+
+export const adminResolveMessageReportSchema = z.object({
+  action: z.enum(['resolve', 'warn', 'suspend']).default('resolve'),
+  note: z.string().max(1000).optional(),
+});
+
+

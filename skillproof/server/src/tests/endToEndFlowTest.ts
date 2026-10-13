@@ -184,7 +184,7 @@ export async function runEndToEndFlowTest() {
     assert.strictEqual(verifiedSkill.bestScore, expectedScore, 'Skills page score must match assessment score');
 
     // C. Leaderboard
-    const lbRes = await fetch(`${API_URL}/leaderboard?scope=global&period=all&limit=50`, {
+    const lbRes = await fetch(`${API_URL}/leaderboard?scope=global&period=all&limit=100`, {
       headers: { Cookie: authCookie },
     });
     const lbData: any = await lbRes.json();
@@ -207,6 +207,17 @@ export async function runEndToEndFlowTest() {
     console.log(`     ✅ Exact score match confirmed across all surfaces: ${expectedScore}% (Expert)!`);
     console.log('     ✅ Zero email or passwordHash leakage confirmed in all endpoints!');
   } finally {
+    const e2eUsers = await prisma.user.findMany({
+      where: { username: { startsWith: 'e2e_user_' } },
+      select: { id: true },
+    });
+    const e2eIds = e2eUsers.map((u) => u.id);
+    if (e2eIds.length > 0) {
+      await prisma.auditLog.deleteMany({ where: { actorId: { in: e2eIds } } });
+      await prisma.user.deleteMany({ where: { id: { in: e2eIds } } });
+      const { LeaderboardService } = await import('../services/leaderboardService.js');
+      await LeaderboardService.rebuildAll();
+    }
     server.close();
   }
 }

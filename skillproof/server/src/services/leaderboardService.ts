@@ -120,16 +120,35 @@ export class LeaderboardService {
     const verifiedDetails: CalculatedUserPoints['verifiedSkills'] = [];
     const now = new Date();
 
+    const levelOrder = ['Expert', 'Advanced', 'Intermediate', 'Basic', 'Beginner'];
+
     for (const skill of relevantSkills) {
-      const level = skill.claimedLevel || 'Basic';
+      const skillAssessments = user.assessments.filter(
+        (a) => a.language.toLowerCase() === skill.language.toLowerCase()
+      );
+
+      // Use the highest earned level from SUBMITTED assessments for this skill; fallback to claimedLevel if none exist
+      let earnedLevel = skill.claimedLevel || 'Basic';
+      if (skillAssessments.length > 0) {
+        const assessmentLevels = skillAssessments
+          .map((a) => a.level)
+          .filter((l): l is string => Boolean(l));
+        if (assessmentLevels.length > 0) {
+          for (const l of levelOrder) {
+            if (assessmentLevels.includes(l)) {
+              earnedLevel = l;
+              break;
+            }
+          }
+        }
+      }
+
+      const level = earnedLevel;
       const mult = LEVEL_MULTIPLIERS[level] ?? 1.0;
       const base = (skill.bestScore || 0) * mult;
 
       // Hard question bonus: unique HARD questions answered correctly in valid assessments
       const hardCorrectQuestionIds = new Set<string>();
-      const skillAssessments = user.assessments.filter(
-        (a) => a.language.toLowerCase() === skill.language.toLowerCase()
-      );
 
       for (const a of skillAssessments) {
         for (const q of a.questions) {
@@ -611,11 +630,22 @@ export class LeaderboardService {
             id: true,
             username: true,
             name: true,
+            isDemo: true,
             skills: {
               where: { status: 'VERIFIED' },
               orderBy: { bestScore: 'desc' },
               take: 1,
-              select: { language: true, claimedLevel: true, bestScore: true },
+              select: {
+                language: true,
+                claimedLevel: true,
+                bestScore: true,
+                assessments: {
+                  where: { status: 'SUBMITTED' },
+                  orderBy: { weightedPercent: 'desc' },
+                  take: 1,
+                  select: { level: true },
+                },
+              },
             },
           },
         },
@@ -631,19 +661,21 @@ export class LeaderboardService {
       }
 
       const top = e.user.skills[0];
+      const earnedTopLevel = top?.assessments?.[0]?.level || top?.claimedLevel || 'Basic';
       return {
         rank: e.rank,
         userId: e.user.id,
         username: e.user.username,
         name: e.user.name,
+        isDemo: Boolean(e.user.isDemo),
         avatar: undefined,
         verifiedSkills: parsedSkills,
         points: e.points,
-        level: top ? top.claimedLevel : 'Basic',
+        level: earnedTopLevel,
         topSkill: top
           ? {
               language: top.language,
-              level: top.claimedLevel,
+              level: earnedTopLevel,
               score: top.bestScore || 0,
             }
           : null,
@@ -665,11 +697,22 @@ export class LeaderboardService {
               id: true,
               username: true,
               name: true,
+              isDemo: true,
               skills: {
                 where: { status: 'VERIFIED' },
                 orderBy: { bestScore: 'desc' },
                 take: 1,
-                select: { language: true, claimedLevel: true, bestScore: true },
+                select: {
+                  language: true,
+                  claimedLevel: true,
+                  bestScore: true,
+                  assessments: {
+                    where: { status: 'SUBMITTED' },
+                    orderBy: { weightedPercent: 'desc' },
+                    take: 1,
+                    select: { level: true },
+                  },
+                },
               },
             },
           },
@@ -693,12 +736,13 @@ export class LeaderboardService {
         }
 
         const top = userEntry.user.skills[0];
+        const earnedTopLevel = top?.assessments?.[0]?.level || top?.claimedLevel || 'Basic';
         currentUserRank = {
           rank: userEntry.rank,
           points: userEntry.points,
           nextRankPointsDiff,
           totalParticipants: total,
-          level: top ? top.claimedLevel : 'Basic',
+          level: earnedTopLevel,
         };
       }
     }

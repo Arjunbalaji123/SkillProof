@@ -3,11 +3,12 @@ import { logAudit } from '../utils/audit.js';
 import { ScoringService } from './scoringService.js';
 import { QuestionService } from './questionService.js';
 import { LeaderboardService } from './leaderboardService.js';
+import { ProctorService } from './proctorService.js';
 
 export class AssessmentService {
   /**
    * Starts a new assessment for a user on a given language.
-   * Enforces 7-day cooldown and max 3 attempts per 30 days.
+   * Enforces SkillLockout, 7-day cooldown, and max 3 attempts per 30 days (the longer one wins).
    */
   static async startAssessment(userId: string, language: string) {
     // Resolve catalog
@@ -48,26 +49,44 @@ export class AssessmentService {
       });
     }
 
-    // 2. Check retake cooldowns (counting only SUBMITTED attempts)
-    const pastAssessments = await prisma.assessment.findMany({
-      where: {
-        userId,
-        language: { equals: language },
-        status: 'SUBMITTED',
-      },
-      select: {
-        startedAt: true,
-        submittedAt: true,
-        status: true,
-      },
-    });
+    // 2. Check active SkillLockout and retake cooldowns (SUBMITTED + non-lifted TERMINATED attempts)
+    const [activeLockout, pastAssessmentsRaw] = await Promise.all([
+      ProctorService.getActiveLockout(userId, catalog?.id, language),
+      prisma.assessment.findMany({
+        where: {
+          userId,
+          language: { equals: language },
+          status: { in: ['SUBMITTED', 'TERMINATED'] },
+        },
+        select: {
+          startedAt: true,
+          submittedAt: true,
+          status: true,
+          skillLockouts: {
+            select: { liftedByAdmin: true },
+          },
+        },
+      }),
+    ]);
 
-    const eligibility = ScoringService.evaluateRetakeEligibility(pastAssessments);
+    const pastAssessments = pastAssessmentsRaw.map((a) => ({
+      startedAt: a.startedAt,
+      submittedAt: a.submittedAt,
+      status: a.status,
+      liftedByAdmin: a.skillLockouts.some((l) => l.liftedByAdmin),
+    }));
+
+    const eligibility = ScoringService.evaluateRetakeEligibility(
+      pastAssessments,
+      activeLockout?.until || null
+    );
     if (!eligibility.eligible) {
-      const err: any = new Error(eligibility.reason || 'Assessment retake cooldown is active');
+      const err: any = new Error(eligibility.reason || 'Assessment retake cooldown or lockout is active');
       err.statusCode = 400;
       err.cooldownRemainingMs = eligibility.cooldownRemainingMs;
       err.nextAvailableDate = eligibility.nextAvailableDate;
+      err.lockedUntil = activeLockout?.until || eligibility.nextAvailableDate;
+      err.lockoutId = activeLockout?.id || null;
       throw err;
     }
 
@@ -234,7 +253,7 @@ export class AssessmentService {
   }
 
   /**
-   * Retrieves active assessment details with sanitized questions.
+   * Retrieves active assessment details with sanitized questions and proctoring warning state.
    */
   static async getAssessmentDetails(userId: string, assessmentId: string) {
     const assessment = await prisma.assessment.findUnique({
@@ -246,14 +265,26 @@ export class AssessmentService {
           },
           orderBy: { order: 'asc' },
         },
+        proctorEvents: {
+          where: { counted: true },
+          orderBy: { createdAt: 'asc' },
+        },
+        skillLockouts: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
     });
 
     if (!assessment) throw new Error('Assessment not found');
     if (assessment.userId !== userId) throw new Error('Unauthorized');
 
-    // If assessment is already submitted, return indication
-    if (assessment.status === 'SUBMITTED') {
+    const warningNumber = assessment.proctorEvents.length;
+    const remainingWarnings = Math.max(0, 2 - warningNumber);
+    const lockoutUntil = assessment.skillLockouts[0]?.until || null;
+
+    // If assessment is already submitted or terminated, return indication without questions
+    if (assessment.status === 'SUBMITTED' || assessment.status === 'TERMINATED') {
       return {
         assessmentId: assessment.id,
         language: assessment.language,
@@ -261,6 +292,9 @@ export class AssessmentService {
         durationSec: assessment.durationSec,
         status: assessment.status,
         tabSwitchCount: assessment.tabSwitchCount,
+        warningNumber,
+        remainingWarnings,
+        until: lockoutUntil,
         questions: [],
       };
     }
@@ -293,6 +327,9 @@ export class AssessmentService {
       durationSec: assessment.durationSec,
       status: assessment.status,
       tabSwitchCount: assessment.tabSwitchCount,
+      warningNumber,
+      remainingWarnings,
+      until: lockoutUntil,
       questions: sanitizedQuestions,
     };
   }
@@ -389,6 +426,9 @@ export class AssessmentService {
 
     if (!assessment) throw new Error('Assessment not found');
     if (assessment.userId !== userId) throw new Error('Unauthorized');
+    if (assessment.status === 'TERMINATED') {
+      throw new Error('Assessment was terminated due to proctoring violations and cannot be submitted.');
+    }
     if (assessment.status === 'SUBMITTED') {
       return this.getAssessmentResult(userId, assessmentId);
     }

@@ -6,7 +6,8 @@ import { sendSuccess, sendError } from '../utils/response.js';
 export const getPublicPortfolio = async (req: AuthRequest, res: Response) => {
   try {
     const slug = req.params.slug as string;
-    const portfolio = await PortfolioService.getPublicPortfolioBySlug(slug);
+    const viewerId = req.user?.userId;
+    const portfolio = await PortfolioService.getPublicPortfolioBySlug(slug, viewerId);
 
     if (!portfolio) {
       return sendError(res, 'Portfolio not found or set to private', 404);

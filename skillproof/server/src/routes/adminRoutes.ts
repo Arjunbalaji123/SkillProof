@@ -22,11 +22,23 @@ import {
   updateTopic,
   deleteTopic,
   getQuestionPoolHealth,
+  getProctoringOverview,
+  liftLockout,
+  confirmViolation,
+  serveProctorSnapshot,
+  getMessageReports,
+  resolveMessageReport,
 } from '../controllers/adminController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/role.js';
 import { validateBody } from '../middleware/validate.js';
-import { adminQuestionSchema, adminUserStatusSchema } from '../validators/index.js';
+import {
+  adminQuestionSchema,
+  adminUserStatusSchema,
+  liftLockoutSchema,
+  confirmViolationSchema,
+  adminResolveMessageReportSchema,
+} from '../validators/index.js';
 
 const router = Router();
 
@@ -61,6 +73,17 @@ router.patch('/users/:id/status', validateBody(adminUserStatusSchema), updateUse
 router.get('/flags', getFlags);
 router.post('/flags/:id/resolve', resolveFlag);
 
+// Proctoring administration
+router.get('/proctoring', getProctoringOverview);
+router.post('/proctoring/lockouts/:id/lift', validateBody(liftLockoutSchema), liftLockout);
+router.post('/proctoring/lockouts/:id/confirm', validateBody(confirmViolationSchema), confirmViolation);
+router.get('/proctor/snapshots/:filename', serveProctorSnapshot);
+
+// Direct message report moderation
+router.get('/message-reports', getMessageReports);
+router.patch('/message-reports/:id', validateBody(adminResolveMessageReportSchema), resolveMessageReport);
+
 router.get('/audit', getAuditLogs);
 
 export default router;
+

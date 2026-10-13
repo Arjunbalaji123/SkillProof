@@ -117,9 +117,15 @@ SkillProof enforces strict separation of concerns across 4 primary layers:
    - Track, SkillCatalog, and Topic CRUD with question pool health metrics.
    - Question bank curation and batch CSV/JSON ingestion.
    - Question flag moderation, user management, and system audit trails.
+7. **ProctorService (`proctorService.ts`)**:
+   - Server-authoritative violation counting with a 20-second cooldown after each counted strike.
+   - 3-strike termination (`Assessment.status = 'TERMINATED'`, no score/level/verification) and 2-day `SkillLockout` creation.
+   - 10-second heartbeat monitoring (`NO_HEARTBEAT` violation recorded after >30 seconds of silence).
+   - Admin-only violation snapshot storage (`server/uploads/proctor/`) with automated 30-day retention cleanup.
+   - Candidate lockout appeal workflow and admin lockout lifting (which also restores the attempt).
 
 ### 2.4 Data Persistence Layer (`server/prisma/schema.prisma`)
-The SQLite/PostgreSQL schema consists of 12 normalized models:
+The SQLite/PostgreSQL schema consists of 14 normalized models:
 - `User`: Primary account record with unique `username`, `email`, `role`, and `isDemo` flag.
 - `DeveloperProfile`: Bio, GitHub link, public slug, and leaderboard visibility.
 - `Track`: High-level curriculum domain (e.g., UI/Frontend, ML Engineer, AI Engineer, Core).
@@ -127,8 +133,10 @@ The SQLite/PostgreSQL schema consists of 12 normalized models:
 - `Topic`: Sub-domains under a SkillCatalog with weighted percentages summing to 100%.
 - `Question`: Question bank items with options, canonical answers, difficulty, topic, and active status.
 - `Skill`: Developer's skill passport (`CLAIMED` certificate or `VERIFIED` assessment score).
-- `Assessment`: Timed test attempt with score, level, topic breakdown, coverage, and confidence.
+- `Assessment`: Timed test attempt with score, level, topic breakdown, coverage, confidence, and heartbeat timestamp (`IN_PROGRESS | SUBMITTED | EXPIRED | TERMINATED`).
 - `AssessmentQuestion`: Individual question instance in an assessment with user answer and correctness.
+- `ProctorEvent`: Proctoring violation event (`PHONE | BOOK | NO_FACE | MULTI_FACE | CAMERA_OFF | NO_HEARTBEAT`) with `counted` boolean and optional `snapshotUrl`.
+- `SkillLockout`: 2-day skill lockout record with `until`, `liftedByAdmin`, `confirmedByAdmin`, and candidate `appealText`.
 - `LeaderboardEntry`: Precomputed leaderboard standings across `GLOBAL`, `TRACK`, and `SKILL` scopes.
 - `Bookmark`: Recruiter bookmarks of developer profiles.
 - `QuestionFlag`: In-test problem flags raised by developers.
@@ -141,12 +149,19 @@ The SQLite/PostgreSQL schema consists of 12 normalized models:
 1. **Server-Side Grading & Timing**:
    - Assessment durations are enforced on the server; expired attempts are locked.
    - Correct answers are never sent to the client during an ongoing assessment.
-2. **Anti-Cheat Monitoring**:
+2. **Local Browser AI Camera Proctoring**:
+   - Pre-start consent and environment check via `getUserMedia`, TensorFlow.js (`COCO-SSD` + `BlazeFace`).
+   - 1-second detection loop during the test: `PHONE` or `BOOK` (3 consecutive checks), `NO_FACE` or `MULTI_FACE` (5 consecutive checks), `CAMERA_OFF` (>15 seconds), and `NO_HEARTBEAT` (>30 seconds).
+   - Video is never uploaded; only a small JPEG snapshot (max 320px wide, low quality) is captured at the moment of a violation and retained for 30 days (accessible only to admins).
+   - 2 warnings, then automatic termination and a 2-day skill lockout on the 3rd counted violation.
+3. **Anti-Cheat Monitoring**:
    - Real-time blur/tab-switch tracking increments `tabSwitchCount`. Attempts with $\ge 3$ tab switches are excluded from the leaderboard.
-3. **Stratified Blueprint Randomization**:
+4. **Stratified Blueprint Randomization**:
    - Eliminates answer memorization by dynamically sampling questions from the pool across topic weights.
    - Excludes questions seen in the candidate's previous 2 attempts.
-4. **Cooldown Enforcement**:
-   - 7-day cooldown between retakes per skill.
-   - Maximum 3 attempts per skill in a rolling 30-day window.
+5. **Cooldown & Lockout Enforcement**:
+   - Active 2-day `SkillLockout` after 3 proctoring violations (unless lifted by admin).
+   - 7-day cooldown between retakes per skill after a submitted attempt.
+   - Maximum 3 attempts (`SUBMITTED` + non-lifted `TERMINATED`) per skill in a rolling 30-day window. When multiple restrictions apply, the longest restriction wins.
+
 

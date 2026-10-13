@@ -38,7 +38,8 @@ export const register = async (req: AuthRequest, res: Response) => {
       201
     );
   } catch (err: any) {
-    return sendError(res, err.message || 'Registration failed', 400);
+    const status = err.statusCode || (err.message === 'Email already in use' ? 409 : 400);
+    return sendError(res, err.message || 'Registration failed', status);
   }
 };
 
@@ -59,7 +60,8 @@ export const login = async (req: AuthRequest, res: Response) => {
       token,
     });
   } catch (err: any) {
-    return sendError(res, err.message || 'Login failed', 401);
+    const status = err.statusCode || 401;
+    return sendError(res, err.message || 'Login failed', status);
   }
 };
 

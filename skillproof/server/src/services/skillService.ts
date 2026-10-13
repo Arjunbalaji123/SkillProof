@@ -12,7 +12,8 @@ export class SkillService {
       orderBy: { createdAt: 'desc' },
       include: {
         assessments: {
-          orderBy: { startedAt: 'desc' },
+          where: { status: 'SUBMITTED' },
+          orderBy: { submittedAt: 'desc' },
           take: 1,
           select: {
             id: true,

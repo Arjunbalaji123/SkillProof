@@ -30,19 +30,22 @@ export async function runLeaderboardUnitTests() {
 
   // Test 2: Calculate points for test user
   await test('Points formula: bestScore * multiplier + extra verified bonus (+25) + weekly (+5)', async () => {
-    // Look up arjun who has 2 verified skills: JS (88, Adv = 176) + Python (92, Exp = 276)
-    // Extra verified skills bonus = (2 - 1) * 25 = 25
-    // Plus weekly bonuses
     const arjun = await prisma.user.findUnique({
       where: { username: 'arjun' },
+      include: { skills: { where: { status: 'VERIFIED' } } },
     });
     assert(arjun, 'Arjun must exist');
+    const verifiedCount = arjun.skills.length;
 
     const breakdown = await LeaderboardService.calculateUserPoints(arjun.id);
     assert(breakdown, 'Breakdown must not be null');
     assert(breakdown.points > 450, `Expected points > 450, got ${breakdown.points}`);
-    assert.strictEqual(breakdown.extraSkillsBonus, 25, 'Expected extra skill bonus of 25 for 2 verified skills');
-    assert.strictEqual(breakdown.verifiedSkills.length, 2);
+    assert.strictEqual(
+      breakdown.extraSkillsBonus,
+      (verifiedCount - 1) * 25,
+      `Expected extra skill bonus of ${(verifiedCount - 1) * 25} for ${verifiedCount} verified skills`
+    );
+    assert.strictEqual(breakdown.verifiedSkills.length, verifiedCount);
   });
 
   // Test 3: Integrity exclusion: high tabSwitchCount (>= 3) is excluded
@@ -240,9 +243,13 @@ export async function runLeaderboardUnitTests() {
     assert.strictEqual(initialCheck.valid, true, 'Initial consistency check should pass with 0 issues');
     assert.strictEqual(initialCheck.issues.length, 0);
 
-    // 2. Deliberately tamper with one user's entry (e.g. arjun who has 2 verified skills, make entry claim only 1)
-    const arjun = await prisma.user.findUnique({ where: { username: 'arjun' } });
+    // 2. Deliberately tamper with one user's entry (e.g. arjun, make entry claim only 1 skill)
+    const arjun = await prisma.user.findUnique({
+      where: { username: 'arjun' },
+      include: { skills: { where: { status: 'VERIFIED' } } },
+    });
     assert(arjun, 'Arjun user must exist');
+    const verifiedCount = arjun.skills.length;
 
     const entry = await prisma.leaderboardEntry.findFirst({
       where: { userId: arjun.id, scope: 'GLOBAL', period: 'ALL' },
@@ -252,7 +259,7 @@ export async function runLeaderboardUnitTests() {
     // Tamper: corrupt verifiedSkills count
     await prisma.leaderboardEntry.update({
       where: { id: entry.id },
-      data: { verifiedSkills: JSON.stringify(['JavaScript']) }, // Tampered: 1 skill instead of 2
+      data: { verifiedSkills: JSON.stringify(['JavaScript']) }, // Tampered: 1 skill instead of actual count
     });
 
     // 3. Run consistency check: should detect and auto-heal
@@ -266,7 +273,7 @@ export async function runLeaderboardUnitTests() {
     assert.strictEqual(healedCheck.valid, true, 'Entry must be healthy after self-healing');
     const healedEntry = await prisma.leaderboardEntry.findUnique({ where: { id: entry.id } });
     const parsedSkills = JSON.parse(healedEntry!.verifiedSkills);
-    assert.strictEqual(parsedSkills.length, 2, 'Healed entry must accurately reflect 2 verified skills');
+    assert.strictEqual(parsedSkills.length, verifiedCount, `Healed entry must accurately reflect ${verifiedCount} verified skills`);
   });
 
   console.log(`\n========================================`);
