@@ -166,5 +166,14 @@ export class SocketService {
     if (!this.io || !userId) return;
     this.io.to(`user:${userId}`).emit(event, data);
   }
+
+  static close() {
+    if (this.io) {
+      try {
+        this.io.close();
+      } catch {}
+      this.io = null;
+    }
+  }
 }
 

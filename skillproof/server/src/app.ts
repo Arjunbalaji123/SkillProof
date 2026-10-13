@@ -139,7 +139,7 @@ app.use('/api', (req, res, next) => {
 // Error Handler
 app.use(errorHandler);
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   // Run initial 30-day proctor snapshot cleanup and schedule periodic jobs
   ProctorService.cleanupExpiredSnapshots().catch(() => {});
   OpeningService.backfillInterestsFromVerifiedSkills().catch(() => {});
@@ -169,7 +169,7 @@ if (process.env.NODE_ENV !== 'test') {
 
   const gracefulShutdown = () => {
     try {
-      SocketService.io?.close();
+      SocketService.close();
       if ('closeAllConnections' in server && typeof (server as any).closeAllConnections === 'function') {
         (server as any).closeAllConnections();
       }
