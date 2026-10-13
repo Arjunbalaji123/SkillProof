@@ -46,7 +46,7 @@ export interface DeveloperProfile {
   userId?: string;
   bio?: string | null;
   githubUrl?: string | null;
-  publicSlug: string;
+  publicSlug?: string;
   isPublic: boolean;
   showOnLeaderboard?: boolean;
   allowRecruiterMessages?: boolean;

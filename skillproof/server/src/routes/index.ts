@@ -12,8 +12,13 @@ import userRoutes from './userRoutes.js';
 import messageRoutes from './messageRoutes.js';
 import openingRoutes, { approachRouter } from './openingRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
+import { getPublicPortfolio } from '../controllers/profileController.js';
+import { optionalAuth } from '../middleware/auth.js';
 
 const router = Router();
+
+// Public Portfolio Route (/api/public/portfolio/:username)
+router.get('/public/portfolio/:username', optionalAuth, getPublicPortfolio);
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);

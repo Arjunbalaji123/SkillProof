@@ -13,12 +13,7 @@ export class PortfolioService {
     const cleanId = (identifier || '').trim().toLowerCase();
 
     const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { username: cleanId },
-          { profile: { publicSlug: cleanId } },
-        ],
-      },
+      where: { username: cleanId },
       select: {
         id: true,
         name: true,
@@ -198,11 +193,9 @@ export class PortfolioService {
         ...(data.notificationsPaused !== undefined
           ? { notificationsPaused: Boolean(data.notificationsPaused) }
           : {}),
-        publicSlug: slugFromUsername,
       },
       create: {
         userId,
-        publicSlug: slugFromUsername,
         bio: data.bio || '',
         githubUrl: data.githubUrl || '',
         isPublic: data.isPublic !== undefined ? data.isPublic : true,

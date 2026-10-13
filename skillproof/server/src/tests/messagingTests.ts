@@ -48,7 +48,6 @@ export async function runMessagingTests() {
         status: options.status || 'ACTIVE',
         profile: {
           create: {
-            publicSlug: suffix,
             bio: `Bio for ${suffix}`,
             isPublic: options.isPublic ?? true,
             showOnLeaderboard: true,

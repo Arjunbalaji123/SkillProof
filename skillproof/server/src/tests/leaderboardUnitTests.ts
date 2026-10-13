@@ -60,7 +60,6 @@ export async function runLeaderboardUnitTests() {
         role: 'DEVELOPER',
         profile: {
           create: {
-            publicSlug: 'cheater-' + Date.now(),
             showOnLeaderboard: true,
           },
         },
@@ -115,7 +114,6 @@ export async function runLeaderboardUnitTests() {
         role: 'DEVELOPER',
         profile: {
           create: {
-            publicSlug: 'hidden-' + Date.now(),
             showOnLeaderboard: false, // HIDDEN!
           },
         },
@@ -151,7 +149,7 @@ export async function runLeaderboardUnitTests() {
           email: `early_${Date.now()}@test.com`,
           passwordHash: 'dummy',
           role: 'DEVELOPER',
-          profile: { create: { publicSlug: 'early-' + Date.now(), showOnLeaderboard: true } },
+          profile: { create: { showOnLeaderboard: true } },
         },
       });
       devAId = devA.id;
@@ -163,7 +161,7 @@ export async function runLeaderboardUnitTests() {
           email: `late_${Date.now()}@test.com`,
           passwordHash: 'dummy',
           role: 'DEVELOPER',
-          profile: { create: { publicSlug: 'late-' + Date.now(), showOnLeaderboard: true } },
+          profile: { create: { showOnLeaderboard: true } },
         },
       });
       devBId = devB.id;

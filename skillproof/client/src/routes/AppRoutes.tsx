@@ -121,6 +121,14 @@ export const AppRoutes: React.FC = () => {
             </RoleRoute>
           }
         />
+        <Route
+          path="/assessments/:id/results"
+          element={
+            <RoleRoute allowedRoles={['DEVELOPER', 'ADMIN']}>
+              <AssessmentPlayerPage />
+            </RoleRoute>
+          }
+        />
 
         {/* Hiring Openings Routes (ProtectedRoute + AppLayout) */}
         <Route

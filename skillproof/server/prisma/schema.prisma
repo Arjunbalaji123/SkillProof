@@ -51,7 +51,6 @@ model DeveloperProfile {
   user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   bio                    String?
   githubUrl              String?
-  publicSlug             String   @unique
   isPublic               Boolean  @default(true)
   showOnLeaderboard      Boolean  @default(true)
   allowRecruiterMessages Boolean  @default(true)

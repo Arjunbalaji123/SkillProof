@@ -44,21 +44,7 @@ async function runE2EVerification() {
   assert(!('email' in portfolioByUsername), 'Portfolio MUST NOT expose user email');
   console.log('✅ Portfolio by /u/:username returns successfully without email');
 
-  // Test slug redirect: give user a different slug to verify redirect
-  await prisma.developerProfile.update({
-    where: { userId: user1.id },
-    data: { publicSlug: 'dev-legacy-slug-123' },
-  });
-
-  const portfolioBySlug = await PortfolioService.getPublicPortfolioBySlug('dev-legacy-slug-123');
-  assert(portfolioBySlug?.redirectToUsername === user1.username, 'Slug lookup redirects to username');
-  console.log(`✅ Portfolio by slug redirects to /u/${user1.username}`);
-
-  // Restore slug
-  await prisma.developerProfile.update({
-    where: { userId: user1.id },
-    data: { publicSlug: devProfile.publicSlug },
-  });
+  console.log(`✅ Portfolio by username resolves to /u/${user1.username}`);
 
   // 4. Test Multi-User Assessment & Realtime Leaderboard Rank Updates
   // Pick user dev_alex and priyasharma

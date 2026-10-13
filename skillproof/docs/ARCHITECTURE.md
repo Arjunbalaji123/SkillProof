@@ -1,167 +1,231 @@
 # SkillProof Platform Architecture
 
-This document describes the architectural structure, design patterns, security model, and data schemas of the **SkillProof Real-Skill Benchmark & Verification Platform**.
+This document specifies the technical architecture, layer boundaries, data models, routes, services, and security invariants of the **SkillProof Real-Skill Benchmark & Verification Platform**.
 
 ---
 
 ## 1. System Overview & Architecture Diagram
 
-SkillProof replaces self-reported resume claims and unverified certificates with tamper-proof, server-graded skill passports and verifiable leaderboards.
+SkillProof replaces self-reported resume claims and unverified certificates with tamper-proof, server-graded skill passports, real-time proctored assessments, and verifiable leaderboards.
 
 ```mermaid
 flowchart TD
     subgraph Client ["Client (React 18 + Vite + Tailwind CSS)"]
-        UI[Pages & Components]
-        Routes[AppRoutes]
-        Layouts["Layouts (AuthLayout, PublicLayout, AppLayout)"]
-        Guards["Guards (GuestOnlyRoute, ProtectedRoute, RoleRoute)"]
-        AuthCtx[AuthContext - HttpOnly Session]
-        ApiClient[Axios Client - Credentials: true]
+        subgraph LayoutsLayer ["Layouts"]
+            AuthL["AuthLayout (/login, /register: logo only)"]
+            PublicL["PublicLayout (/, /u/:username: logo, Sign in, Get Started)"]
+            AppL["AppLayout (navbar, search, notifications, messages badge)"]
+        end
+        subgraph GuardsLayer ["Guards & Routing"]
+            GuestGuard["GuestOnlyRoute"]
+            ProtGuard["ProtectedRoute (Session Skeleton)"]
+            RoleGuard["RoleRoute (DEVELOPER | RECRUITER | ADMIN)"]
+            AppRoutes["AppRoutes (Central Declarative Routing)"]
+        end
+        subgraph PagesLayer ["Role Workspaces"]
+            DevPages["Developer (Dashboard, Skills, Assessments, Proctor, Results, Projects, Openings, Messages, Leaderboard)"]
+            RecPages["Recruiter (Dashboard, Discovery, Saved Devs, Openings & Applicants, Messages, Leaderboard)"]
+            AdmPages["Admin (Console, Health, Questions, Audit, Proctor Appeals)"]
+        end
+        AuthCtx["AuthContext (HttpOnly JWT Cookie)"]
+        SocketClient["Socket.IO Client (Real-time Messaging & Notifications)"]
     end
 
     subgraph API ["Express Server (TypeScript)"]
-        MW["Middleware (CORS, CookieParser, RateLimiter, RequestLogger)"]
-        AuthMW["Auth & Role Guards (requireAuth, requireDeveloper, requireRecruiter, requireAdmin)"]
-        RoutesLayer["Routes (/api/auth, /api/skills, /api/assessments, /api/leaderboard, etc.)"]
-        Controllers["Controllers (No Direct Prisma Usage)"]
-        RespFormat["Uniform Response Formatter (sendSuccess, sendError)"]
+        MW["Security & HTTP Middleware (helmet, CORS credentials:true, cookieParser)"]
+        RL["Multi-Tiered Rate Limiters (api, auth, search, message)"]
+        AuthGuards["Auth & Role Guards (requireAuth, requireRole)"]
+        RoutesLayer["Routes Layer (index.ts -> modular routes)"]
+        Controllers["Controllers (Zero Prisma Direct Imports)"]
+        RespHelper["Response Helper (sendSuccess, sendError, sanitizeUser)"]
+        CentralErr["Centralized Error Handler (Friendly P2002 Mappings)"]
     end
 
-    subgraph Services ["Service Layer (Business Logic)"]
+    subgraph Services ["Service Layer (Single Source of Truth)"]
+        AUS[AuthService]
+        SKS[SkillService]
         QS[QuestionService]
         SS[ScoringService]
+        PS[ProctorService]
         LS[LeaderboardService]
-        SKS[SkillService]
         RS[RecruiterService]
+        OS[OpeningService]
+        NS[NotificationService]
+        MS[MessageService]
         AS[AdminService]
-        AUS[AuthService]
-        US[UserService]
+        PFS[PortfolioService]
+        SKSock[SocketService]
     end
 
-    subgraph DB ["Data & Persistence Layer"]
-        PrismaClient["Prisma ORM Client"]
+    subgraph DB ["Persistence Layer"]
+        PrismaClient["Prisma Client"]
         Database[("SQLite / PostgreSQL Database")]
     end
 
-    UI --> Routes
-    Routes --> Layouts
-    Routes --> Guards
-    Guards --> AuthCtx
-    UI --> ApiClient
-    ApiClient -->|HTTP with JWT Cookie| MW
-    MW --> AuthMW
-    AuthMW --> RoutesLayer
-    RoutesLayer --> Controllers
-    Controllers --> RespFormat
+    LayoutsLayer --> AppRoutes
+    GuardsLayer --> AppRoutes
+    AppRoutes --> PagesLayer
+    PagesLayer -->|Axios with credentials:true| MW
+    SocketClient -->|Cookie-authenticated WebSockets| SKSock
+    MW --> RL --> AuthGuards --> RoutesLayer --> Controllers
+    Controllers --> RespHelper
+    Controllers --> CentralErr
     Controllers --> Services
-    QS --> PrismaClient
-    SS --> PrismaClient
-    LS --> PrismaClient
-    SKS --> PrismaClient
-    RS --> PrismaClient
-    AS --> PrismaClient
-    AUS --> PrismaClient
-    US --> PrismaClient
+    Services --> PrismaClient
     PrismaClient --> Database
 ```
 
 ---
 
-## 2. Layered Architecture
+## 2. Client Architecture
 
-SkillProof enforces strict separation of concerns across 4 primary layers:
+### 2.1 Layout Hierarchy
+1. **`AuthLayout` (`client/src/layouts/AuthLayout.tsx`)**:
+   - Dedicated minimal layout for `/login` and `/register`.
+   - Renders only the SkillProof logo and centered form card. No navigation links, search, or badges.
+2. **`PublicLayout` (`client/src/layouts/PublicLayout.tsx`)**:
+   - Header with Logo, "Sign In" button, and "Get Started" / "Go to App" CTA.
+   - Used for public landing (`/`), public developer portfolios (`/u/:username`), and public leaderboards.
+3. **`AppLayout` (`client/src/layouts/AppLayout.tsx`)**:
+   - Authenticated application shell.
+   - Header contains: SkillProof logo, real-time developer search (`@username`), notification bell with unread badge, messages badge, and user dropdown.
+   - Sidebar/navigation bar routed per role.
 
-### 2.1 Presentation & Client Routing Layer (`client/src/`)
-- **AppRoutes (`client/src/routes/AppRoutes.tsx`)**: Central route declarations separating public, auth, and application workflows.
-- **Layouts (`client/src/layouts/`)**:
-  - `AuthLayout`: Minimal, focused container for authentication flows (`/login`, `/register`).
-  - `PublicLayout`: Includes `Navbar` and `Footer` for landing, public portfolios (`/u/:username`), and global leaderboard (`/leaderboard`).
-  - `AppLayout`: Shell for authenticated application workspaces (`/dashboard`, `/skills`, `/assessments`, `/projects`, `/admin`, `/recruiters/bookmarks`).
-- **Guards (`client/src/routes/`)**:
-  - `GuestOnlyRoute`: Redirects authenticated users directly to their designated role dashboard.
-  - `ProtectedRoute`: Ensures session validity; shows skeleton while loading, redirects unauthenticated visitors to `/login`.
-  - `RoleRoute`: Enforces role-based permissions (`DEVELOPER`, `RECRUITER`, `ADMIN`), redirecting unauthorized users to `/403`.
+### 2.2 Route Guards & AppRoutes (`client/src/routes/AppRoutes.tsx`)
+- **`GuestOnlyRoute`**: Redirects authenticated users away from `/login` and `/register` to their role dashboard.
+- **`ProtectedRoute`**: Renders an animated loading skeleton while session loads (`/api/auth/session`); redirects unauthenticated users to `/login`.
+- **`RoleRoute`**: Enforces role requirements (`DEVELOPER`, `RECRUITER`, `ADMIN`); redirects unauthorized users to `/403`.
+- **404 Page**: Catches unmatched routes and provides recovery navigation.
 
-### 2.2 API & Controller Layer (`server/src/controllers/`, `server/src/routes/`)
-- **No Direct Database Access**: Controllers **never** import `prisma` directly. They handle input sanitation, delegate to services, and format responses.
-- **Uniform Response Format (`server/src/utils/response.ts`)**:
-  - Success: `{ success: true, message: string, data: any }`
-  - Failure: `{ success: false, message: string, errors?: any[] }`
-- **Security & Privacy**:
-  - Authentication tokens are transmitted in `httpOnly`, `sameSite: 'lax'` cookies.
-  - **Zero Email / PasswordHash Leakage**: Responses never expose user emails or password hashes in client-facing payloads. Users are identified by `@username`.
-  - Multi-tiered rate limiting: `apiRateLimiter`, `authRateLimiter`, `searchRateLimiter`.
-
-### 2.3 Service Layer (`server/src/services/`)
-1. **QuestionService (`questionService.ts`)**:
-   - Blueprint Stratified Sampling: Selects 20 questions according to topic weights with strict `8 Easy / 8 Medium / 4 Hard` distribution.
-   - Retake Exclusion: Questions from the user's last 2 submitted attempts are excluded.
-   - Pool Health Guard: Blocks assessment start if the active skill pool has $< 60$ questions. Warns administrators if any topic has $< 15$ questions.
-2. **ScoringService (`scoringService.ts`)**:
-   - Difficulty Weights: Easy (1 pt), Medium (2 pts), Hard (3 pts).
-   - Canonical normalization and set-equality answer validation.
-   - Level derivation: Basic ($40\text{--}59\%$), Intermediate ($60\text{--}74\%$), Advanced ($75\text{--}89\%$), Expert ($\ge 90\%$ AND $\ge 60\%$ on Hard questions).
-   - Topic breakdown, coverage tracking, confidence calculation (`Low`, `Medium`, `High`), and retake cooldown evaluation.
-3. **LeaderboardService (`leaderboardService.ts`)**:
-   - Real Database Single Source of Truth: Points are calculated exclusively from verified `Skill` and submitted `Assessment` records.
-   - Multi-factor formula: $\sum (\text{bestScore} \times \text{levelMultiplier}) + \text{hardBonuses} + \text{breadthBonus} (+25) + \text{weeklyBonus} (+5)$.
-   - Real-time transactions: Recalculates user entries and assigns ranks atomically on test submission.
-   - Safety Net: Self-healing consistency check ensures `entry.verifiedSkills` count exactly matches active `Skill` records in DB.
-4. **SkillService (`skillService.ts`)**:
-   - Manages developer claimed skills (unverified certificate links) and verified skills.
-   - Computes dashboard statistics (verified count, claimed count, average score).
-5. **RecruiterService (`recruiterService.ts`)**:
-   - Discovery of candidates with verified skill passports.
-   - Candidate bookmarking with recruiter notes.
-6. **AdminService (`adminService.ts`)**:
-   - Track, SkillCatalog, and Topic CRUD with question pool health metrics.
-   - Question bank curation and batch CSV/JSON ingestion.
-   - Question flag moderation, user management, and system audit trails.
-7. **ProctorService (`proctorService.ts`)**:
-   - Server-authoritative violation counting with a 20-second cooldown after each counted strike.
-   - 3-strike termination (`Assessment.status = 'TERMINATED'`, no score/level/verification) and 2-day `SkillLockout` creation.
-   - 10-second heartbeat monitoring (`NO_HEARTBEAT` violation recorded after >30 seconds of silence).
-   - Admin-only violation snapshot storage (`server/uploads/proctor/`) with automated 30-day retention cleanup.
-   - Candidate lockout appeal workflow and admin lockout lifting (which also restores the attempt).
-
-### 2.4 Data Persistence Layer (`server/prisma/schema.prisma`)
-The SQLite/PostgreSQL schema consists of 14 normalized models:
-- `User`: Primary account record with unique `username`, `email`, `role`, and `isDemo` flag.
-- `DeveloperProfile`: Bio, GitHub link, public slug, and leaderboard visibility.
-- `Track`: High-level curriculum domain (e.g., UI/Frontend, ML Engineer, AI Engineer, Core).
-- `SkillCatalog`: Language/technology catalog under a Track with duration and question count parameters.
-- `Topic`: Sub-domains under a SkillCatalog with weighted percentages summing to 100%.
-- `Question`: Question bank items with options, canonical answers, difficulty, topic, and active status.
-- `Skill`: Developer's skill passport (`CLAIMED` certificate or `VERIFIED` assessment score).
-- `Assessment`: Timed test attempt with score, level, topic breakdown, coverage, confidence, and heartbeat timestamp (`IN_PROGRESS | SUBMITTED | EXPIRED | TERMINATED`).
-- `AssessmentQuestion`: Individual question instance in an assessment with user answer and correctness.
-- `ProctorEvent`: Proctoring violation event (`PHONE | BOOK | NO_FACE | MULTI_FACE | CAMERA_OFF | NO_HEARTBEAT`) with `counted` boolean and optional `snapshotUrl`.
-- `SkillLockout`: 2-day skill lockout record with `until`, `liftedByAdmin`, `confirmedByAdmin`, and candidate `appealText`.
-- `LeaderboardEntry`: Precomputed leaderboard standings across `GLOBAL`, `TRACK`, and `SKILL` scopes.
-- `Bookmark`: Recruiter bookmarks of developer profiles.
-- `QuestionFlag`: In-test problem flags raised by developers.
-- `AuditLog`: Immutable administrative and system action ledger.
+### 2.3 Role-Based Page Workspaces
+- **Developer**:
+  - `Dashboard` (`/dashboard`): Verified skills, average verified score, active project count, recent test history.
+  - `Skills` (`/skills`): Claim unverified skills, initiate proctored tests, view earned certificates.
+  - `Assessments` (`/assessments`): Assessment directory and status tracking.
+  - `Proctored Test` (`/assessments/:id/take`): Fullscreen testing environment with browser AI camera proctoring, timer, and tab-switch monitoring.
+  - `Results` (`/assessments/:id/results`): Score breakdown, topic strengths, and verification passport.
+  - `Projects` (`/projects`): Portfolio project management.
+  - `Leaderboard` (`/leaderboard`): Scope-based global, track, and skill leaderboards.
+  - `Openings` (`/openings`): Browse verified recruiter hiring openings and submit approaches.
+  - `Messages` (`/messages`): Chat interface for accepted opening conversations.
+  - `Notifications` (`/notifications`): Real-time updates for opening matches, approach decisions, and messages.
+  - `Settings` (`/settings`): Profile and privacy preferences.
+- **Recruiter**:
+  - `Dashboard` (`/recruiter/dashboard`): Hiring pipeline metrics and recent applicants.
+  - `Developer Discovery` (`/recruiter/discovery`): Talent search filtered exclusively by `VERIFIED` skills, score thresholds, and tracks.
+  - `Saved Developers` (`/recruiter/saved`): Bookmarked developer candidates with recruiter notes.
+  - `Openings Manage + Applicants` (`/recruiter/openings`): Publish openings, review candidate approaches, accept/decline candidates.
+  - `Messages` (`/messages`): Chat with accepted applicants or directly unlocked candidates.
+  - `Leaderboard` (`/leaderboard`): Public verified talent standings.
+- **Admin**:
+  - `Admin Console` (`/admin` via `client/src/pages/admin/AdminDashboard.tsx`): Track/Catalog/Topic management, question bank curation, question flags, user accounts, and proctoring lockout appeals.
 
 ---
 
-## 3. Security, Anti-Cheat, & Integrity Controls
+## 3. Server Architecture & API Structure
 
-1. **Server-Side Grading & Timing**:
-   - Assessment durations are enforced on the server; expired attempts are locked.
-   - Correct answers are never sent to the client during an ongoing assessment.
-2. **Local Browser AI Camera Proctoring**:
-   - Pre-start consent and environment check via `getUserMedia`, TensorFlow.js (`COCO-SSD` + `BlazeFace`).
-   - 1-second detection loop during the test: `PHONE` or `BOOK` (3 consecutive checks), `NO_FACE` or `MULTI_FACE` (5 consecutive checks), `CAMERA_OFF` (>15 seconds), and `NO_HEARTBEAT` (>30 seconds).
-   - Video is never uploaded; only a small JPEG snapshot (max 320px wide, low quality) is captured at the moment of a violation and retained for 30 days (accessible only to admins).
-   - 2 warnings, then automatic termination and a 2-day skill lockout on the 3rd counted violation.
-3. **Anti-Cheat Monitoring**:
-   - Real-time blur/tab-switch tracking increments `tabSwitchCount`. Attempts with $\ge 3$ tab switches are excluded from the leaderboard.
-4. **Stratified Blueprint Randomization**:
-   - Eliminates answer memorization by dynamically sampling questions from the pool across topic weights.
-   - Excludes questions seen in the candidate's previous 2 attempts.
-5. **Cooldown & Lockout Enforcement**:
-   - Active 2-day `SkillLockout` after 3 proctoring violations (unless lifted by admin).
-   - 7-day cooldown between retakes per skill after a submitted attempt.
-   - Maximum 3 attempts (`SUBMITTED` + non-lifted `TERMINATED`) per skill in a rolling 30-day window. When multiple restrictions apply, the longest restriction wins.
+### 3.1 Server Registration (`server/src/app.ts`)
+The server registers middleware and routes in strict order:
+1. **`helmet`**: Configured with `{ crossOriginResourcePolicy: { policy: 'cross-origin' } }` for static upload access.
+2. **`cors`**: Whitelists `http://localhost:5173` with `credentials: true`.
+3. **`cookieParser`**: Parses session JWT from `httpOnly` cookies.
+4. **Rate Limiters**:
+   - `apiRateLimiter`: 300 requests per 15 minutes.
+   - `authRateLimiter`: 10 attempts per 15 minutes per IP + email.
+   - `searchRateLimiter`: 60 queries per minute.
+   - `messageRateLimiter`: 60 messages per minute.
+5. **Routes (`server/src/routes/index.ts`)**:
+   - **Public Endpoints Only**:
+     - `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session`
+     - `GET /api/health`
+     - `GET /api/users/check-username`
+     - `GET /api/public/portfolio/:username`
+   - **Authenticated Endpoints**: Protected via `requireAuth` and role-specific middleware (`requireDeveloper`, `requireRecruiter`, `requireAdmin`).
+6. **Centralized Error Handler**: Translates exceptions into uniform responses and safely maps Prisma `P2002` constraint errors without leaking internal database schema or raw queries.
 
+### 3.2 Scheduled Background Jobs (`server/src/app.ts`)
+- **Proctor Snapshot Cleanup**: Runs at boot and every 6 hours; permanently purges snapshot files older than 30 days.
+- **Opening Expiration**: Runs hourly; transitions openings past `deadline` to `EXPIRED`.
+- **Leaderboard Consistency Validation**: Runs hourly; inspects all `LeaderboardEntry` records against real `Skill` counts, auto-healing any drift.
+- **Active Heartbeat Monitor**: Runs every 10 seconds; logs `NO_HEARTBEAT` violations for active assessments silent for $>30$ seconds.
 
+### 3.3 Strict Layering: Routes -> Controllers -> Services -> Prisma
+Controllers **never** import `prisma`. All database operations are encapsulated in 11 domain services:
+
+| Service | Primary Responsibilities |
+|---|---|
+| `authService` | Register in atomic `$transaction`, bcrypt hashing, JWT issuance, username slug normalization. |
+| `skillService` | Skill claiming (`CLAIMED`), dashboard summary calculations, user skill listings. |
+| `questionService` | Blueprint stratified sampling (8 Easy / 8 Medium / 4 Hard), question exclusion from prior 2 attempts, $\ge 60$ question pool guard. |
+| `scoringService` | Weighted scoring (Easy 1, Med 2, Hard 3), level thresholds, hard accuracy requirements for Expert ($\ge 60\%$), cooldown & retake caps. |
+| `proctorService` | Camera event tracking, 20s strike cooldown, 3-strike termination + 2-day `SkillLockout`, snapshot storage & cleanup, appeals. |
+| `leaderboardService` | Single source of truth points calculation, global/track/skill scope standings, hourly consistency self-healing. |
+| `recruiterService` | Verified candidate discovery, recruiter verification checks, bookmarking with notes. |
+| `openingService` | Opening lifecycle, matching developer query, developer notification dispatch. |
+| `notificationService` | Real-time notifications with Socket.IO, 5/day opening match cap + digest grouping. |
+| `messageService` | Opening approach workflow, per-recruiter unlock enforcement, real-time Socket.IO chat, abuse reporting. |
+| `adminService` | Track/SkillCatalog/Topic CRUD, question bank curation, flag resolution, lockout appeal management. |
+
+---
+
+## 4. Database Schema (20+ Models)
+
+The Prisma schema (`server/prisma/schema.prisma`) defines 27 normalized models:
+
+1. **`User`**: Account identity (`id`, `name`, `email`, `username`, `passwordHash`, `role`, `status`, `isDemo`, `createdAt`, `updatedAt`).
+2. **`DeveloperProfile`**: Developer portfolio details (`bio`, `githubUrl`, `isPublic`, `showOnLeaderboard`). Identified publicly by `User.username`.
+3. **`RecruiterProfile`**: Recruiter company and verification status (`companyName`, `jobTitle`, `isVerified`, `verifiedAt`).
+4. **`DeveloperInterest`**: Developer track interests (`userId`, `trackId`).
+5. **`Track`**: Domain curriculum (`name`, `slug`, `description`, `icon`).
+6. **`SkillCatalog`**: Benchmark curriculum (`trackId`, `name`, `slug`, `durationSec`, `questionCount`).
+7. **`Topic`**: Sub-domains under a SkillCatalog with `weightPercent` (summing to 100%).
+8. **`Question`**: Verified question pool (`skillCatalogId`, `language`, `topic`, `difficulty`, `options`, `correctAnswer`, `status`).
+9. **`Skill`**: Developer skill record (`userId`, `skillCatalogId`, `language`, `status` [CLAIMED | VERIFIED], `claimedLevel`, `certificateUrl`, `bestScore`, `verifiedAt`, `expiresAt`).
+10. **`Assessment`**: Test attempt (`userId`, `skillCatalogId`, `language`, `status` [IN_PROGRESS | SUBMITTED | EXPIRED | TERMINATED], `scorePercent`, `weightedPercent`, `level`, `tabSwitchCount`, `lastHeartbeatAt`).
+11. **`AssessmentQuestion`**: Questions assigned to an assessment (`assessmentId`, `questionId`, `order`, `userAnswer`, `isCorrect`).
+12. **`ProctorEvent`**: Camera violations (`assessmentId`, `userId`, `type`, `counted`, `snapshotUrl`, `metadata`).
+13. **`SkillLockout`**: 2-day penalty (`userId`, `skillCatalogId`, `reason`, `until`, `liftedByAdmin`, `confirmedByAdmin`, `appealText`).
+14. **`LeaderboardEntry`**: Standings (`userId`, `scope`, `scopeId`, `period`, `points`, `rank`, `verifiedSkillsCount`).
+15. **`Project`**: Portfolio projects (`userId`, `title`, `description`, `repoUrl`, `techStack`).
+16. **`Bookmark`**: Recruiter saved candidates (`recruiterId`, `developerId`, `note`).
+17. **`Opening`**: Recruiter job openings (`recruiterId`, `trackId`, `title`, `description`, `minScore`, `minLevel`, `status`).
+18. **`OpeningSkill`**: Skills required by an opening (`openingId`, `skillCatalogId`).
+19. **`Approach`**: Developer approach to an opening (`openingId`, `developerId`, `intro`, `status` [PENDING | ACCEPTED | DECLINED]).
+20. **`Conversation`**: Direct hiring message channel (`userAId`, `userBId`, `openingId`, `status`, `lastMessageAt`).
+21. **`ConversationParticipant`**: Chat membership (`conversationId`, `userId`, `status`, `lastReadAt`).
+22. **`Message`**: Real-time message (`conversationId`, `senderId`, `body`, `createdAt`).
+23. **`UserBlock`**: User communication blocks (`blockerId`, `blockedId`).
+24. **`MessageReport`**: Flagged messages (`messageId`, `reporterId`, `reason`, `resolved`).
+25. **`Notification`**: System notifications (`userId`, `type`, `title`, `body`, `entityType`, `entityId`, `readAt`).
+26. **`QuestionFlag`**: Test question feedback (`questionId`, `userId`, `reason`, `status`).
+27. **`AuditLog`**: Immutable audit ledger (`userId`, `action`, `entityType`, `entityId`, `metadata`, `ipAddress`).
+
+---
+
+## 5. Core Invariants & Security Rules
+
+### 5.1 Verified Skills Only for Discovery & Leaderboard
+- Recruiter discovery searches filter strictly by `skills.some(status == 'VERIFIED' && bestScore >= minScore)`. Claimed (unverified) skills are never returned in discovery queries.
+- The leaderboard points formula tallies points exclusively from `VERIFIED` skills.
+
+### 5.2 Hiring Messaging & Per-Recruiter Unlock Flow
+- **Developer Restrictions**: A developer can NEVER initiate direct chat with another developer or arbitrary recruiter.
+- **Opening Flow**: A developer can approach a verified recruiter only through an active, matching opening. The recruiter accepts or declines. Acceptance unlocks chat for that specific recruiter-developer pair.
+- **Direct Flow**: A verified recruiter can message an eligible developer directly, which unlocks the conversation for that pair.
+
+### 5.3 AI Camera Proctoring & Lockout Rules
+- Client processes camera feed locally with TensorFlow.js (`COCO-SSD` + `BlazeFace`). Raw video is never transmitted.
+- 1st & 2nd violations: Warning issued with a 20-second strike cooldown.
+- 3rd strike: Assessment is immediately set to `TERMINATED` (no score, no level, no verification), and a 2-day `SkillLockout` is created for that specific skill.
+- Snapshots are retained for 30 days max and are viewable only by admins.
+
+### 5.4 Zero Email & PasswordHash Leakage
+- User DTOs across all public and authenticated endpoints exclude `email` and `passwordHash`.
+- Users and candidates are identified by `@username`.
+
+### 5.5 Multi-Surface Score Consistency
+- The benchmark score (e.g., 85% Advanced) matches identically across:
+  1. Developer Dashboard (`SkillService.getDashboardSummary`)
+  2. Skills Manager (`SkillService.getUserSkills`)
+  3. Leaderboard (`LeaderboardService.getLeaderboard`)
+  4. Public Portfolio (`PortfolioService.getPublicPortfolioBySlug`)

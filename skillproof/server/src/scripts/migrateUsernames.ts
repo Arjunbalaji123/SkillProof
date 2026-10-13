@@ -31,7 +31,7 @@ export async function migrateExistingUsernames() {
   let updatedCount = 0;
   for (const user of users) {
     if (!user.username) {
-      let base = sanitizeUsername(user.profile?.publicSlug || user.name || user.email.split('@')[0]);
+      let base = sanitizeUsername(user.name || user.email.split('@')[0]);
       let candidate = base;
       let suffix = 1;
 

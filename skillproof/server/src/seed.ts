@@ -805,7 +805,6 @@ async function main() {
           create: {
             bio: spec.bio,
             githubUrl: `https://github.com/${spec.username}`,
-            publicSlug: spec.username,
             isPublic: true,
             showOnLeaderboard: true,
           },

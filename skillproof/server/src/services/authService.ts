@@ -85,7 +85,6 @@ export class AuthService {
           createdProfile = await tx.developerProfile.create({
             data: {
               userId: createdUser.id,
-              publicSlug: slugToUse,
               bio: data.bio?.trim() || 'Software developer exploring verified skill benchmarks.',
               isPublic: true,
               showOnLeaderboard: true,
@@ -127,23 +126,7 @@ export class AuthService {
           ? err.meta.target.join(',')
           : String(err?.meta?.target || err?.message || '');
 
-        if (target.includes('publicSlug')) {
-          const staleProfile = await prisma.developerProfile.findUnique({
-            where: { publicSlug: usernameNormalized },
-            include: { user: true },
-          });
-          if (staleProfile && staleProfile.user && staleProfile.user.username !== usernameNormalized) {
-            await prisma.developerProfile.update({
-              where: { id: staleProfile.id },
-              data: { publicSlug: staleProfile.user.username },
-            });
-            user = await createAccountInTx(usernameNormalized);
-          } else {
-            const suffix = Math.floor(100 + Math.random() * 900);
-            const retrySlug = `${usernameNormalized}_${suffix}`;
-            user = await createAccountInTx(retrySlug);
-          }
-        } else if (target.includes('username')) {
+        if (target.includes('username')) {
           const friendly: any = new Error('Username already taken');
           friendly.statusCode = 409;
           throw friendly;
@@ -218,13 +201,10 @@ export class AuthService {
     }
 
     if (user.role === 'DEVELOPER' && !user.profile) {
-      const fallbackSlug =
-        user.username || emailNormalized.split('@')[0].replace(/[^a-z0-9_]/g, '_');
       const createdProfile = await prisma.developerProfile.create({
         data: {
           userId: user.id,
           bio: 'Software Engineer',
-          publicSlug: fallbackSlug,
           isPublic: true,
           showOnLeaderboard: true,
           allowRecruiterMessages: true,

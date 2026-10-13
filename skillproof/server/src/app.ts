@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import helmet from 'helmet';
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -16,6 +17,7 @@ import { requireAdmin } from './middleware/role.js';
 import { ProctorService } from './services/proctorService.js';
 import { SocketService } from './services/socketService.js';
 import { OpeningService } from './services/openingService.js';
+import { LeaderboardService } from './services/leaderboardService.js';
 import { serveProctorSnapshot } from './controllers/adminController.js';
 
 if (!process.env.JWT_SECRET) {
@@ -31,13 +33,11 @@ const PORT = process.env.PORT || 5000;
 const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR || '../uploads');
 const serverUploadsDir = path.resolve(process.cwd(), 'uploads');
 
-// Security Headers Middleware & HTTP Caching Policy
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+// Helmet & Security Headers
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
+// HTTP Caching Policy
+app.use((req, res, next) => {
   // Disable caching for dynamic developer, skills, dashboard, assessment, openings, notifications, and messaging routes
   if (
     req.path.startsWith('/api/dashboard') ||
@@ -128,9 +128,13 @@ if (process.env.NODE_ENV !== 'test') {
     ProctorService.cleanupExpiredSnapshots().catch(() => {});
   }, 6 * 60 * 60 * 1000); // every 6 hours
 
-  // Hourly job: set expired openings to EXPIRED
+  // Hourly job: set expired openings to EXPIRED and validate leaderboard consistency
   setInterval(() => {
     OpeningService.expireOverdueOpenings().catch(() => {});
+  }, 60 * 60 * 1000); // every 1 hour
+
+  setInterval(() => {
+    LeaderboardService.validateConsistency().catch(() => {});
   }, 60 * 60 * 1000); // every 1 hour
 
   setInterval(() => {

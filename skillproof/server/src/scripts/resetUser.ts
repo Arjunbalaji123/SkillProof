@@ -91,25 +91,18 @@ async function main() {
     include: { profile: true },
   });
 
-  // Ensure DeveloperProfile exists and publicSlug matches finalUsername
+  // Ensure DeveloperProfile exists
   let profile = updatedUser.profile;
   if (!profile) {
     profile = await prisma.developerProfile.create({
       data: {
         userId: updatedUser.id,
         bio: 'Software Engineer',
-        publicSlug: finalUsername,
         isPublic: true,
         showOnLeaderboard: true,
       },
     });
     console.log('✅ Created missing DeveloperProfile.');
-  } else if (profile.publicSlug !== finalUsername) {
-    profile = await prisma.developerProfile.update({
-      where: { id: profile.id },
-      data: { publicSlug: finalUsername },
-    });
-    console.log(`✅ Synced DeveloperProfile.publicSlug to "${finalUsername}".`);
   }
 
   console.log('✅ Account repaired successfully:');
@@ -129,7 +122,6 @@ async function main() {
         profile: {
           id: profile.id,
           userId: profile.userId,
-          publicSlug: profile.publicSlug,
           isPublic: profile.isPublic,
           showOnLeaderboard: profile.showOnLeaderboard,
         },
