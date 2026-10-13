@@ -5,7 +5,8 @@ import { signToken } from '../utils/jwt.js';
 
 export class AuthService {
   static async register(data: {
-    name: string;
+    name?: string;
+    fullName?: string;
     username?: string;
     email: string;
     password: string;
@@ -16,6 +17,19 @@ export class AuthService {
     linkedinUrl?: string;
     bio?: string;
   }) {
+    const effectiveName = (data.fullName || data.name || '').trim();
+    if (effectiveName.length < 2 || effectiveName.length > 60) {
+      const err: any = new Error('Full name must be between 2 and 60 characters.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (!data.password || data.password.length < 8) {
+      const err: any = new Error('Password must be at least 8 characters.');
+      err.statusCode = 400;
+      throw err;
+    }
+
     const emailNormalized = (data.email || '').trim().toLowerCase();
 
     // Do NOT generate username or publicSlug from data.name. Require explicit username.
@@ -66,11 +80,12 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(data.password, 10);
 
-    const createAccountInTx = async (slugToUse: string) => {
-      return prisma.$transaction(async (tx) => {
+    let user;
+    try {
+      user = await prisma.$transaction(async (tx) => {
         const createdUser = await tx.user.create({
           data: {
-            name: data.name.trim(),
+            name: effectiveName,
             username: usernameNormalized,
             email: emailNormalized,
             passwordHash,
@@ -112,11 +127,6 @@ export class AuthService {
           recruiterProfile: createdRecruiterProfile,
         };
       });
-    };
-
-    let user;
-    try {
-      user = await createAccountInTx(usernameNormalized);
     } catch (err: any) {
       const isP2002 =
         err?.code === 'P2002' ||

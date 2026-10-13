@@ -145,7 +145,70 @@ export const createUserRateLimiter = (options: {
   return middleware;
 };
 
+export const createRegisterRateLimiter = (options: {
+  maxAttempts?: number;
+  windowMs?: number;
+  skipSuccessfulRequests?: boolean;
+} = {}) => {
+  const windowMs = options.windowMs || 15 * 60 * 1000;
+  const baseMax = options.maxAttempts || 10;
+  const store: RateLimitStore = {};
+
+  const middleware = (req: Request, res: Response, next: NextFunction) => {
+    // Relaxed in development (100 attempts in non-production)
+    const maxAttempts = process.env.NODE_ENV === 'production' ? baseMax : 100;
+    const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
+    const email =
+      typeof req.body?.email === 'string' && req.body.email.trim().length > 0
+        ? req.body.email.trim().toLowerCase()
+        : 'unknown';
+    const key = `${ip}:${email}`;
+    const now = Date.now();
+
+    if (!store[key] || now > store[key].resetTime) {
+      store[key] = { count: 0, resetTime: now + windowMs };
+    }
+
+    if (store[key].count >= maxAttempts) {
+      const remainingMs = Math.max(0, store[key].resetTime - now);
+      const minutes = Math.max(1, Math.ceil(remainingMs / 60000));
+      return sendError(
+        res,
+        `Too many attempts, try again in ${minutes} minutes`,
+        429
+      );
+    }
+
+    store[key].count += 1;
+
+    if (options.skipSuccessfulRequests !== false) {
+      res.on('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          if (store[key] && store[key].count > 0) {
+            store[key].count -= 1;
+          }
+        }
+      });
+    }
+
+    next();
+  };
+
+  middleware.clear = () => {
+    for (const k of Object.keys(store)) {
+      delete store[k];
+    }
+  };
+
+  return middleware;
+};
+
 export const loginRateLimiter = createLoginRateLimiter(10, 15 * 60 * 1000); // 10 attempts per 15 mins per IP + email
+export const registerRateLimiter = createRegisterRateLimiter({
+  maxAttempts: 10,
+  windowMs: 15 * 60 * 1000,
+  skipSuccessfulRequests: true,
+});
 export const authRateLimiter = createRateLimiter(20, 15 * 60 * 1000); // 20 requests per 15 mins
 export const apiRateLimiter = createRateLimiter(300, 15 * 60 * 1000);  // 300 requests per 15 mins
 export const searchRateLimiter = createRateLimiter({

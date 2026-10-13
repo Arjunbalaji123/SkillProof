@@ -11,7 +11,7 @@ import apiRoutes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 import { prisma } from './config/db.js';
-import { loginRateLimiter, authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
+import { loginRateLimiter, registerRateLimiter, authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.js';
 import { requireAuth } from './middleware/auth.js';
 import { requireAdmin } from './middleware/role.js';
 import { ProctorService } from './services/proctorService.js';
@@ -112,7 +112,7 @@ app.get('/api/health', async (req, res) => {
 
 // Apply Rate Limiters & API Routes
 app.use('/api/auth/login', loginRateLimiter);
-app.use('/api/auth/register', authRateLimiter);
+app.use('/api/auth/register', registerRateLimiter);
 app.use('/api', apiRateLimiter, apiRoutes);
 
 // Error Handler

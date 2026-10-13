@@ -12,14 +12,15 @@ const safeUrlSchema = z.string().superRefine((val, ctx) => {
 
 export const registerSchema = z
   .object({
-    name: z.string().min(2, 'Name must be at least 2 characters'),
+    name: z.string().trim().optional(),
+    fullName: z.string().trim().optional(),
     username: z
       .string()
       .trim()
       .toLowerCase()
       .regex(/^[a-z0-9_]{3,20}$/, 'Username must be 3-20 characters, lowercase alphanumeric or underscore'),
     email: z.string().trim().toLowerCase().pipe(z.string().email('Invalid email address')),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
     role: z.enum(['DEVELOPER', 'RECRUITER']).default('DEVELOPER'),
     companyName: z.string().trim().optional(),
     jobTitle: z.string().trim().optional(),
@@ -28,6 +29,21 @@ export const registerSchema = z
     bio: z.string().max(2000).optional(),
   })
   .superRefine((val, ctx) => {
+    const effectiveName = (val.fullName || val.name || '').trim();
+    if (!effectiveName || effectiveName.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fullName'],
+        message: 'Full name must be at least 2 characters',
+      });
+    } else if (effectiveName.length > 60) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fullName'],
+        message: 'Full name cannot exceed 60 characters',
+      });
+    }
+
     if (val.role === 'RECRUITER') {
       if (!val.companyName || val.companyName.trim().length < 2) {
         ctx.addIssue({

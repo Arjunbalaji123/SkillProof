@@ -17,7 +17,7 @@ export const errorHandler = (
       field: e.path.join('.'),
       message: e.message,
     }));
-    return sendError(res, 'Validation error', 422, formattedErrors);
+    return sendError(res, 'Validation failed', 400, formattedErrors);
   }
 
   if (err.message && err.message.includes('Invalid file type')) {

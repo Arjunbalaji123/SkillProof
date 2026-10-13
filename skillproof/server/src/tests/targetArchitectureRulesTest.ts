@@ -160,8 +160,7 @@ async function runTargetArchitectureRulesTest() {
   const decideRes = await MessageService.decideApproach(
     recruiterUser.id,
     approachRes.approach.id,
-    'ACCEPTED',
-    'Great profile, lets talk!'
+    'ACCEPTED'
   );
   assert.strictEqual(decideRes.conversationStatus, 'ACTIVE');
 
@@ -219,7 +218,7 @@ async function runTargetArchitectureRulesTest() {
 
   // Start assessment in Python
   const startAssess = await AssessmentService.startAssessment(testDev.id, 'Python');
-  const assessId = startAssess.assessmentId || startAssess.id;
+  const assessId = startAssess.assessmentId;
 
   const t0 = new Date();
   // 1st violation -> warning 1
@@ -421,7 +420,7 @@ async function runTargetArchitectureRulesTest() {
 
   // 4. Take proctored assessment
   const assess = await AssessmentService.startAssessment(registeredDev.id, 'JavaScript');
-  const e2eAssessId = assess.assessmentId || assess.id;
+  const e2eAssessId = assess.assessmentId;
   assert.strictEqual(assess.status, 'IN_PROGRESS');
 
   // Answer questions and submit
@@ -486,8 +485,7 @@ async function runTargetArchitectureRulesTest() {
   const acceptRes = await MessageService.decideApproach(
     e2eRecruiter.id,
     e2eApproach.approach.id,
-    'ACCEPTED',
-    'Impressive benchmark score! Welcome to our hiring pipeline.'
+    'ACCEPTED'
   );
   assert.strictEqual(acceptRes.conversationStatus, 'ACTIVE');
 

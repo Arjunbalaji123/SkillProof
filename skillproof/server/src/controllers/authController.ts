@@ -22,9 +22,13 @@ export const register = async (req: AuthRequest, res: Response) => {
 
     res.cookie('token', token, COOKIE_OPTIONS);
 
+    const message = user.role === 'RECRUITER'
+      ? 'Registration successful. Your recruiter account is pending approval.'
+      : 'Registration successful';
+
     return sendSuccess(
       res,
-      'Registration successful',
+      message,
       {
         user: {
           id: user.id,
@@ -39,7 +43,7 @@ export const register = async (req: AuthRequest, res: Response) => {
       201
     );
   } catch (err: any) {
-    const status = err.statusCode || (err.message === 'Email already in use' ? 409 : 400);
+    const status = err.statusCode || (err.message?.includes('already') ? 409 : 400);
     return sendError(res, err.message || 'Registration failed', status);
   }
 };
