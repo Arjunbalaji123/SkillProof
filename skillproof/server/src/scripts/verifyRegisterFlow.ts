@@ -255,7 +255,87 @@ async function runVerification() {
   );
   console.log('  ✅ Recruiter missing fields rejection verified.\n');
 
-  console.log('🎉 ALL 10 REGISTRATION VERIFICATION TESTS PASSED WITH 100% EVIDENCE!\n');
+  // =========================================================================
+  // TEST 11: Log in repaired account 2403717672621008@cit.edu.in
+  // =========================================================================
+  console.log('▶ TEST 11: Log in repaired account 2403717672621008@cit.edu.in');
+  const citLoginRes = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: '2403717672621008@cit.edu.in',
+      password: 'Cit@12345678',
+    }),
+  });
+  const citLoginStatus = citLoginRes.status;
+  const citLoginBody: any = await citLoginRes.json();
+  const citCookie = citLoginRes.headers.get('set-cookie') || '';
+  console.log('  Status:', citLoginStatus);
+  console.log('  Response:', JSON.stringify(citLoginBody, null, 2));
+  assert.strictEqual(citLoginStatus, 200, 'Repaired account login must return 200 OK');
+  assert.strictEqual(citLoginBody.success, true);
+  assert.strictEqual(citLoginBody.data.user.username, 'arjun_balaji');
+  assert.strictEqual(citLoginBody.data.user.role, 'DEVELOPER');
+  assert.strictEqual(citLoginBody.data.user.email, undefined, 'User email must not be leaked in API response');
+  assert(citLoginBody.data.token || citCookie.includes('token='), 'Must receive valid token');
+  console.log('  ✅ Repaired account login verified.\n');
+
+  // =========================================================================
+  // TEST 12: Bad Password returns 401 "Incorrect email or password"
+  // =========================================================================
+  console.log('▶ TEST 12: Bad password returns 401 "Incorrect email or password"');
+  const badPassRes = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: '2403717672621008@cit.edu.in',
+      password: 'WrongPassword123!',
+    }),
+  });
+  const badPassStatus = badPassRes.status;
+  const badPassBody: any = await badPassRes.json();
+  console.log('  Status:', badPassStatus);
+  console.log('  Response:', JSON.stringify(badPassBody, null, 2));
+  assert.strictEqual(badPassStatus, 401, 'Bad password must return 401 Unauthorized');
+  assert.strictEqual(badPassBody.message, 'Incorrect email or password');
+  console.log('  ✅ Bad password rejection verified.\n');
+
+  // =========================================================================
+  // TEST 13: Non-existent user returns 401 "Incorrect email or password"
+  // =========================================================================
+  console.log('▶ TEST 13: Non-existent user returns 401 "Incorrect email or password"');
+  const nonExistentRes = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'nonexistent_account_xyz@test.com',
+      password: 'SomePassword123!',
+    }),
+  });
+  const nonExistentStatus = nonExistentRes.status;
+  const nonExistentBody: any = await nonExistentRes.json();
+  console.log('  Status:', nonExistentStatus);
+  console.log('  Response:', JSON.stringify(nonExistentBody, null, 2));
+  assert.strictEqual(nonExistentStatus, 401, 'Non-existent user must return 401 Unauthorized');
+  assert.strictEqual(nonExistentBody.message, 'Incorrect email or password');
+  console.log('  ✅ Non-existent user rejection verified.\n');
+
+  // =========================================================================
+  // TEST 14: Username availability check
+  // =========================================================================
+  console.log('▶ TEST 14: Username availability check endpoint');
+  const takenUserCheck = await fetch(`${API_BASE}/users/check-username?u=arjun_balaji`);
+  const takenBody: any = await takenUserCheck.json();
+  console.log('  Taken username response:', JSON.stringify(takenBody, null, 2));
+  assert.strictEqual(takenBody.data.available, false, 'Existing username must report available=false');
+
+  const freeUserCheck = await fetch(`${API_BASE}/users/check-username?u=available_${ts}`);
+  const freeBody: any = await freeUserCheck.json();
+  console.log('  Free username response:', JSON.stringify(freeBody, null, 2));
+  assert.strictEqual(freeBody.data.available, true, 'Unused username must report available=true');
+  console.log('  ✅ Username availability check verified.\n');
+
+  console.log('🎉 ALL 14 AUTH & REGISTRATION VERIFICATION TESTS PASSED WITH 100% EVIDENCE!\n');
 }
 
 runVerification()

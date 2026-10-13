@@ -192,12 +192,14 @@ export class AuthService {
     }
 
     if (!user || !user.passwordHash) {
-      const err: any = new Error('Invalid email or password credentials');
+      console.warn(`[Login Failure]: User not found or missing password hash for email: ${emailNormalized}`);
+      const err: any = new Error('Incorrect email or password');
       err.statusCode = 401;
       throw err;
     }
 
     if (user.status === 'SUSPENDED') {
+      console.warn(`[Login Failure]: Suspended account attempted login for user ${user.username} (${user.email})`);
       const err: any = new Error('Account suspended. Please contact platform administrators.');
       err.statusCode = 403;
       throw err;
@@ -205,9 +207,14 @@ export class AuthService {
 
     const validPassword = await bcrypt.compare(data.password, user.passwordHash);
     if (!validPassword) {
-      const err: any = new Error('Invalid email or password credentials');
+      console.warn(`[Login Failure]: Password mismatch for email: ${emailNormalized}`);
+      const err: any = new Error('Incorrect email or password');
       err.statusCode = 401;
       throw err;
+    }
+
+    if (user.role === 'RECRUITER' && user.recruiterProfile && !user.recruiterProfile.isVerified) {
+      console.info(`[Login Notice]: Recruiter account ${user.email} is pending approval.`);
     }
 
     if (user.role === 'DEVELOPER' && !user.profile) {

@@ -46,10 +46,19 @@ export const createRateLimiter = (optionsOrMax: number | RateLimitOptions, windo
   };
 };
 
-export const createLoginRateLimiter = (maxAttempts = 10, windowMs = 15 * 60 * 1000) => {
+export const createLoginRateLimiter = (options: {
+  maxAttempts?: number;
+  windowMs?: number;
+  skipSuccessfulRequests?: boolean;
+} | number = 10, windowMsArg = 15 * 60 * 1000) => {
+  const windowMs = typeof options === 'object' ? options.windowMs || 15 * 60 * 1000 : windowMsArg;
+  const baseMax = typeof options === 'object' ? options.maxAttempts || 10 : options || 10;
+  const skipSuccessful = typeof options === 'object' ? options.skipSuccessfulRequests !== false : true;
   const store: RateLimitStore = {};
 
   const middleware = (req: Request, res: Response, next: NextFunction) => {
+    // Relaxed in development (100 attempts in non-production)
+    const maxAttempts = process.env.NODE_ENV === 'production' ? baseMax : 100;
     const ip = (req.ip || req.socket.remoteAddress || 'unknown').toString();
     const email =
       typeof req.body?.email === 'string' && req.body.email.trim().length > 0
@@ -59,13 +68,10 @@ export const createLoginRateLimiter = (maxAttempts = 10, windowMs = 15 * 60 * 10
     const now = Date.now();
 
     if (!store[key] || now > store[key].resetTime) {
-      store[key] = { count: 1, resetTime: now + windowMs };
-      return next();
+      store[key] = { count: 0, resetTime: now + windowMs };
     }
 
-    store[key].count += 1;
-
-    if (store[key].count > maxAttempts) {
+    if (store[key].count >= maxAttempts) {
       const remainingMs = Math.max(0, store[key].resetTime - now);
       const minutes = Math.max(1, Math.ceil(remainingMs / 60000));
       return sendError(
@@ -73,6 +79,18 @@ export const createLoginRateLimiter = (maxAttempts = 10, windowMs = 15 * 60 * 10
         `Too many attempts, try again in ${minutes} minutes`,
         429
       );
+    }
+
+    store[key].count += 1;
+
+    if (skipSuccessful) {
+      res.on('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          if (store[key] && store[key].count > 0) {
+            store[key].count -= 1;
+          }
+        }
+      });
     }
 
     next();

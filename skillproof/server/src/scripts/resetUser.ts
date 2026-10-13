@@ -35,42 +35,6 @@ async function main() {
   console.log(`🔍 Inspecting database for "${emailNormalized}"...`);
   console.log(`Found ${matchingUsers.length} matching user row(s).`);
 
-  if (matchingUsers.length === 0) {
-    console.error(`❌ No user found matching email: ${emailNormalized}`);
-    process.exit(1);
-  }
-
-  if (matchingUsers.length > 1) {
-    console.warn(`⚠️ Warning: Found ${matchingUsers.length} duplicate rows for ${emailNormalized}. Repairing primary row (${matchingUsers[0].id}).`);
-  }
-
-  const targetUser = matchingUsers[0];
-
-  // Determine target username
-  let finalUsername = targetUser.username ? targetUser.username.trim().toLowerCase() : '';
-  const isCurrentUsernameValid = usernameRegex.test(finalUsername);
-
-  const desiredFallback =
-    requestedUsername?.trim().toLowerCase() ||
-    (emailNormalized === 'sbalajiarjun@gmail.com' ? 'arjun_balaji_s_05' : 'arjun_balaji_s_05');
-
-  if (requestedUsername || !isCurrentUsernameValid || emailNormalized === 'sbalajiarjun@gmail.com') {
-    const conflict = await prisma.user.findFirst({
-      where: {
-        username: desiredFallback,
-        id: { not: targetUser.id },
-      },
-    });
-
-    if (!conflict && usernameRegex.test(desiredFallback)) {
-      finalUsername = desiredFallback;
-    } else if (!isCurrentUsernameValid) {
-      const suffix = Math.floor(100 + Math.random() * 900);
-      finalUsername = `user_${suffix}`;
-    }
-  }
-
-  // Hash password exactly once with bcrypt cost 10
   const SALT_ROUNDS = 10;
   const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   const verifyMatch = await bcrypt.compare(newPassword, passwordHash);
@@ -79,52 +43,144 @@ async function main() {
     throw new Error('Failed internal bcrypt verification check after hashing.');
   }
 
-  // Update User row
-  const updatedUser = await prisma.user.update({
-    where: { id: targetUser.id },
-    data: {
-      email: emailNormalized,
-      username: finalUsername,
-      status: 'ACTIVE',
-      passwordHash,
-    },
-    include: { profile: true },
-  });
+  let finalUser: any = null;
+  let finalProfile: any = null;
 
-  // Ensure DeveloperProfile exists
-  let profile = updatedUser.profile;
-  if (!profile) {
-    profile = await prisma.developerProfile.create({
-      data: {
-        userId: updatedUser.id,
-        bio: 'Software Engineer',
-        isPublic: true,
-        showOnLeaderboard: true,
-      },
+  if (matchingUsers.length === 0) {
+    console.log(`ℹ️ User with email ${emailNormalized} does not exist. Creating new user and profile in transaction...`);
+    let fallbackUsername = requestedUsername?.trim().toLowerCase() || emailNormalized.split('@')[0].replace(/[^a-z0-9_]/g, '_');
+    if (!usernameRegex.test(fallbackUsername) || fallbackUsername.length < 3) {
+      fallbackUsername = `user_${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    // Ensure unique username
+    let uniqueUser = await prisma.user.findUnique({ where: { username: fallbackUsername } });
+    if (uniqueUser) {
+      fallbackUsername = `user_${Math.floor(10000 + Math.random() * 90000)}`;
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          email: emailNormalized,
+          username: fallbackUsername,
+          passwordHash,
+          role: 'DEVELOPER',
+          status: 'ACTIVE',
+        },
+      });
+
+      const newDevProfile = await tx.developerProfile.create({
+        data: {
+          userId: newUser.id,
+          bio: 'Software Engineer',
+          isPublic: true,
+          showOnLeaderboard: true,
+        },
+      });
+
+      return { user: newUser, profile: newDevProfile };
     });
-    console.log('✅ Created missing DeveloperProfile.');
+
+    finalUser = created.user;
+    finalProfile = created.profile;
+    console.log('✅ Created User and DeveloperProfile atomically.');
+  } else {
+    if (matchingUsers.length > 1) {
+      console.warn(`⚠️ Warning: Found ${matchingUsers.length} duplicate rows for ${emailNormalized}. Repairing primary row (${matchingUsers[0].id}).`);
+    }
+
+    const targetUser = matchingUsers[0];
+
+    // Determine target username
+    let finalUsername = targetUser.username ? targetUser.username.trim().toLowerCase() : '';
+    const isCurrentUsernameValid = usernameRegex.test(finalUsername);
+
+    if (requestedUsername) {
+      const req = requestedUsername.trim().toLowerCase();
+      if (!usernameRegex.test(req)) {
+        console.error(`❌ Provided username "${req}" does not match ^[a-z0-9_]{3,20}$`);
+        process.exit(1);
+      }
+      finalUsername = req;
+    } else if (!isCurrentUsernameValid) {
+      const emailPrefix = emailNormalized.split('@')[0].replace(/[^a-z0-9_]/g, '_');
+      finalUsername = usernameRegex.test(emailPrefix) ? emailPrefix : `user_${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    // Check for username collision if changed
+    if (finalUsername !== targetUser.username) {
+      const conflict = await prisma.user.findFirst({
+        where: {
+          username: finalUsername,
+          id: { not: targetUser.id },
+        },
+      });
+      if (conflict) {
+        finalUsername = `user_${Math.floor(10000 + Math.random() * 90000)}`;
+        console.log(`ℹ️ Username conflict encountered. Using fallback username: ${finalUsername}`);
+      }
+    }
+
+    // Update User row
+    finalUser = await prisma.user.update({
+      where: { id: targetUser.id },
+      data: {
+        email: emailNormalized,
+        username: finalUsername,
+        status: 'ACTIVE',
+        passwordHash,
+      },
+      include: { profile: true, recruiterProfile: true },
+    });
+
+    if (finalUser.role === 'RECRUITER') {
+      if (!finalUser.recruiterProfile) {
+        finalProfile = await prisma.recruiterProfile.create({
+          data: {
+            userId: finalUser.id,
+            companyName: 'SkillProof Partner',
+            jobTitle: 'Technical Recruiter',
+            isVerified: true,
+            verifiedAt: new Date(),
+          },
+        });
+        console.log('✅ Created missing RecruiterProfile.');
+      } else {
+        finalProfile = finalUser.recruiterProfile;
+      }
+    } else {
+      if (!finalUser.profile) {
+        finalProfile = await prisma.developerProfile.create({
+          data: {
+            userId: finalUser.id,
+            bio: 'Software Engineer',
+            isPublic: true,
+            showOnLeaderboard: true,
+          },
+        });
+        console.log('✅ Created missing DeveloperProfile.');
+      } else {
+        finalProfile = finalUser.profile;
+      }
+    }
   }
 
   console.log('✅ Account repaired successfully:');
   console.log(
     JSON.stringify(
       {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        username: updatedUser.username,
-        role: updatedUser.role,
-        status: updatedUser.status,
-        isSuspended: updatedUser.status === 'SUSPENDED',
-        createdAt: updatedUser.createdAt,
-        passwordHashNonEmpty: Boolean(updatedUser.passwordHash && updatedUser.passwordHash.length > 0),
-        passwordHashStartsWith$2: updatedUser.passwordHash.startsWith('$2'),
+        id: finalUser.id,
+        email: finalUser.email,
+        username: finalUser.username,
+        role: finalUser.role,
+        status: finalUser.status,
+        isSuspended: finalUser.status === 'SUSPENDED',
+        createdAt: finalUser.createdAt,
+        passwordHashNonEmpty: Boolean(finalUser.passwordHash && finalUser.passwordHash.length > 0),
+        passwordHashStartsWith$2: finalUser.passwordHash.startsWith('$2'),
         bcryptCost10Verified: verifyMatch,
-        profile: {
-          id: profile.id,
-          userId: profile.userId,
-          isPublic: profile.isPublic,
-          showOnLeaderboard: profile.showOnLeaderboard,
-        },
+        profile: finalProfile,
       },
       null,
       2

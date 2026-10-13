@@ -541,9 +541,13 @@ export const RegisterPage: React.FC = () => {
                 }`}
               />
             </div>
-            {fieldErrors.password && (
+            {fieldErrors.password ? (
               <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
                 <AlertCircle size={12} className="shrink-0" /> {fieldErrors.password}
+              </p>
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                <Lock size={12} className="text-slate-500" /> Minimum 8 characters
               </p>
             )}
           </div>

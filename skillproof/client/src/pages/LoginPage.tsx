@@ -42,7 +42,7 @@ export const LoginPage: React.FC = () => {
       if (!err.response) {
         setError('Network error: Unable to connect to backend server. Please verify your connection.');
       } else if (err.response.status === 401) {
-        setError(err.response.data?.message || 'Invalid email or password credentials');
+        setError(err.response.data?.message || 'Incorrect email or password');
       } else {
         setError(err.response.data?.message || 'Login failed. Please try again.');
       }
