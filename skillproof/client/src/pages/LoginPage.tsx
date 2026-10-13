@@ -1,39 +1,26 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
-import { validateEmail } from '../validators/authValidators';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, Zap } from 'lucide-react';
+import { validateEmailOrUsername } from '../validators/authValidators';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-
-    const emailError = validateEmail(email);
-    if (emailError) {
-      setErrorMessage(emailError);
-      return;
-    }
-
-    if (!password) {
-      setErrorMessage('Password is required');
-      return;
-    }
-
+  const performLogin = async (idToUse: string, passToUse: string) => {
     setSubmitting(true);
+    setErrorMessage(null);
     try {
       const user = await login({
-        email: email.trim().toLowerCase(),
-        password,
+        email: idToUse.trim().toLowerCase(),
+        password: passToUse,
       });
 
       if (user.role === 'RECRUITER') {
@@ -55,11 +42,36 @@ export const LoginPage: React.FC = () => {
         : err?.response?.data?.error ||
           err?.response?.data?.message ||
           err?.message ||
-          'Login failed. Please check your network and credentials.';
+          'Login failed. Please check your credentials.';
       setErrorMessage(serverMsg);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    const idError = validateEmailOrUsername(identifier);
+    if (idError) {
+      setErrorMessage(idError);
+      return;
+    }
+
+    if (!password) {
+      setErrorMessage('Password is required');
+      return;
+    }
+
+    await performLogin(identifier, password);
+  };
+
+  const handleQuickFill = (quickId: string, quickPass: string) => {
+    setIdentifier(quickId);
+    setPassword(quickPass);
+    setErrorMessage(null);
+    performLogin(quickId, quickPass);
   };
 
   return (
@@ -85,6 +97,43 @@ export const LoginPage: React.FC = () => {
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
           <div className="bg-white py-8 px-4 shadow-sm sm:rounded-2xl sm:px-10 border border-slate-200/80">
+            {/* Quick Demo Login Bar */}
+            <div className="mb-6 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>1-Click Quick Demo Login</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleQuickFill('2403717672621008@cit.edu.in', '12345678')}
+                  className="py-1.5 px-2 text-xs font-semibold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition text-center disabled:opacity-50"
+                  title="arjun_balaji / 12345678"
+                >
+                  Developer
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleQuickFill('recruiter01@seed.skillproof.test', 'Password123!')}
+                  className="py-1.5 px-2 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition text-center disabled:opacity-50"
+                  title="recruiter01 / Password123!"
+                >
+                  Recruiter
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleQuickFill('admin@skillproof.dev', 'Admin@123')}
+                  className="py-1.5 px-2 text-xs font-semibold rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition text-center disabled:opacity-50"
+                  title="admin_director / Admin@123"
+                >
+                  Admin
+                </button>
+              </div>
+            </div>
+
             {errorMessage && (
               <div className="mb-6 rounded-xl bg-red-50 p-4 border border-red-200/80 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -95,23 +144,23 @@ export const LoginPage: React.FC = () => {
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Email Address
+                  Email or Username
                 </label>
                 <div className="relative rounded-xl shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                     <Mail className="h-4 w-4" />
                   </div>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    autoComplete="email"
-                    value={email}
+                    autoComplete="username"
+                    value={identifier}
                     onChange={(e) => {
-                      setEmail(e.target.value);
+                      setIdentifier(e.target.value);
                       if (errorMessage) setErrorMessage(null);
                     }}
-                    placeholder="you@example.com"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
+                    placeholder="you@example.com or username"
+                    className="block w-full pl-10 pr-3.5 py-2.5 bg-white text-slate-900 font-medium border border-slate-300 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
                   />
                 </div>
               </div>
@@ -134,7 +183,7 @@ export const LoginPage: React.FC = () => {
                       if (errorMessage) setErrorMessage(null);
                     }}
                     placeholder="••••••••"
-                    className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
+                    className="block w-full pl-10 pr-10 py-2.5 bg-white text-slate-900 font-medium border border-slate-300 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
                   />
                   <button
                     type="button"

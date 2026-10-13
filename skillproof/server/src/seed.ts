@@ -678,6 +678,40 @@ async function main() {
     },
   });
 
+  const arjunPasswordHash = await bcrypt.hash('12345678', 10);
+  const arjunDev = await prisma.user.upsert({
+    where: { email: '2403717672621008@cit.edu.in' },
+    update: {
+      passwordHash: arjunPasswordHash,
+      role: 'DEVELOPER',
+      status: 'ACTIVE',
+      failedLoginCount: 0,
+      lockedUntil: null,
+    },
+    create: {
+      name: 'Arjun Balaji',
+      username: 'arjun_balaji',
+      email: '2403717672621008@cit.edu.in',
+      passwordHash: arjunPasswordHash,
+      role: 'DEVELOPER',
+      status: 'ACTIVE',
+      isDemo: false,
+      failedLoginCount: 0,
+    },
+  });
+
+  await prisma.developerProfile.upsert({
+    where: { userId: arjunDev.id },
+    update: {},
+    create: {
+      userId: arjunDev.id,
+      bio: 'Full-stack software developer exploring verified skill benchmarks.',
+      isPublic: true,
+      showOnLeaderboard: true,
+      allowRecruiterMessages: true,
+    },
+  });
+
   // 2. Upsert Tracks, SkillCatalogs, and Topics
   console.log(`🗺️ Upserting ${SEED_TRACKS.length} Tracks, 9 SkillCatalogs, and 45 Topics...`);
   const catalogMap: Record<string, any> = {};

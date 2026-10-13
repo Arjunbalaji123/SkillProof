@@ -26,12 +26,17 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (
+    const isProxyFailure =
       !error.response ||
       error.code === 'ERR_NETWORK' ||
       error.code === 'ECONNABORTED' ||
-      error.message === 'Network Error'
-    ) {
+      error.message === 'Network Error' ||
+      (typeof error.response?.data === 'string' &&
+        (error.response.data.includes('ECONNREFUSED') ||
+          error.response.data.includes('proxy error') ||
+          error.response.data.includes('Internal Server Error')));
+
+    if (isProxyFailure) {
       const unreachableMsg = 'Cannot reach the server. Please make sure the backend is running.';
       error.message = unreachableMsg;
       if (!error.response) {
@@ -46,9 +51,12 @@ api.interceptors.response.use(
           headers: {},
           config: error.config,
         };
-      } else if (error.response.data) {
-        error.response.data.error = unreachableMsg;
-        error.response.data.message = unreachableMsg;
+      } else {
+        error.response.data = {
+          success: false,
+          error: unreachableMsg,
+          message: unreachableMsg,
+        };
       }
     }
 

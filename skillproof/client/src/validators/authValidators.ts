@@ -23,6 +23,17 @@ export const validateEmail = (email: string): string | null => {
   return null;
 };
 
+export const validateEmailOrUsername = (identifier: string): string | null => {
+  const trimmed = identifier.trim().toLowerCase();
+  if (!trimmed) return 'Email or username is required';
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+  const isUsername = /^[a-z0-9_]{3,20}$/.test(trimmed);
+  if (!isEmail && !isUsername) {
+    return 'Enter a valid email address or username (3-20 characters)';
+  }
+  return null;
+};
+
 export const validatePassword = (password: string): string | null => {
   if (password.length < 8) return 'Password must be at least 8 characters';
   if (password.length > 72) return 'Password cannot exceed 72 characters';

@@ -4,7 +4,7 @@ import { httpServer } from '../app.js';
 const prisma = new PrismaClient();
 let API_BASE = '';
 
-async function request(path: string, options: RequestInit = {}) {
+async function request(path: string, options: RequestInit = {}): Promise<{ status: number; headers: Headers; data: any }> {
   const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...options,
@@ -13,11 +13,11 @@ async function request(path: string, options: RequestInit = {}) {
       ...(options.headers || {}),
     },
   });
-  const data = await res.json().catch(() => null);
+  const data: any = await res.json().catch(() => null);
   return { status: res.status, headers: res.headers, data };
 }
 
-async function loginUser(email: string, password = 'Password123!') {
+async function loginUser(email: string, password = 'Password123!'): Promise<{ status: number; user: any; token: string; cookie: string; headers: Record<string, string> }> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -25,7 +25,7 @@ async function loginUser(email: string, password = 'Password123!') {
   });
   const setCookie = res.headers.get('set-cookie');
   const tokenCookie = setCookie ? setCookie.split(';')[0] : '';
-  const data = await res.json().catch(() => null);
+  const data: any = await res.json().catch(() => null);
   const token = data?.data?.token || '';
   return {
     status: res.status,
@@ -61,7 +61,7 @@ async function main() {
     }
   }
 
-  let createdOpeningId: string | null = null;
+  let createdOpeningId = '';
 
   try {
     // ==========================================
@@ -111,8 +111,8 @@ async function main() {
 
     assert(createRes.status === 201, `POST /api/openings returned 201 (got ${createRes.status})`);
     const createdOpening = createRes.data?.data;
-    createdOpeningId = createdOpening?.id;
-    assert(!!createdOpeningId, 'Opening created with CUID');
+    createdOpeningId = String(createdOpening?.id || '');
+    assert(Boolean(createdOpeningId), 'Opening created with CUID');
     assert(createdOpening?.status === 'PENDING_REVIEW', 'Opening status is PENDING_REVIEW upon creation');
     assert(createdOpening?.reviewedBy === null, 'reviewedBy is null upon creation');
     assert(createdOpening?.reviewedAt === null, 'reviewedAt is null upon creation');
@@ -279,25 +279,25 @@ async function main() {
     const devLatestNotif = await prisma.notification.findFirst({
       where: { userId: devLogin.user.id, entityId: createdOpeningId, type: 'OPENING_MATCH' },
     });
-    assert(!!devLatestNotif, 'Developer notification created or updated with entityType=opening and entityId matching opening');
+    assert(Boolean(devLatestNotif), 'Developer notification created or updated with entityType=opening and entityId matching opening');
     
-    const isDigest = devLatestNotif?.title.toLowerCase().includes('digest');
+    const isDigest = Boolean(devLatestNotif?.title.toLowerCase().includes('digest'));
     if (isDigest) {
       assert(
-        devLatestNotif?.body.includes('Senior Frontend Architect') && devLatestNotif?.body.includes('Northwind Labs'),
+        Boolean(devLatestNotif?.body.includes('Senior Frontend Architect') && devLatestNotif?.body.includes('Northwind Labs')),
         `Digest notification body correctly references opening and company (${devLatestNotif?.body})`
       );
       assert(
-        devLatestNotif?.title.includes('digest'),
+        Boolean(devLatestNotif?.title.includes('digest')),
         `Digest notification title mentions digest grouping (${devLatestNotif?.title})`
       );
     } else {
       assert(
-        devLatestNotif?.title.includes('is hiring:'),
+        Boolean(devLatestNotif?.title.includes('is hiring:')),
         `Notification title has "<Company> is hiring: <Title>" format (${devLatestNotif?.title})`
       );
       assert(
-        devLatestNotif?.body.includes('JavaScript') || devLatestNotif?.body.includes('%'),
+        Boolean(devLatestNotif?.body.includes('JavaScript') || devLatestNotif?.body.includes('%')),
         `Notification body includes matched skill and verified score (${devLatestNotif?.body})`
       );
     }

@@ -105,6 +105,16 @@ app.use('/uploads', (req, res, next) => {
   index: false,
 }));
 
+// Root status route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    name: 'SKILLPROOF Backend API',
+    status: 'online',
+    health: '/api/health',
+    frontend: 'http://localhost:5173',
+  });
+});
+
 // Health check with DB status
 app.get('/api/health', async (req, res) => {
   try {
@@ -152,10 +162,28 @@ if (process.env.NODE_ENV !== 'test') {
     ProctorService.monitorActiveHeartbeats().catch(() => {});
   }, 10 * 1000); // every 10 seconds
 
-  httpServer.listen(Number(PORT), () => {
+  const server = httpServer.listen(Number(PORT), () => {
     console.log(`🚀 SKILLPROOF Server & Socket.IO running on port ${PORT}`);
     console.log(`📁 Static Uploads directory: ${uploadDir}`);
   });
+
+  const gracefulShutdown = () => {
+    try {
+      SocketService.io?.close();
+      if ('closeAllConnections' in server && typeof (server as any).closeAllConnections === 'function') {
+        (server as any).closeAllConnections();
+      }
+      server.close(() => {
+        process.exit(0);
+      });
+    } catch {
+      process.exit(0);
+    }
+    setTimeout(() => process.exit(0), 400);
+  };
+
+  process.once('SIGTERM', gracefulShutdown);
+  process.once('SIGINT', gracefulShutdown);
 }
 
 export { httpServer };

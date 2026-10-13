@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const API_BASE = 'http://localhost:5000/api';
 
-async function request(path: string, options: RequestInit = {}) {
+async function request(path: string, options: RequestInit = {}): Promise<{ status: number; headers: Headers; data: any }> {
   const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...options,
@@ -12,11 +12,11 @@ async function request(path: string, options: RequestInit = {}) {
       ...(options.headers || {}),
     },
   });
-  const data = await res.json().catch(() => null);
+  const data: any = await res.json().catch(() => null);
   return { status: res.status, headers: res.headers, data };
 }
 
-async function loginUser(email: string, password = 'Password123!') {
+async function loginUser(email: string, password = 'Password123!'): Promise<{ status: number; user: any; token: string; cookie: string; headers: Record<string, string> }> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -24,7 +24,7 @@ async function loginUser(email: string, password = 'Password123!') {
   });
   const setCookie = res.headers.get('set-cookie');
   const tokenCookie = setCookie ? setCookie.split(';')[0] : '';
-  const data = await res.json().catch(() => null);
+  const data: any = await res.json().catch(() => null);
   const token = data?.data?.token || '';
   return {
     status: res.status,

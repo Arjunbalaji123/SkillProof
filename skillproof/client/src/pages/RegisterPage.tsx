@@ -273,7 +273,7 @@ export const RegisterPage: React.FC = () => {
                       if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: '' }));
                     }}
                     placeholder={role === 'DEVELOPER' ? 'Alex Rivera' : 'Sarah Jenkins'}
-                    className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                    className={`block w-full pl-10 pr-3.5 py-2.5 bg-white text-slate-900 font-medium border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
                       fieldErrors.name ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
                     }`}
                   />
@@ -301,7 +301,7 @@ export const RegisterPage: React.FC = () => {
                       if (fieldErrors.username) setFieldErrors((prev) => ({ ...prev, username: '' }));
                     }}
                     placeholder="alex_rivera"
-                    className={`block w-full pl-10 pr-10 py-2.5 border rounded-xl text-sm font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                    className={`block w-full pl-10 pr-10 py-2.5 bg-white text-slate-900 font-mono font-medium border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
                       usernameStatus === 'taken' || usernameStatus === 'invalid' || fieldErrors.username
                         ? 'border-red-300 bg-red-50/20'
                         : usernameStatus === 'available'
@@ -351,7 +351,7 @@ export const RegisterPage: React.FC = () => {
                       if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: '' }));
                     }}
                     placeholder="alex@example.com"
-                    className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                    className={`block w-full pl-10 pr-3.5 py-2.5 bg-white text-slate-900 font-medium border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
                       fieldErrors.email ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
                     }`}
                   />
@@ -379,7 +379,7 @@ export const RegisterPage: React.FC = () => {
                       if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: '' }));
                     }}
                     placeholder="••••••••"
-                    className={`block w-full pl-10 pr-10 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                    className={`block w-full pl-10 pr-10 py-2.5 bg-white text-slate-900 font-medium border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
                       fieldErrors.password ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
                     }`}
                   />
@@ -434,7 +434,7 @@ export const RegisterPage: React.FC = () => {
                             setFieldErrors((prev) => ({ ...prev, companyName: '' }));
                         }}
                         placeholder="Acme Technologies"
-                        className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                        className={`block w-full pl-10 pr-3.5 py-2.5 bg-white text-slate-900 font-medium border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
                           fieldErrors.companyName ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
                         }`}
                       />
@@ -462,7 +462,7 @@ export const RegisterPage: React.FC = () => {
                             setFieldErrors((prev) => ({ ...prev, jobTitle: '' }));
                         }}
                         placeholder="Technical Talent Lead"
-                        className={`block w-full pl-10 pr-3.5 py-2.5 border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
+                        className={`block w-full pl-10 pr-3.5 py-2.5 bg-white text-slate-900 font-medium border rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all ${
                           fieldErrors.jobTitle ? 'border-red-300 bg-red-50/20' : 'border-slate-300'
                         }`}
                       />

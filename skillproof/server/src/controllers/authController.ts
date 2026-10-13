@@ -104,7 +104,7 @@ export class AuthController {
 
       return res.status(200).json({
         success: true,
-        data: { user },
+        data: { user, token },
         message: 'Login successful',
       });
     } catch (err: any) {

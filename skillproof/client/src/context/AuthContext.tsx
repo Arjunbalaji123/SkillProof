@@ -53,6 +53,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (credentials: { email: string; password: string }): Promise<User> => {
     const res = await api.post('/auth/login', credentials);
     const loggedInUser = res.data?.data?.user;
+    const token = res.data?.data?.token;
+    if (token) {
+      localStorage.setItem('skillproof_token', token);
+    }
     if (!loggedInUser) {
       throw new Error(res.data?.message || 'Login failed');
     }
@@ -63,6 +67,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (data: RegisterData): Promise<User> => {
     const res = await api.post('/auth/register', data);
     const registeredUser = res.data?.data?.user;
+    const token = res.data?.data?.token;
+    if (token) {
+      localStorage.setItem('skillproof_token', token);
+    }
     if (!registeredUser) {
       throw new Error(res.data?.message || 'Registration failed');
     }
@@ -74,6 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await api.post('/auth/logout');
     } finally {
+      localStorage.removeItem('skillproof_token');
       setUser(null);
     }
   };
