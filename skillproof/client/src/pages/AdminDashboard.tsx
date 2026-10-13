@@ -18,6 +18,9 @@ import {
   Activity,
   Edit2,
   BookOpen,
+  XCircle,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -53,6 +56,48 @@ export const AdminDashboard: React.FC = () => {
   const [messageReports, setMessageReports] = useState<any[]>([]);
   const [liftReasons, setLiftReasons] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+
+  // Recruiter verification queue state
+  const [recruiterSubTab, setRecruiterSubTab] = useState<'PENDING' | 'VERIFIED' | 'REJECTED' | 'ALL'>('PENDING');
+  const [recruiterSearch, setRecruiterSearch] = useState('');
+  const [recruiterActionModal, setRecruiterActionModal] = useState<{
+    isOpen: boolean;
+    recruiter: any | null;
+    action: 'APPROVE' | 'REJECT' | 'UNVERIFY';
+    reason: string;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    recruiter: null,
+    action: 'APPROVE',
+    reason: '',
+    loading: false,
+  });
+  const [recruiterFeedback, setRecruiterFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  // Openings moderation queue state
+  const [openingSubTab, setOpeningSubTab] = useState<'PENDING_REVIEW' | 'ACTIVE' | 'REJECTED' | 'ALL'>('PENDING_REVIEW');
+  const [openingSearch, setOpeningSearch] = useState('');
+  const [openingActionModal, setOpeningActionModal] = useState<{
+    isOpen: boolean;
+    opening: any | null;
+    action: 'APPROVE' | 'REJECT' | 'CLOSE';
+    reason: string;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    opening: null,
+    action: 'APPROVE',
+    reason: '',
+    loading: false,
+  });
+  const [openingFeedback, setOpeningFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   // Pool Health filter state
   const [poolSearch, setPoolSearch] = useState('');
@@ -462,9 +507,52 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleVerifyRecruiter = async (recruiterId: string, isVerified: boolean) => {
+  const openRecruiterModal = (
+    recruiter: any,
+    action: 'APPROVE' | 'REJECT' | 'UNVERIFY'
+  ) => {
+    setRecruiterFeedback(null);
+    setRecruiterActionModal({
+      isOpen: true,
+      recruiter,
+      action,
+      reason: '',
+      loading: false,
+    });
+  };
+
+  const handleRecruiterActionConfirm = async () => {
+    if (!recruiterActionModal.recruiter) return;
+    const { recruiter, action, reason } = recruiterActionModal;
+    setRecruiterActionModal((prev) => ({ ...prev, loading: true }));
+    setRecruiterFeedback(null);
+
     try {
-      await api.patch(`/admin/recruiters/${recruiterId}/verify`, { isVerified });
+      await api.patch(`/admin/recruiters/${recruiter.id}`, {
+        decision: action,
+        reason: reason.trim() || undefined,
+      });
+
+      const actionText =
+        action === 'APPROVE'
+          ? 'approved'
+          : action === 'REJECT'
+          ? 'rejected'
+          : 'verification revoked';
+
+      setRecruiterFeedback({
+        type: 'success',
+        message: `Successfully ${actionText} recruiter ${recruiter.name} (@${recruiter.username}).`,
+      });
+
+      setRecruiterActionModal({
+        isOpen: false,
+        recruiter: null,
+        action: 'APPROVE',
+        reason: '',
+        loading: false,
+      });
+
       const [recRes, auditRes] = await Promise.all([
         api.get('/admin/recruiters'),
         api.get('/admin/audit'),
@@ -472,13 +560,71 @@ export const AdminDashboard: React.FC = () => {
       if (recRes.data?.success) setRecruiters(recRes.data.data || []);
       if (auditRes.data?.success) setAuditLogs(auditRes.data.data);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to update recruiter verification');
+      const errMsg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to update recruiter verification';
+      setRecruiterFeedback({
+        type: 'error',
+        message: errMsg,
+      });
+      setRecruiterActionModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  const handleAdminCloseOpening = async (openingId: string) => {
+  const handleOpeningActionConfirm = async () => {
+    const { opening, action, reason } = openingActionModal;
+    if (!opening) return;
+
+    if (action === 'REJECT' && (!reason || reason.trim().length < 5)) {
+      setOpeningFeedback({
+        type: 'error',
+        message: 'Rejection reason must be at least 5 characters.',
+      });
+      return;
+    }
+
+    setOpeningActionModal((prev) => ({ ...prev, loading: true }));
+    setOpeningFeedback(null);
+
     try {
-      await api.patch(`/admin/openings/${openingId}`, { status: 'CLOSED' });
+      if (action === 'APPROVE' || action === 'REJECT') {
+        const res = await api.patch(`/admin/openings/${opening.id}/review`, {
+          decision: action,
+          reason: reason.trim() || undefined,
+        });
+
+        const updatedData = res.data?.data;
+        const potentialReach = opening.potentialMatchCount ?? 0;
+        const wasNotifiedNow = Boolean(updatedData?.notifiedAt && !opening.notifiedAt);
+
+        setOpeningFeedback({
+          type: 'success',
+          message:
+            action === 'APPROVE'
+              ? `Successfully approved "${opening.title}". ${
+                  wasNotifiedNow
+                    ? `${potentialReach} matching developer(s) were notified.`
+                    : 'Opening is now active.'
+                }`
+              : `Successfully rejected "${opening.title}". Recruiter was notified with the rejection reason.`,
+        });
+      } else if (action === 'CLOSE') {
+        await api.patch(`/admin/openings/${opening.id}`, { status: 'CLOSED' });
+        setOpeningFeedback({
+          type: 'success',
+          message: `Successfully closed opening "${opening.title}".`,
+        });
+      }
+
+      setOpeningActionModal({
+        isOpen: false,
+        opening: null,
+        action: 'APPROVE',
+        reason: '',
+        loading: false,
+      });
+
       const [opRes, auditRes] = await Promise.all([
         api.get('/admin/openings'),
         api.get('/admin/audit'),
@@ -486,8 +632,26 @@ export const AdminDashboard: React.FC = () => {
       if (opRes.data?.success) setAdminOpenings(opRes.data.data || []);
       if (auditRes.data?.success) setAuditLogs(auditRes.data.data);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to close opening');
+      const errMsg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to process opening review action';
+      setOpeningFeedback({
+        type: 'error',
+        message: errMsg,
+      });
+      setOpeningActionModal((prev) => ({ ...prev, loading: false }));
     }
+  };
+
+  const handleAdminCloseOpening = (opening: any) => {
+    setOpeningActionModal({
+      isOpen: true,
+      opening,
+      action: 'CLOSE',
+      reason: '',
+      loading: false,
+    });
   };
 
   if (loading) return <PageSkeleton />;
@@ -532,52 +696,77 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-[#E2E8F0] pb-3">
-        {[
-          { id: 'stats', label: 'Overview Stats' },
-          {
-            id: 'recruiter-verification',
-            label: `Recruiter verification (${recruiters.length})`,
-          },
-          {
-            id: 'openings',
-            label: `Openings (${adminOpenings.length})`,
-          },
-          {
-            id: 'message-reports',
-            label: `Message reports (${messageReports.filter((r) => !r.resolved).length})`,
-          },
-          {
-            id: 'proctoring',
-            label: `Proctoring (${proctoringData.lockouts?.length || 0})`,
-          },
-          { id: 'catalog', label: `Skill Catalog (${catalog.length} Tracks)` },
-          {
-            id: 'pool',
-            label: `Question Pool Health ${
-              lowPoolCount > 0 ? `(${lowPoolCount} Low)` : `(${poolHealth.length})`
-            }`,
-            badge: lowPoolCount > 0 ? 'bg-amber-500 text-white' : undefined,
-          },
-          { id: 'questions', label: `Question Bank (${questions.length})` },
-          { id: 'flags', label: `Flagged Queue (${flags.length})` },
-          { id: 'claims', label: `Certificate Claims (${claims.length})` },
-          { id: 'users', label: `Users (${users.length})` },
-          { id: 'audit', label: 'Audit Trail' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-              activeTab === tab.id
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-[#475569] hover:bg-slate-100 hover:text-[#0F172A]'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {(() => {
+        const pendingOpeningsCount = adminOpenings.filter((o) => o.status === 'PENDING_REVIEW').length;
+        return (
+          <div className="flex flex-wrap gap-2 border-b border-[#E2E8F0] pb-3">
+            {[
+              { id: 'stats', label: 'Overview Stats' },
+              {
+                id: 'recruiter-verification',
+                label: `Recruiter verification (${recruiters.length})`,
+              },
+              {
+                id: 'openings',
+                label: 'Openings',
+                badgeText:
+                  pendingOpeningsCount > 0
+                    ? `${pendingOpeningsCount} Pending`
+                    : `${adminOpenings.length}`,
+                badgeColor:
+                  pendingOpeningsCount > 0
+                    ? 'bg-amber-500 text-white'
+                    : undefined,
+              },
+              {
+                id: 'message-reports',
+                label: `Message reports (${messageReports.filter((r) => !r.resolved).length})`,
+              },
+              {
+                id: 'proctoring',
+                label: `Proctoring (${proctoringData.lockouts?.length || 0})`,
+              },
+              { id: 'catalog', label: `Skill Catalog (${catalog.length} Tracks)` },
+              {
+                id: 'pool',
+                label: `Question Pool Health ${
+                  lowPoolCount > 0 ? `(${lowPoolCount} Low)` : `(${poolHealth.length})`
+                }`,
+                badgeColor: lowPoolCount > 0 ? 'bg-amber-500 text-white' : undefined,
+              },
+              { id: 'questions', label: `Question Bank (${questions.length})` },
+              { id: 'flags', label: `Flagged Queue (${flags.length})` },
+              { id: 'claims', label: `Certificate Claims (${claims.length})` },
+              { id: 'users', label: `Users (${users.length})` },
+              { id: 'audit', label: 'Audit Trail' },
+            ].map((tab: any) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-[#475569] hover:bg-slate-100 hover:text-[#0F172A]'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.badgeText && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      tab.badgeColor ||
+                      (activeTab === tab.id
+                        ? 'bg-blue-700 text-white'
+                        : 'bg-slate-200 text-slate-700')
+                    }`}
+                  >
+                    {tab.badgeText}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* TAB 1: OVERVIEW STATS */}
       {activeTab === 'stats' && stats && (
@@ -1834,103 +2023,414 @@ export const AdminDashboard: React.FC = () => {
         <div className="space-y-4">
           <div>
             <h3 className="text-base font-bold text-[#0F172A]">
-              Recruiter Verification Queue ({recruiters.length})
+              Recruiter Verification Queue
             </h3>
             <p className="text-xs text-[#64748B] mt-0.5">
               Only verified recruiters may publish hiring openings or initiate direct conversations with developers.
             </p>
           </div>
 
-          {recruiters.length === 0 ? (
-            <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
-              No recruiter accounts registered yet.
+          {/* Feedback banner */}
+          {recruiterFeedback && (
+            <div
+              className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+                recruiterFeedback.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {recruiterFeedback.type === 'success' ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                )}
+                <span>{recruiterFeedback.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecruiterFeedback(null)}
+                className="text-slate-400 hover:text-slate-600 ml-3"
+              >
+                <X size={14} />
+              </button>
             </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
-                  <tr>
-                    <th className="p-3.5">Recruiter</th>
-                    <th className="p-3.5">Company & Role</th>
-                    <th className="p-3.5">Links</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
-                  {recruiters.map((rec: any) => {
-                    const rp = rec.recruiterProfile || {};
-                    const isVerified = Boolean(rp.isVerified);
-                    return (
-                      <tr key={rec.id} className="hover:bg-slate-50/50">
-                        <td className="p-3.5">
-                          <div className="font-bold text-[#0F172A]">{rec.name}</div>
-                          <div className="text-[11px] font-mono text-[#64748B]">@{rec.username}</div>
-                        </td>
-                        <td className="p-3.5">
-                          <div className="font-bold text-[#0F172A]">{rp.companyName || '—'}</div>
-                          <div className="text-[11px] text-[#64748B]">{rp.jobTitle || '—'}</div>
-                        </td>
-                        <td className="p-3.5 space-x-2">
-                          {rp.companyWebsite && (
-                            <a
-                              href={rp.companyWebsite}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline font-semibold"
-                            >
-                              Website
-                            </a>
-                          )}
-                          {rp.linkedinUrl && (
-                            <a
-                              href={rp.linkedinUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline font-semibold"
-                            >
-                              LinkedIn
-                            </a>
-                          )}
-                          {!rp.companyWebsite && !rp.linkedinUrl && (
-                            <span className="text-slate-400">None</span>
-                          )}
-                        </td>
-                        <td className="p-3.5">
-                          {isVerified ? (
-                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase">
-                              Verified
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase">
-                              Pending Approval
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-right">
-                          {isVerified ? (
-                            <button
-                              type="button"
-                              onClick={() => handleVerifyRecruiter(rec.id, false)}
-                              className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition"
-                            >
-                              Revoke verification
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleVerifyRecruiter(rec.id, true)}
-                              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
-                            >
-                              Verify
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          )}
+
+          {/* Sub-tabs and Search */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'PENDING', label: 'Pending' },
+                  { id: 'VERIFIED', label: 'Verified' },
+                  { id: 'REJECTED', label: 'Rejected' },
+                  { id: 'ALL', label: 'All' },
+                ] as const
+              ).map((sub) => {
+                const count = recruiters.filter((r) => {
+                  const isV = Boolean(r.isVerified ?? r.recruiterProfile?.isVerified);
+                  const isR = Boolean(r.isRejected || r.verificationStatus === 'REJECTED');
+                  if (sub.id === 'PENDING') return !isV && !isR;
+                  if (sub.id === 'VERIFIED') return isV;
+                  if (sub.id === 'REJECTED') return isR;
+                  return true;
+                }).length;
+
+                const isActive = recruiterSubTab === sub.id;
+                return (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setRecruiterSubTab(sub.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{sub.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        isActive ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-2.5 text-[#94A3B8]" />
+              <input
+                type="text"
+                placeholder="Search name, email, company, username..."
+                value={recruiterSearch}
+                onChange={(e) => setRecruiterSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-[#CBD5E1] text-xs bg-white w-full sm:w-72"
+              />
+            </div>
+          </div>
+
+          {(() => {
+            const filteredRecruiters = recruiters.filter((rec) => {
+              const company = rec.companyName || rec.recruiterProfile?.companyName || '';
+              const role = rec.jobTitle || rec.recruiterProfile?.jobTitle || '';
+              const isVerified = Boolean(rec.isVerified ?? rec.recruiterProfile?.isVerified);
+              const isRejected = Boolean(rec.isRejected || rec.verificationStatus === 'REJECTED');
+
+              // Sub-tab filter
+              if (recruiterSubTab === 'PENDING' && (isVerified || isRejected)) return false;
+              if (recruiterSubTab === 'VERIFIED' && !isVerified) return false;
+              if (recruiterSubTab === 'REJECTED' && !isRejected) return false;
+
+              // Search filter
+              if (recruiterSearch.trim()) {
+                const query = recruiterSearch.toLowerCase().trim();
+                const matchName = (rec.name || '').toLowerCase().includes(query);
+                const matchUser = (rec.username || '').toLowerCase().includes(query);
+                const matchEmail = (rec.email || '').toLowerCase().includes(query);
+                const matchComp = company.toLowerCase().includes(query);
+                const matchRole = role.toLowerCase().includes(query);
+                if (!matchName && !matchUser && !matchEmail && !matchComp && !matchRole) {
+                  return false;
+                }
+              }
+
+              return true;
+            });
+
+            if (filteredRecruiters.length === 0) {
+              return (
+                <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
+                  No recruiters found in the "{recruiterSubTab.toLowerCase()}" queue.
+                </div>
+              );
+            }
+
+            return (
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+                    <tr>
+                      <th className="p-3.5">Recruiter</th>
+                      <th className="p-3.5">Company & Role</th>
+                      <th className="p-3.5">Links</th>
+                      <th className="p-3.5">Status</th>
+                      <th className="p-3.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {filteredRecruiters.map((rec: any) => {
+                      const rp = rec.recruiterProfile || {};
+                      const company = rec.companyName || rp.companyName || '';
+                      const role = rec.jobTitle || rp.jobTitle || '';
+                      const website = rec.companyWebsite || rp.companyWebsite;
+                      const linkedin = rec.linkedinUrl || rp.linkedinUrl;
+                      const isVerified = Boolean(rec.isVerified ?? rp.isVerified);
+                      const isRejected = Boolean(rec.isRejected || rec.verificationStatus === 'REJECTED');
+                      const isIncomplete = Boolean(
+                        rec.isIncomplete ?? (!company.trim() || !role.trim())
+                      );
+
+                      return (
+                        <tr key={rec.id} className="hover:bg-slate-50/50">
+                          <td className="p-3.5">
+                            <div className="font-bold text-[#0F172A]">{rec.name}</div>
+                            <div className="text-[11px] font-mono text-[#64748B]">@{rec.username}</div>
+                            <div className="text-[11px] text-[#94A3B8]">{rec.email}</div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="font-bold text-[#0F172A]">{company || '—'}</div>
+                            <div className="text-[11px] text-[#64748B]">{role || '—'}</div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-2">
+                              {website ? (
+                                <a
+                                  href={website}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline font-semibold inline-flex items-center gap-0.5"
+                                >
+                                  Website <ExternalLink size={11} />
+                                </a>
+                              ) : null}
+                              {linkedin ? (
+                                <a
+                                  href={linkedin}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline font-semibold inline-flex items-center gap-0.5"
+                                >
+                                  LinkedIn <ExternalLink size={11} />
+                                </a>
+                              ) : null}
+                              {!website && !linkedin && (
+                                <span className="text-slate-400">None</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3.5 space-y-1">
+                            <div>
+                              {isVerified ? (
+                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase inline-flex items-center gap-1">
+                                  <CheckCircle2 size={10} /> Verified
+                                </span>
+                              ) : isRejected ? (
+                                <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-bold uppercase inline-flex items-center gap-1">
+                                  <XCircle size={10} /> Rejected
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase inline-flex items-center gap-1">
+                                  <AlertTriangle size={10} /> Pending Approval
+                                </span>
+                              )}
+                            </div>
+                            {isIncomplete && (
+                              <div>
+                                <span
+                                  title="Profile missing company name or job title"
+                                  className="px-2 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-200 text-[9px] font-bold tracking-wide uppercase inline-block cursor-help"
+                                >
+                                  Incomplete profile
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              {isVerified ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openRecruiterModal(rec, 'UNVERIFY')}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold transition"
+                                >
+                                  Revoke
+                                </button>
+                              ) : isRejected ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openRecruiterModal(rec, 'APPROVE')}
+                                  disabled={isIncomplete}
+                                  title={
+                                    isIncomplete
+                                      ? 'Cannot verify: recruiter profile is incomplete. Company name and job title are required.'
+                                      : 'Re-verify recruiter'
+                                  }
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
+                                    isIncomplete
+                                      ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
+                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                  }`}
+                                >
+                                  Re-verify
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openRecruiterModal(rec, 'APPROVE')}
+                                    disabled={isIncomplete}
+                                    title={
+                                      isIncomplete
+                                        ? 'Cannot verify: recruiter profile is incomplete. Company name and job title are required.'
+                                        : 'Approve recruiter verification'
+                                    }
+                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
+                                      isIncomplete
+                                        ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
+                                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                    }`}
+                                  >
+                                    Verify
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openRecruiterModal(rec, 'REJECT')}
+                                    className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          {/* Confirmation Modal */}
+          {recruiterActionModal.isOpen && recruiterActionModal.recruiter && (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-[#E2E8F0] space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    {recruiterActionModal.action === 'APPROVE' && (
+                      <CheckCircle2 size={20} className="text-emerald-600" />
+                    )}
+                    {recruiterActionModal.action === 'REJECT' && (
+                      <XCircle size={20} className="text-rose-600" />
+                    )}
+                    {recruiterActionModal.action === 'UNVERIFY' && (
+                      <AlertTriangle size={20} className="text-amber-600" />
+                    )}
+                    <h4 className="text-base font-bold text-[#0F172A]">
+                      {recruiterActionModal.action === 'APPROVE' && 'Approve Recruiter Verification'}
+                      {recruiterActionModal.action === 'REJECT' && 'Reject Recruiter Application'}
+                      {recruiterActionModal.action === 'UNVERIFY' && 'Revoke Recruiter Verification'}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRecruiterActionModal({
+                        isOpen: false,
+                        recruiter: null,
+                        action: 'APPROVE',
+                        reason: '',
+                        loading: false,
+                      })
+                    }
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="text-xs text-[#475569] space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Recruiter:</span>{' '}
+                    {recruiterActionModal.recruiter.name} (@
+                    {recruiterActionModal.recruiter.username})
+                  </p>
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Email:</span>{' '}
+                    {recruiterActionModal.recruiter.email}
+                  </p>
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Company:</span>{' '}
+                    {recruiterActionModal.recruiter.companyName ||
+                      recruiterActionModal.recruiter.recruiterProfile?.companyName ||
+                      '—'}
+                  </p>
+                </div>
+
+                <p className="text-xs text-[#64748B]">
+                  {recruiterActionModal.action === 'APPROVE' &&
+                    'Approving will grant this recruiter immediate access to post hiring openings and contact developers.'}
+                  {recruiterActionModal.action === 'REJECT' &&
+                    'Rejecting will mark this application as not approved and notify the applicant.'}
+                  {recruiterActionModal.action === 'UNVERIFY' &&
+                    'Revoking verification will prevent the recruiter from posting openings or reaching out to developers until re-approved.'}
+                </p>
+
+                {recruiterActionModal.action === 'REJECT' && (
+                  <div>
+                    <label className="block text-xs font-bold text-[#475569] mb-1">
+                      Reason for Rejection (Optional)
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="e.g. Unverified corporate credentials, unable to confirm work affiliation."
+                      value={recruiterActionModal.reason}
+                      onChange={(e) =>
+                        setRecruiterActionModal({
+                          ...recruiterActionModal,
+                          reason: e.target.value,
+                        })
+                      }
+                      className="w-full p-2.5 rounded-xl border border-[#CBD5E1] text-xs"
+                    />
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={recruiterActionModal.loading}
+                    onClick={() =>
+                      setRecruiterActionModal({
+                        isOpen: false,
+                        recruiter: null,
+                        action: 'APPROVE',
+                        reason: '',
+                        loading: false,
+                      })
+                    }
+                    className="px-4 py-2 rounded-xl border border-[#CBD5E1] text-xs font-bold text-[#475569] hover:bg-slate-100 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={recruiterActionModal.loading}
+                    onClick={handleRecruiterActionConfirm}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition flex items-center gap-1.5 shadow-xs ${
+                      recruiterActionModal.action === 'APPROVE'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : recruiterActionModal.action === 'REJECT'
+                        ? 'bg-rose-600 hover:bg-rose-700'
+                        : 'bg-amber-600 hover:bg-amber-700'
+                    } ${recruiterActionModal.loading ? 'opacity-50 cursor-wait' : ''}`}
+                  >
+                    {recruiterActionModal.loading
+                      ? 'Processing...'
+                      : recruiterActionModal.action === 'APPROVE'
+                      ? 'Confirm Approval'
+                      : recruiterActionModal.action === 'REJECT'
+                      ? 'Confirm Rejection'
+                      : 'Confirm Revocation'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1944,87 +2444,443 @@ export const AdminDashboard: React.FC = () => {
               Hiring Openings Moderation ({adminOpenings.length})
             </h3>
             <p className="text-xs text-[#64748B] mt-0.5">
-              Review all published recruiter openings and close spam or policy-violating listings.
+              Review recruiter submissions. Approving an opening notifies matching developers and makes it public.
             </p>
           </div>
 
-          {adminOpenings.length === 0 ? (
-            <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
-              No hiring openings published yet.
+          {/* Feedback banner */}
+          {openingFeedback && (
+            <div
+              className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+                openingFeedback.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {openingFeedback.type === 'success' ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                )}
+                <span>{openingFeedback.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpeningFeedback(null)}
+                className="text-slate-400 hover:text-slate-600 ml-3"
+              >
+                <X size={14} />
+              </button>
             </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
-                  <tr>
-                    <th className="p-3.5">Opening</th>
-                    <th className="p-3.5">Recruiter & Company</th>
-                    <th className="p-3.5">Skills & Min Score</th>
-                    <th className="p-3.5">Approaches</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
-                  {adminOpenings.map((op: any) => (
-                    <tr key={op.id} className="hover:bg-slate-50/50">
-                      <td className="p-3.5">
-                        <div className="font-bold text-[#0F172A]">{op.title}</div>
-                        <div className="text-[11px] text-[#64748B]">
-                          {op.locationType} {op.location ? `• ${op.location}` : ''}
-                        </div>
-                      </td>
-                      <td className="p-3.5">
-                        <div className="font-bold text-[#0F172A]">
-                          {op.recruiter?.recruiterProfile?.companyName || op.recruiter?.name}
-                        </div>
-                        <div className="text-[11px] font-mono text-[#64748B]">
-                          @{op.recruiter?.username}
-                        </div>
-                      </td>
-                      <td className="p-3.5">
-                        <div className="flex flex-wrap gap-1">
-                          {(op.skills || []).map((s: any, idx: number) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold"
-                            >
-                              {s.skillCatalog?.name || s.name} ≥ {s.minScore}%
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-3.5 font-bold text-[#0F172A]">
-                        {op._count?.approaches ?? op.approachCount ?? 0}
-                      </td>
-                      <td className="p-3.5">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            op.status === 'ACTIVE'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {op.status}
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-right">
-                        {op.status === 'ACTIVE' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAdminCloseOpening(op.id)}
-                            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs"
-                          >
-                            Close opening
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">Closed</span>
-                        )}
-                      </td>
+          )}
+
+          {/* Sub-tabs and Search */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'PENDING_REVIEW', label: 'Pending review' },
+                  { id: 'ACTIVE', label: 'Active' },
+                  { id: 'REJECTED', label: 'Rejected' },
+                  { id: 'ALL', label: 'All' },
+                ] as const
+              ).map((sub) => {
+                const count = adminOpenings.filter((o) => {
+                  if (sub.id === 'PENDING_REVIEW') return o.status === 'PENDING_REVIEW';
+                  if (sub.id === 'ACTIVE') return o.status === 'ACTIVE';
+                  if (sub.id === 'REJECTED') return o.status === 'REJECTED';
+                  return true;
+                }).length;
+
+                const isActive = openingSubTab === sub.id;
+                return (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setOpeningSubTab(sub.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{sub.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        isActive ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-2.5 text-[#94A3B8]" />
+              <input
+                type="text"
+                placeholder="Search title, recruiter, company..."
+                value={openingSearch}
+                onChange={(e) => setOpeningSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-[#CBD5E1] text-xs bg-white w-full sm:w-72"
+              />
+            </div>
+          </div>
+
+          {(() => {
+            const filteredOpenings = adminOpenings.filter((op) => {
+              // Sub-tab filter
+              if (openingSubTab === 'PENDING_REVIEW' && op.status !== 'PENDING_REVIEW') return false;
+              if (openingSubTab === 'ACTIVE' && op.status !== 'ACTIVE') return false;
+              if (openingSubTab === 'REJECTED' && op.status !== 'REJECTED') return false;
+
+              // Search filter
+              if (openingSearch.trim()) {
+                const query = openingSearch.toLowerCase().trim();
+                const matchTitle = (op.title || '').toLowerCase().includes(query);
+                const matchRecName = (op.recruiter?.name || '').toLowerCase().includes(query);
+                const matchRecUser = (op.recruiter?.username || '').toLowerCase().includes(query);
+                const matchComp = (
+                  op.recruiter?.companyName ||
+                  op.recruiter?.recruiterProfile?.companyName ||
+                  ''
+                )
+                  .toLowerCase()
+                  .includes(query);
+                const matchTrack = (op.track?.name || op.track?.title || '')
+                  .toLowerCase()
+                  .includes(query);
+
+                if (!matchTitle && !matchRecName && !matchRecUser && !matchComp && !matchTrack) {
+                  return false;
+                }
+              }
+
+              return true;
+            });
+
+            if (filteredOpenings.length === 0) {
+              return (
+                <div className="p-8 rounded-2xl bg-white border border-[#E2E8F0] text-center text-xs text-[#64748B]">
+                  No openings found in the "{openingSubTab.toLowerCase().replace('_', ' ')}" queue.
+                </div>
+              );
+            }
+
+            return (
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] uppercase font-bold">
+                    <tr>
+                      <th className="p-3.5">Opening & Track</th>
+                      <th className="p-3.5">Recruiter & Company</th>
+                      <th className="p-3.5">Skills & Min Score</th>
+                      <th className="p-3.5">Potential Matches</th>
+                      <th className="p-3.5">Status</th>
+                      <th className="p-3.5 text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {filteredOpenings.map((op: any) => {
+                      const company =
+                        op.recruiter?.companyName ||
+                        op.recruiter?.recruiterProfile?.companyName ||
+                        'Independent';
+                      const trackName = op.track?.title || op.track?.name || 'All Tracks';
+                      const reach = op.potentialMatchCount ?? 0;
+
+                      return (
+                        <tr key={op.id} className="hover:bg-slate-50/50">
+                          <td className="p-3.5">
+                            <div className="font-bold text-[#0F172A]">{op.title}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                                {trackName}
+                              </span>
+                              <span className="text-[11px] text-[#64748B]">
+                                {op.locationType} {op.location ? `• ${op.location}` : ''}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="font-bold text-[#0F172A]">{company}</div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {op.recruiter?.name}{' '}
+                              <span className="font-mono text-slate-400">
+                                (@{op.recruiter?.username})
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="flex flex-wrap gap-1 mb-1">
+                              {(op.skills || []).map((s: any, idx: number) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold"
+                                >
+                                  {s.skillCatalog?.name || s.name}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="text-[11px] font-medium text-[#64748B]">
+                              Threshold: ≥{op.minScore}% {op.minLevel ? `• ${op.minLevel}` : ''}
+                            </div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              <span>{reach}</span>
+                              <span className="font-normal text-[11px]">dev{reach === 1 ? '' : 's'}</span>
+                            </div>
+                            {op.notifiedAt && (
+                              <div className="text-[10px] text-emerald-600 font-semibold mt-1">
+                                ✓ Notified
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                                op.status === 'ACTIVE'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : op.status === 'PENDING_REVIEW'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : op.status === 'REJECTED'
+                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              {op.status === 'PENDING_REVIEW' ? 'Pending Review' : op.status}
+                            </span>
+                            {op.status === 'REJECTED' && op.rejectionReason && (
+                              <div className="text-[10px] text-rose-600 italic mt-1 max-w-xs truncate" title={op.rejectionReason}>
+                                Reason: {op.rejectionReason}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {op.status === 'PENDING_REVIEW' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpeningActionModal({
+                                        isOpen: true,
+                                        opening: op,
+                                        action: 'APPROVE',
+                                        reason: '',
+                                        loading: false,
+                                      })
+                                    }
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpeningActionModal({
+                                        isOpen: true,
+                                        opening: op,
+                                        action: 'REJECT',
+                                        reason: '',
+                                        loading: false,
+                                      })
+                                    }
+                                    className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              {op.status === 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdminCloseOpening(op)}
+                                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 text-xs font-bold transition border border-slate-200"
+                                >
+                                  Close
+                                </button>
+                              )}
+                              {op.status === 'REJECTED' && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpeningActionModal({
+                                      isOpen: true,
+                                      opening: op,
+                                      action: 'APPROVE',
+                                      reason: '',
+                                      loading: false,
+                                    })
+                                  }
+                                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                                >
+                                  Re-review
+                                </button>
+                              )}
+                              {op.status !== 'PENDING_REVIEW' &&
+                                op.status !== 'ACTIVE' &&
+                                op.status !== 'REJECTED' && (
+                                  <span className="text-slate-400 text-xs italic">{op.status}</span>
+                                )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          {/* Action Modal (Approve / Reject / Close) */}
+          {openingActionModal.isOpen && openingActionModal.opening && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl max-w-md w-full p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-[#0F172A]">
+                    {openingActionModal.action === 'APPROVE' && 'Approve Hiring Opening'}
+                    {openingActionModal.action === 'REJECT' && 'Reject Hiring Opening'}
+                    {openingActionModal.action === 'CLOSE' && 'Close Hiring Opening'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpeningActionModal({
+                        isOpen: false,
+                        opening: null,
+                        action: 'APPROVE',
+                        reason: '',
+                        loading: false,
+                      })
+                    }
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="text-xs text-[#475569] space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Opening:</span>{' '}
+                    {openingActionModal.opening.title}
+                  </p>
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Company:</span>{' '}
+                    {openingActionModal.opening.recruiter?.companyName ||
+                      openingActionModal.opening.recruiter?.recruiterProfile?.companyName ||
+                      '—'}
+                  </p>
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Recruiter:</span>{' '}
+                    {openingActionModal.opening.recruiter?.name} (@
+                    {openingActionModal.opening.recruiter?.username})
+                  </p>
+                  <p>
+                    <span className="font-bold text-[#0F172A]">Track / Threshold:</span>{' '}
+                    {openingActionModal.opening.track?.name || 'All Tracks'} (≥
+                    {openingActionModal.opening.minScore}%)
+                  </p>
+                </div>
+
+                {openingActionModal.action === 'APPROVE' && (
+                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
+                    <p className="font-semibold">
+                      This will notify {openingActionModal.opening.potentialMatchCount ?? 0} developers and make the opening public.
+                    </p>
+                    {openingActionModal.opening.notifiedAt && (
+                      <p className="text-[11px] text-blue-600 mt-1">
+                        Note: This opening was already notified previously. Approving will make it active without sending duplicate notifications.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {openingActionModal.action === 'CLOSE' && (
+                  <p className="text-xs text-[#64748B]">
+                    Are you sure you want to close this opening? It will be archived and will no longer accept new developer approaches.
+                  </p>
+                )}
+
+                {openingActionModal.action === 'REJECT' && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#64748B]">
+                      Rejecting will prevent this opening from going live and notify the recruiter so they can revise and resubmit.
+                    </p>
+                    <div>
+                      <label className="block text-xs font-bold text-[#475569] mb-1">
+                        Reason for Rejection <span className="text-rose-600">* (min 5 characters)</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        placeholder="e.g. Please clarify required qualifications and technical stack requirements."
+                        value={openingActionModal.reason}
+                        onChange={(e) =>
+                          setOpeningActionModal({
+                            ...openingActionModal,
+                            reason: e.target.value,
+                          })
+                        }
+                        className="w-full p-2.5 rounded-xl border border-[#CBD5E1] text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={openingActionModal.loading}
+                    onClick={() =>
+                      setOpeningActionModal({
+                        isOpen: false,
+                        opening: null,
+                        action: 'APPROVE',
+                        reason: '',
+                        loading: false,
+                      })
+                    }
+                    className="px-4 py-2 rounded-xl border border-[#CBD5E1] text-xs font-bold text-[#475569] hover:bg-slate-100 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      openingActionModal.loading ||
+                      (openingActionModal.action === 'REJECT' &&
+                        (!openingActionModal.reason || openingActionModal.reason.trim().length < 5))
+                    }
+                    onClick={handleOpeningActionConfirm}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition flex items-center gap-1.5 shadow-xs ${
+                      openingActionModal.action === 'APPROVE'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : openingActionModal.action === 'REJECT'
+                        ? 'bg-rose-600 hover:bg-rose-700'
+                        : 'bg-slate-700 hover:bg-slate-800'
+                    } ${
+                      openingActionModal.loading ||
+                      (openingActionModal.action === 'REJECT' &&
+                        (!openingActionModal.reason || openingActionModal.reason.trim().length < 5))
+                        ? 'opacity-50 cursor-not-allowed'
+                        : ''
+                    }`}
+                  >
+                    {openingActionModal.loading
+                      ? 'Processing...'
+                      : openingActionModal.action === 'APPROVE'
+                      ? 'Confirm Approval'
+                      : openingActionModal.action === 'REJECT'
+                      ? 'Confirm Rejection'
+                      : 'Confirm Close'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -181,7 +181,12 @@ export const updateOpeningSchema = z.object({
   minLevel: z.enum(['Basic', 'Intermediate', 'Advanced', 'Expert']).optional().nullable(),
   minScore: z.number().min(0).max(100).optional().nullable(),
   positions: z.number().int().min(1).max(100).optional(),
-  status: z.enum(['ACTIVE', 'PAUSED', 'CLOSED']).optional(),
+  status: z.enum(['ACTIVE', 'PAUSED', 'CLOSED', 'EXPIRED', 'PENDING_REVIEW', 'REJECTED']).optional(),
+});
+
+export const adminReviewOpeningSchema = z.object({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  reason: z.string().max(1000).optional(),
 });
 
 export const approachOpeningSchema = z.object({
@@ -230,9 +235,12 @@ export const updateNotificationSettingsSchema = z.object({
 });
 
 export const adminVerifyRecruiterSchema = z.object({
-  isVerified: z.boolean(),
+  decision: z.enum(['APPROVE', 'REJECT', 'UNVERIFY']).optional(),
+  isVerified: z.boolean().optional(),
+  reason: z.string().max(500).optional(),
   note: z.string().max(500).optional(),
 });
+
 
 
 

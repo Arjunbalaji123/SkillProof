@@ -4,6 +4,7 @@ import { OpeningService } from '../services/openingService.js';
 import { NotificationService } from '../services/notificationService.js';
 import { MessageService } from '../services/messageService.js';
 import { RecruiterService } from '../services/recruiterService.js';
+import { AdminService } from '../services/adminService.js';
 
 const prisma = new PrismaClient();
 
@@ -16,6 +17,7 @@ interface RecruiterSeedSpec {
   companyName: string;
   jobTitle: string;
   companyWebsite: string;
+  linkedinUrl: string;
   bio: string;
   isVerified: boolean;
 }
@@ -29,6 +31,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Northwind Labs',
     jobTitle: 'Talent Partner',
     companyWebsite: 'https://northwindlabs.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/northwind-labs-seed',
     bio: 'Northwind Labs designs high-throughput distributed infrastructure and cloud-native microservices.',
     isVerified: true,
   },
@@ -39,6 +42,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Brightpath AI',
     jobTitle: 'Engineering Manager',
     companyWebsite: 'https://brightpathai.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/brightpath-ai-seed',
     bio: 'Brightpath AI builds autonomous agents, RAG pipelines, and predictive time-series models for enterprise intelligence.',
     isVerified: true,
   },
@@ -49,6 +53,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Pixelforge Studio',
     jobTitle: 'Lead Technical Recruiter',
     companyWebsite: 'https://pixelforgestudio.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/pixelforge-studio-seed',
     bio: 'Pixelforge Studio creates interactive design systems, accessible UI components, and next-generation web apps.',
     isVerified: true,
   },
@@ -59,6 +64,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Cobalt Analytics',
     jobTitle: 'VP of Engineering',
     companyWebsite: 'https://cobaltanalytics.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/cobalt-analytics-seed',
     bio: 'Cobalt Analytics provides low-latency financial analytics and massive streaming data ingestion platforms.',
     isVerified: true,
   },
@@ -69,6 +75,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Lumen Cloud',
     jobTitle: 'Talent Acquisition Partner',
     companyWebsite: 'https://lumencloud.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/lumen-cloud-seed',
     bio: 'Lumen Cloud develops cloud infrastructure automation tools, observability consoles, and scalable compute runtimes.',
     isVerified: true,
   },
@@ -79,6 +86,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Helix Robotics',
     jobTitle: 'Head of AI & Robotics Talent',
     companyWebsite: 'https://helixrobotics.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/helix-robotics-seed',
     bio: 'Helix Robotics engineers real-time teleoperation consoles, autonomous motion planners, and embedded perception stacks.',
     isVerified: true,
   },
@@ -89,6 +97,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Orbit Commerce',
     jobTitle: 'Principal Sourcing Lead',
     companyWebsite: 'https://orbitcommerce.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/orbit-commerce-seed',
     bio: 'Orbit Commerce powers multi-currency checkout funnels, transaction processing engines, and e-commerce catalogs.',
     isVerified: true,
   },
@@ -99,6 +108,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Vantage Data',
     jobTitle: 'Director of Technical Recruiting',
     companyWebsite: 'https://vantagedata.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/vantage-data-seed',
     bio: 'Vantage Data specializes in enterprise data platform ETL, GenAI SQL copilots, and business intelligence pipelines.',
     isVerified: true,
   },
@@ -109,6 +119,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Kitebyte Games',
     jobTitle: 'Engineering Staffing Manager',
     companyWebsite: 'https://kitebytegames.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/kitebyte-games-seed',
     bio: 'Kitebyte Games produces competitive multiplayer web titles, matchmaking protocols, and player community hubs.',
     isVerified: true,
   },
@@ -119,6 +130,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Greenleaf Health Tech',
     jobTitle: 'People & Talent Lead',
     companyWebsite: 'https://greenleafhealth.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/greenleaf-health-tech-seed',
     bio: 'Greenleaf Health Tech develops HIPAA-compliant healthcare data systems and clinical GenAI workflow assistants.',
     isVerified: true,
   },
@@ -131,6 +143,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Apex Quantum Systems',
     jobTitle: 'Talent Specialist',
     companyWebsite: 'https://apexquantumsystems.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/apex-quantum-systems-seed',
     bio: 'Apex Quantum Systems researches quantum simulation algorithms and experimental cloud compute kernels.',
     isVerified: false,
   },
@@ -141,6 +154,7 @@ const RECRUITERS_SPEC: RecruiterSeedSpec[] = [
     companyName: 'Nova Synth Labs',
     jobTitle: 'Recruiting Coordinator',
     companyWebsite: 'https://novasynthlabs.seed.skillproof.test',
+    linkedinUrl: 'https://linkedin.com/company/nova-synth-labs-seed',
     bio: 'Nova Synth Labs develops synthetic multimodal dataset generation pipelines for vision and language models.',
     isVerified: false,
   },
@@ -738,6 +752,7 @@ async function main() {
             companyName: spec.companyName,
             jobTitle: spec.jobTitle,
             companyWebsite: spec.companyWebsite,
+            linkedinUrl: spec.linkedinUrl,
             bio: spec.bio,
             isVerified: spec.isVerified,
             verifiedAt: spec.isVerified ? new Date() : null,
@@ -803,12 +818,36 @@ async function main() {
   const backfillResult = await OpeningService.backfillInterestsFromVerifiedSkills();
   console.log(`   ✅ Created ${backfillResult.createdInterests} developer interest records.\n`);
 
-  // 6. Seed Openings via OpeningService (Enforces max 5 active limit, notifications, audit log)
+  // 6. Seed Openings via OpeningService & Admin Review
   console.log('💼 Seeding 29 openings across UI/Frontend, ML Engineer, AI Engineer, and Core tracks...');
+
+  // Cleanup old OPENING_MATCH notifications belonging to non-ACTIVE openings without notifiedAt
+  const nonActiveUnnotified = await prisma.opening.findMany({
+    where: {
+      status: { not: 'ACTIVE' },
+      notifiedAt: null,
+    },
+    select: { id: true },
+  });
+  const nonActiveIds = nonActiveUnnotified.map((o) => o.id);
+  const deletedOldNotifs = await prisma.notification.deleteMany({
+    where: {
+      type: 'OPENING_MATCH',
+      entityId: { in: nonActiveIds },
+    },
+  });
+  console.log(`   🧹 Removed ${deletedOldNotifs.count} old OPENING_MATCH notification(s) belonging to non-ACTIVE openings without notifiedAt.`);
+
+  const adminUser = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+  if (!adminUser) {
+    throw new Error('Admin user not found for approving openings');
+  }
+
   const createdOpenings: any[] = [];
   let totalMatchesLogged = 0;
 
-  for (const op of OPENINGS_SPEC) {
+  for (let idx = 0; idx < OPENINGS_SPEC.length; idx++) {
+    const op = OPENINGS_SPEC[idx];
     const recruiter = createdRecruiters.get(op.recruiterUsername);
     if (!recruiter) {
       throw new Error(`Recruiter not found: ${op.recruiterUsername}`);
@@ -831,7 +870,7 @@ async function main() {
 
     const expiresAt = new Date(Date.now() + op.expireDaysOffset * 24 * 60 * 60 * 1000);
 
-    // Call existing OpeningService.createOpening (creates as ACTIVE, triggers NotificationService.notifyMatches)
+    // 1. Create opening via OpeningService (saved as PENDING_REVIEW, does not notify developers)
     const opening = await OpeningService.createOpening(recruiter.id, {
       title: op.title,
       trackId: track.id,
@@ -843,24 +882,44 @@ async function main() {
       expiresAt: op.status === 'EXPIRED' ? new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) : expiresAt,
     });
 
-    // If status is PAUSED or CLOSED, use OpeningService.updateOpening
-    if (op.status === 'PAUSED' || op.status === 'CLOSED') {
-      const updated = await OpeningService.updateOpening(recruiter.id, opening.id, {
-        status: op.status,
-      });
-      createdOpenings.push(updated);
-    } else if (op.status === 'EXPIRED') {
-      // Mark as EXPIRED and set past expiration date in DB
-      const expired = await prisma.opening.update({
-        where: { id: opening.id },
-        data: {
-          status: 'EXPIRED',
-          expiresAt,
-        },
-      });
-      createdOpenings.push(expired);
-    } else {
+    // 2. Decide review disposition per specification:
+    // - Leave 3 as PENDING_REVIEW (indices 22, 23, 24)
+    // - Reject 1 with a reason (index 25)
+    // - Approve the remaining ~25 (indices 0..21, 26..28), setting PAUSED/CLOSED/EXPIRED as specified
+    if (idx === 22 || idx === 23 || idx === 24) {
+      // Leave as PENDING_REVIEW
       createdOpenings.push(opening);
+    } else if (idx === 25) {
+      // Reject with a reason via AdminService.reviewOpening
+      const rejected = await AdminService.reviewOpening(
+        adminUser.id,
+        opening.id,
+        'REJECT',
+        'Job description missing required team structure and compensation band.'
+      );
+      createdOpenings.push(rejected);
+    } else {
+      // Approve via AdminService.reviewOpening (dispatches matching notifications, sets notifiedAt)
+      await AdminService.reviewOpening(adminUser.id, opening.id, 'APPROVE');
+
+      if (op.status === 'PAUSED' || op.status === 'CLOSED') {
+        const updated = await OpeningService.updateOpening(recruiter.id, opening.id, {
+          status: op.status,
+        });
+        createdOpenings.push(updated);
+      } else if (op.status === 'EXPIRED') {
+        const expired = await prisma.opening.update({
+          where: { id: opening.id },
+          data: {
+            status: 'EXPIRED',
+            expiresAt,
+          },
+        });
+        createdOpenings.push(expired);
+      } else {
+        const active = await prisma.opening.findUnique({ where: { id: opening.id } });
+        createdOpenings.push(active);
+      }
     }
 
     // Check matches for this opening
@@ -995,6 +1054,12 @@ async function main() {
   const activeOpenings = await prisma.opening.count({
     where: { recruiter: { isSeed: true }, status: 'ACTIVE' },
   });
+  const pendingReviewOpenings = await prisma.opening.count({
+    where: { recruiter: { isSeed: true }, status: 'PENDING_REVIEW' },
+  });
+  const rejectedOpenings = await prisma.opening.count({
+    where: { recruiter: { isSeed: true }, status: 'REJECTED' },
+  });
   const pausedOpenings = await prisma.opening.count({
     where: { recruiter: { isSeed: true }, status: 'PAUSED' },
   });
@@ -1035,6 +1100,8 @@ async function main() {
     {
       Total: totalSeedOpenings,
       ACTIVE: activeOpenings,
+      PENDING_REVIEW: pendingReviewOpenings,
+      REJECTED: rejectedOpenings,
       PAUSED: pausedOpenings,
       CLOSED: closedOpenings,
       EXPIRED: expiredOpenings,

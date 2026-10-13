@@ -49,12 +49,39 @@ app.use((req, res, next) => {
 
 // Request Logging & Security Middleware
 app.use(requestLogger);
+// Parse allowed origins from environment and defaults
+const configuredCorsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const defaultAllowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://10.180.49.19:5174',
+  'http://10.180.49.19:5173',
+];
+
+if (process.env.CLIENT_URL) {
+  defaultAllowedOrigins.push(process.env.CLIENT_URL.trim());
+}
+
+const allAllowedOrigins = new Set([...defaultAllowedOrigins, ...configuredCorsOrigins]);
+
 app.use(cors({
-  origin: [
-    process.env.CLIENT_URL || 'http://localhost:5173',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-  ],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      allAllowedOrigins.has(origin) ||
+      origin.endsWith('.cit.edu.in') ||
+      /^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
   credentials: true,
 }));
 app.use(cookieParser());

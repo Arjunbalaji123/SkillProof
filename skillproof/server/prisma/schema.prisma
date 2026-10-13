@@ -363,10 +363,14 @@ model Opening {
   minLevel    String?        // Basic | Intermediate | Advanced | Expert
   minScore    Float?
   positions   Int            @default(1)
-  status      String         @default("ACTIVE") // ACTIVE | PAUSED | CLOSED | EXPIRED
-  expiresAt   DateTime
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  status          String         @default("PENDING_REVIEW") // PENDING_REVIEW | ACTIVE | PAUSED | CLOSED | EXPIRED | REJECTED
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  notifiedAt      DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   skills        OpeningSkill[]
   approaches    Approach[]
@@ -504,6 +508,7 @@ model Notification {
   createdAt  DateTime  @default(now())
 
   @@index([userId, readAt, createdAt])
+  @@index([userId, entityId, type])
 }
 
 

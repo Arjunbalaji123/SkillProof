@@ -307,22 +307,35 @@ export const listRecruiters = async (req: AuthRequest, res: Response) => {
 export const verifyRecruiter = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
-    const targetId = String(req.params.id || req.body.recruiterId || req.body.userId || '');
-    const isVerified = Boolean(req.body.isVerified);
-    const note = req.body.note;
+    const targetId = String(req.params.id || req.body.recruiterId || req.body.userId || '').trim();
+
+    let decision: 'APPROVE' | 'REJECT' | 'UNVERIFY' = 'APPROVE';
+    if (req.body.decision) {
+      decision = req.body.decision;
+    } else if (req.body.isVerified === false) {
+      decision = 'UNVERIFY';
+    } else if (req.body.isVerified === true) {
+      decision = 'APPROVE';
+    }
+
+    const reason = req.body.reason || req.body.note;
 
     if (!targetId) {
       return sendError(res, 'Recruiter ID is required', 400);
     }
 
-    const updated = await AdminService.verifyRecruiter(adminId, targetId, isVerified, note);
-    return sendSuccess(
-      res,
-      isVerified ? 'Recruiter verified successfully' : 'Recruiter verification revoked',
-      updated
-    );
+    const updated = await AdminService.setRecruiterVerification(adminId, targetId, decision, reason);
+    const msg =
+      decision === 'APPROVE'
+        ? 'Recruiter verified successfully'
+        : decision === 'REJECT'
+        ? 'Recruiter verification rejected'
+        : 'Recruiter verification revoked';
+
+    return sendSuccess(res, msg, updated);
   } catch (err: any) {
-    return sendError(res, err.message || 'Failed to update recruiter verification', 400);
+    const statusCode = err.statusCode || 400;
+    return sendError(res, err.message || 'Failed to update recruiter verification', statusCode);
   }
 };
 
@@ -336,12 +349,44 @@ export const listAdminOpenings = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const reviewAdminOpening = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.userId;
+    const openingId = String(req.params.id || req.body.openingId || '').trim();
+    if (!openingId) {
+      return sendError(res, 'Opening ID is required', 400);
+    }
+    const { decision, reason } = req.body;
+    const updated = await AdminService.reviewOpening(adminId, openingId, decision, reason);
+    return sendSuccess(
+      res,
+      `Opening successfully ${decision === 'APPROVE' ? 'approved' : 'rejected'}`,
+      updated
+    );
+  } catch (err: any) {
+    return sendError(res, err.message || 'Failed to review opening', err.statusCode || 400);
+  }
+};
+
 export const moderateAdminOpening = async (req: AuthRequest, res: Response) => {
   try {
     const adminId = req.user!.userId;
     const openingId = String(req.params.id || req.body.openingId || '');
     if (!openingId) {
       return sendError(res, 'Opening ID is required', 400);
+    }
+    if (req.body.decision) {
+      const updated = await AdminService.reviewOpening(
+        adminId,
+        openingId,
+        req.body.decision,
+        req.body.reason
+      );
+      return sendSuccess(
+        res,
+        `Opening successfully ${req.body.decision === 'APPROVE' ? 'approved' : 'rejected'}`,
+        updated
+      );
     }
     const { OpeningService } = await import('../services/openingService.js');
     const updated = await OpeningService.updateOpening(adminId, openingId, req.body, true);

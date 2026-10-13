@@ -30,6 +30,7 @@ import {
   verifyRecruiter,
   listAdminOpenings,
   moderateAdminOpening,
+  reviewAdminOpening,
   getMessageReports,
   resolveMessageReport,
 } from '../controllers/adminController.js';
@@ -44,6 +45,7 @@ import {
   adminResolveMessageReportSchema,
   adminVerifyRecruiterSchema,
   updateOpeningSchema,
+  adminReviewOpeningSchema,
 } from '../validators/index.js';
 
 const router = Router();
@@ -88,12 +90,15 @@ router.get('/proctor/snapshots/:filename', serveProctorSnapshot);
 // Recruiter verification
 router.get('/recruiters', listRecruiters);
 router.patch('/recruiters/:id', validateBody(adminVerifyRecruiterSchema), verifyRecruiter);
+router.patch('/recruiters/:id/verify', validateBody(adminVerifyRecruiterSchema), verifyRecruiter);
 router.patch('/recruiters', validateBody(adminVerifyRecruiterSchema), verifyRecruiter);
 
-// Opening moderation
+
+// Opening moderation & review
 router.get('/openings', listAdminOpenings);
-router.patch('/openings/:id', validateBody(updateOpeningSchema), moderateAdminOpening);
-router.patch('/openings', validateBody(updateOpeningSchema), moderateAdminOpening);
+router.patch('/openings/:id/review', validateBody(adminReviewOpeningSchema), reviewAdminOpening);
+router.patch('/openings/:id', moderateAdminOpening);
+router.patch('/openings', moderateAdminOpening);
 
 // Message report moderation
 router.get('/message-reports', getMessageReports);

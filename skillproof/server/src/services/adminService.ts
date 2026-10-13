@@ -1,6 +1,9 @@
 import { prisma } from '../config/db.js';
 import { logAudit } from '../utils/audit.js';
 import { LeaderboardService } from './leaderboardService.js';
+import { SocketService } from './socketService.js';
+import { NotificationService } from './notificationService.js';
+import { OpeningService } from './openingService.js';
 
 export class AdminService {
   /**
@@ -306,14 +309,38 @@ export class AdminService {
    * Recruiter verification queue (never exposes emails)
    */
   static async listRecruitersForVerification(statusFilter?: string) {
+    const isRejectedWhere = {
+      recruiterProfile: {
+        isVerified: false,
+        verifiedBy: { startsWith: 'REJECTED' },
+      },
+    };
+    const isPendingWhere = {
+      recruiterProfile: {
+        isVerified: false,
+        NOT: { verifiedBy: { startsWith: 'REJECTED' } },
+      },
+    };
+    const isVerifiedWhere = {
+      recruiterProfile: {
+        isVerified: true,
+      },
+    };
+
+    let statusCondition = {};
+    if (statusFilter === 'PENDING') {
+      statusCondition = isPendingWhere;
+    } else if (statusFilter === 'VERIFIED') {
+      statusCondition = isVerifiedWhere;
+    } else if (statusFilter === 'REJECTED') {
+      statusCondition = isRejectedWhere;
+    }
+
     const recruiters = await prisma.user.findMany({
       where: {
         role: 'RECRUITER',
-        ...(statusFilter === 'PENDING'
-          ? { recruiterProfile: { isVerified: false } }
-          : statusFilter === 'VERIFIED'
-          ? { recruiterProfile: { isVerified: true } }
-          : {}),
+        isDemo: false,
+        ...statusCondition,
       },
       select: {
         id: true,
@@ -332,28 +359,200 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return recruiters.map((r) => ({
-      id: r.id,
-      recruiterProfileId: r.recruiterProfile?.id || null,
-      name: r.name,
-      username: r.username,
-      status: r.status,
-      isDemo: Boolean(r.isDemo),
-      createdAt: r.createdAt,
-      companyName: r.recruiterProfile?.companyName || '',
-      jobTitle: r.recruiterProfile?.jobTitle || '',
-      companyWebsite: r.recruiterProfile?.companyWebsite || null,
-      linkedinUrl: r.recruiterProfile?.linkedinUrl || null,
-      bio: r.recruiterProfile?.bio || null,
-      isVerified: Boolean(r.recruiterProfile?.isVerified),
-      verifiedBy: r.recruiterProfile?.verifiedBy || null,
-      verifiedAt: r.recruiterProfile?.verifiedAt || null,
-      openingsCount: r._count.openingsCreated,
-    }));
+    return recruiters.map((r) => {
+      const rp = r.recruiterProfile;
+      const isRejected = !rp?.isVerified && Boolean(rp?.verifiedBy?.startsWith('REJECTED'));
+      const verificationStatus = rp?.isVerified
+        ? 'VERIFIED'
+        : isRejected
+        ? 'REJECTED'
+        : 'PENDING';
+      const isIncomplete = !rp || !rp.companyName?.trim() || !rp.jobTitle?.trim();
+
+      return {
+        id: r.id, // User.id (userId)
+        userId: r.id,
+        recruiterProfileId: rp?.id || null,
+        name: r.name,
+        username: r.username,
+        status: r.status,
+        isDemo: Boolean(r.isDemo),
+        createdAt: r.createdAt,
+        companyName: rp?.companyName || '',
+        jobTitle: rp?.jobTitle || '',
+        companyWebsite: rp?.companyWebsite || null,
+        linkedinUrl: rp?.linkedinUrl || null,
+        bio: rp?.bio || null,
+        isVerified: Boolean(rp?.isVerified),
+        verificationStatus,
+        isRejected,
+        isIncomplete,
+        verifiedBy: rp?.verifiedBy || null,
+        verifiedAt: rp?.verifiedAt || null,
+        openingsCount: r._count.openingsCreated,
+        recruiterProfile: rp
+          ? {
+              id: rp.id,
+              userId: rp.userId,
+              companyName: rp.companyName,
+              jobTitle: rp.jobTitle,
+              companyWebsite: rp.companyWebsite,
+              linkedinUrl: rp.linkedinUrl,
+              bio: rp.bio,
+              isVerified: rp.isVerified,
+              verifiedBy: rp.verifiedBy,
+              verifiedAt: rp.verifiedAt,
+            }
+          : null,
+      };
+    });
   }
 
   /**
-   * Approve or reject recruiter verification
+   * Set recruiter verification: APPROVE, REJECT, or UNVERIFY
+   * ADMIN role only; atomic transaction; notification + audit log.
+   */
+  static async setRecruiterVerification(
+    adminId: string,
+    userId: string,
+    decision: 'APPROVE' | 'REJECT' | 'UNVERIFY',
+    reason?: string
+  ) {
+    // 1. ADMIN role check
+    const admin = await prisma.user.findUnique({ where: { id: adminId } });
+    if (!admin || admin.role !== 'ADMIN') {
+      const err: any = new Error('Access denied: Administrator privileges required');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    // 2. Find recruiter by User.id (or fallback by recruiterProfile.id)
+    let user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { recruiterProfile: true },
+    });
+
+    if (!user) {
+      const profile = await prisma.recruiterProfile.findUnique({
+        where: { id: userId },
+        include: { user: true },
+      });
+      if (profile) {
+        user = { ...profile.user, recruiterProfile: profile } as any;
+      }
+    }
+
+    if (!user || user.role !== 'RECRUITER') {
+      const err: any = new Error('Recruiter not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    let profile = user.recruiterProfile;
+
+    // 3. Completeness check
+    if (!profile) {
+      const err: any = new Error('Recruiter profile is incomplete. Profile record does not exist.');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    if (!profile.companyName?.trim() || !profile.jobTitle?.trim()) {
+      const err: any = new Error('Recruiter profile is incomplete. Company name and job title are required.');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const isVerified = decision === 'APPROVE';
+    const verifiedBy =
+      decision === 'APPROVE'
+        ? adminId
+        : decision === 'REJECT'
+        ? `REJECTED:${adminId}`
+        : null;
+    const verifiedAt =
+      decision === 'APPROVE' || decision === 'REJECT' ? new Date() : null;
+
+    const notifTitle =
+      decision === 'APPROVE'
+        ? 'Recruiter Account Approved'
+        : decision === 'REJECT'
+        ? 'Recruiter Verification Rejected'
+        : 'Recruiter Verification Revoked';
+
+    const notifBody =
+      decision === 'APPROVE'
+        ? 'Your recruiter account was approved. You can now publish hiring openings and message eligible developers.'
+        : decision === 'REJECT'
+        ? reason
+          ? `Your recruiter account verification was rejected. Reason: ${reason}`
+          : 'Your recruiter account verification was rejected.'
+        : 'Your recruiter verification has been revoked by an administrator.';
+
+    const auditAction =
+      decision === 'APPROVE'
+        ? 'RECRUITER_APPROVED'
+        : decision === 'REJECT'
+        ? 'RECRUITER_REJECTED'
+        : 'RECRUITER_UNVERIFIED';
+
+    // 4. Atomic transaction: update profile & create notification
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedProfile = await tx.recruiterProfile.update({
+        where: { id: profile!.id },
+        data: {
+          isVerified,
+          verifiedBy,
+          verifiedAt,
+        },
+      });
+
+      const notification = await tx.notification.create({
+        data: {
+          userId: user!.id,
+          type: 'SYSTEM',
+          title: notifTitle,
+          body: notifBody,
+          entityType: 'RecruiterProfile',
+          entityId: updatedProfile.id,
+        },
+      });
+
+      return { updatedProfile, notification };
+    });
+
+    // 5. Audit log
+    await logAudit(adminId, auditAction, 'RecruiterProfile', profile.id, {
+      recruiterUserId: user.id,
+      decision,
+      reason: reason || null,
+      isVerified,
+    });
+
+    // 6. Real-time notification
+    SocketService.emitToUser(user.id, 'notification:new', {
+      notification: result.notification,
+    });
+
+    return {
+      id: user.id,
+      userId: user.id,
+      name: user.name,
+      username: user.username,
+      companyName: result.updatedProfile.companyName,
+      jobTitle: result.updatedProfile.jobTitle,
+      companyWebsite: result.updatedProfile.companyWebsite,
+      linkedinUrl: result.updatedProfile.linkedinUrl,
+      bio: result.updatedProfile.bio,
+      isVerified: result.updatedProfile.isVerified,
+      verifiedBy: result.updatedProfile.verifiedBy,
+      verifiedAt: result.updatedProfile.verifiedAt,
+      recruiterProfile: result.updatedProfile,
+    };
+  }
+
+  /**
+   * Alias for backwards compatibility
    */
   static async verifyRecruiter(
     adminId: string,
@@ -361,63 +560,13 @@ export class AdminService {
     isVerified: boolean,
     note?: string
   ) {
-    // targetId may be user.id or recruiterProfile.id
-    let recProfile = await prisma.recruiterProfile.findFirst({
-      where: {
-        OR: [{ userId: targetId }, { id: targetId }],
-      },
-    });
-
-    if (!recProfile) {
-      const user = await prisma.user.findUnique({ where: { id: targetId } });
-      if (!user || user.role !== 'RECRUITER') {
-        throw new Error('Recruiter not found');
-      }
-      recProfile = await prisma.recruiterProfile.create({
-        data: {
-          userId: user.id,
-          companyName: 'Organization',
-          jobTitle: 'Recruiter',
-          isVerified,
-          verifiedBy: isVerified ? adminId : null,
-          verifiedAt: isVerified ? new Date() : null,
-        },
-      });
-    } else {
-      recProfile = await prisma.recruiterProfile.update({
-        where: { id: recProfile.id },
-        data: {
-          isVerified,
-          verifiedBy: isVerified ? adminId : null,
-          verifiedAt: isVerified ? new Date() : null,
-        },
-      });
-    }
-
-    await prisma.notification.create({
-      data: {
-        userId: recProfile.userId,
-        type: 'SYSTEM',
-        title: isVerified ? 'Recruiter Account Verified' : 'Recruiter Verification Updated',
-        body: isVerified
-          ? 'Your recruiter account has been verified! You can now publish openings and message eligible developers.'
-          : `Your recruiter verification status is currently unverified.${note ? ` Note: ${note}` : ''}`,
-        entityType: 'RecruiterProfile',
-        entityId: recProfile.id,
-      },
-    });
-
-    await logAudit(adminId, 'RECRUITER_VERIFICATION_UPDATED', 'RecruiterProfile', recProfile.id, {
-      recruiterUserId: recProfile.userId,
-      isVerified,
-      note: note || null,
-    });
-
-    return recProfile;
+    const decision = isVerified ? 'APPROVE' : 'UNVERIFY';
+    return this.setRecruiterVerification(adminId, targetId, decision, note);
   }
 
   /**
    * List all openings across the platform for admin moderation (never exposes emails)
+   * Includes potentialMatchCount preview computed with the real matching query.
    */
   static async listAllOpeningsForAdmin(statusFilter?: string) {
     const openings = await prisma.opening.findMany({
@@ -456,32 +605,253 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return openings.map((o) => ({
-      id: o.id,
-      title: o.title,
-      description: o.description,
-      status: o.status,
-      minLevel: o.minLevel,
-      minScore: o.minScore,
-      positions: o.positions,
-      expiresAt: o.expiresAt,
-      createdAt: o.createdAt,
-      track: o.track ? { id: o.track.id, name: o.track.name, title: o.track.name } : null,
-      skills: o.skills.map((s) => ({
-        id: s.skillCatalogId,
-        name: s.skillCatalog.name,
-      })),
-      recruiter: {
-        id: o.recruiter.id,
-        name: o.recruiter.name,
-        username: o.recruiter.username,
-        isDemo: Boolean(o.recruiter.isDemo),
-        companyName: o.recruiter.recruiterProfile?.companyName || '',
-        jobTitle: o.recruiter.recruiterProfile?.jobTitle || '',
-        isVerified: Boolean(o.recruiter.recruiterProfile?.isVerified),
+    const result = await Promise.all(
+      openings.map(async (o) => {
+        let potentialMatchCount = 0;
+        try {
+          const devs = await OpeningService.findMatchingDevelopers(o.id);
+          potentialMatchCount = devs.length;
+        } catch {
+          potentialMatchCount = 0;
+        }
+
+        return {
+          id: o.id,
+          title: o.title,
+          description: o.description,
+          status: o.status,
+          minLevel: o.minLevel,
+          minScore: o.minScore,
+          positions: o.positions,
+          expiresAt: o.expiresAt,
+          createdAt: o.createdAt,
+          reviewedBy: o.reviewedBy || null,
+          reviewedAt: o.reviewedAt || null,
+          rejectionReason: o.rejectionReason || null,
+          notifiedAt: o.notifiedAt || null,
+          track: o.track ? { id: o.track.id, name: o.track.name, title: o.track.name } : null,
+          skills: o.skills.map((s) => ({
+            id: s.skillCatalogId,
+            name: s.skillCatalog.name,
+          })),
+          recruiter: {
+            id: o.recruiter.id,
+            name: o.recruiter.name,
+            username: o.recruiter.username,
+            isDemo: Boolean(o.recruiter.isDemo),
+            companyName: o.recruiter.recruiterProfile?.companyName || '',
+            jobTitle: o.recruiter.recruiterProfile?.jobTitle || '',
+            isVerified: Boolean(o.recruiter.recruiterProfile?.isVerified),
+          },
+          approachCount: o._count.approaches,
+          potentialMatchCount,
+        };
+      })
+    );
+
+    return result;
+  }
+
+  /**
+   * Reviews an opening: APPROVE or REJECT. ADMIN role only, in one transaction:
+   * APPROVE -> status ACTIVE, reviewedBy, reviewedAt, and if notifiedAt is null,
+   *            calls NotificationService.notifyMatches inside the same flow, then sets notifiedAt = now.
+   * REJECT  -> status REJECTED with a required reason; notifies the recruiter with the reason.
+   * Re-approving an opening that already has notifiedAt does not notify again.
+   * Writes audit log entries for both decisions.
+   */
+  static async reviewOpening(
+    adminId: string,
+    openingId: string,
+    decision: 'APPROVE' | 'REJECT',
+    reason?: string
+  ) {
+    const adminUser = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { id: true, role: true, status: true },
+    });
+
+    if (!adminUser || adminUser.role !== 'ADMIN') {
+      const err: any = new Error('Access denied: Administrator privileges required');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const opening = await prisma.opening.findUnique({
+      where: { id: openingId },
+      include: {
+        recruiter: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            recruiterProfile: true,
+          },
+        },
+        skills: {
+          include: { skillCatalog: true },
+        },
+        track: true,
       },
-      approachCount: o._count.approaches,
-    }));
+    });
+
+    if (!opening) {
+      const err: any = new Error('Opening not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (decision === 'APPROVE') {
+      // Check 5-active limit for recruiter
+      const activeCount = await prisma.opening.count({
+        where: {
+          recruiterId: opening.recruiterId,
+          status: 'ACTIVE',
+          id: { not: openingId },
+        },
+      });
+
+      if (activeCount >= 5) {
+        const err: any = new Error(
+          'Recruiter already has 5 active openings. They must close or pause an existing opening before this one can be approved.'
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const isFirstApproval = opening.notifiedAt === null;
+      const now = new Date();
+
+      const updated = await prisma.$transaction(async (tx) => {
+        return tx.opening.update({
+          where: { id: openingId },
+          data: {
+            status: 'ACTIVE',
+            reviewedBy: adminId,
+            reviewedAt: now,
+            rejectionReason: null,
+            ...(isFirstApproval ? { notifiedAt: now } : {}),
+          },
+          include: {
+            track: true,
+            skills: { include: { skillCatalog: true } },
+            recruiter: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                recruiterProfile: true,
+              },
+            },
+          },
+        });
+      });
+
+      let notifiedCount = 0;
+      if (isFirstApproval) {
+        // Dispatch matching notifications inside the same flow
+        const notifyResult = await NotificationService.notifyMatches(openingId);
+        notifiedCount = notifyResult.notifiedCount;
+
+        // Notify recruiter of approval and developer matches
+        const recNotif = await prisma.notification.create({
+          data: {
+            userId: opening.recruiterId,
+            type: 'OPENING_MATCH',
+            title: `Opening Approved: ${opening.title}`,
+            body: `Your opening was approved and ${notifiedCount} developers were notified.`,
+            entityType: 'opening',
+            entityId: opening.id,
+          },
+        });
+        SocketService.emitToUser(opening.recruiterId, 'notification:new', { notification: recNotif });
+      } else {
+        // Re-approving an opening that already has notifiedAt does not notify developers again
+        const recNotif = await prisma.notification.create({
+          data: {
+            userId: opening.recruiterId,
+            type: 'OPENING_MATCH',
+            title: `Opening Approved: ${opening.title}`,
+            body: `Your opening was approved.`,
+            entityType: 'opening',
+            entityId: opening.id,
+          },
+        });
+        SocketService.emitToUser(opening.recruiterId, 'notification:new', { notification: recNotif });
+      }
+
+      await logAudit(adminId, 'OPENING_APPROVED', 'Opening', openingId, {
+        decision,
+        notifiedCount,
+        isFirstApproval,
+      });
+
+      return updated;
+    } else if (decision === 'REJECT') {
+      const cleanReason = String(reason || '').trim();
+      if (!cleanReason) {
+        const err: any = new Error('A rejection reason is required when rejecting an opening.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const now = new Date();
+      const updated = await prisma.$transaction(async (tx) => {
+        const op = await tx.opening.update({
+          where: { id: openingId },
+          data: {
+            status: 'REJECTED',
+            reviewedBy: adminId,
+            reviewedAt: now,
+            rejectionReason: cleanReason,
+          },
+          include: {
+            track: true,
+            skills: { include: { skillCatalog: true } },
+            recruiter: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                recruiterProfile: true,
+              },
+            },
+          },
+        });
+
+        // Notify recruiter with required reason
+        await tx.notification.create({
+          data: {
+            userId: op.recruiterId,
+            type: 'SYSTEM',
+            title: `Opening Rejected: ${op.title}`,
+            body: `Your opening was rejected: ${cleanReason}`,
+            entityType: 'opening',
+            entityId: op.id,
+          },
+        });
+
+        return op;
+      });
+
+      SocketService.emitToUser(opening.recruiterId, 'notification:new', {
+        notification: {
+          title: `Opening Rejected: ${opening.title}`,
+          body: `Your opening was rejected: ${cleanReason}`,
+        },
+      });
+
+      await logAudit(adminId, 'OPENING_REJECTED', 'Opening', openingId, {
+        decision,
+        reason: cleanReason,
+      });
+
+      return updated;
+    } else {
+      const err: any = new Error('Invalid decision. Must be APPROVE or REJECT.');
+      err.statusCode = 400;
+      throw err;
+    }
   }
 
   /**

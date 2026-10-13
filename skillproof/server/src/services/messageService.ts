@@ -177,8 +177,12 @@ export class MessageService {
       throw new MessageError('Opening not found', 404);
     }
 
-    if (opening.status !== 'ACTIVE' || new Date(opening.expiresAt) <= new Date()) {
-      throw new MessageError('This opening is no longer accepting approaches', 400);
+    if (opening.status !== 'ACTIVE') {
+      throw new MessageError('This opening is not active and cannot be approached', 403);
+    }
+
+    if (new Date(opening.expiresAt) <= new Date()) {
+      throw new MessageError('This opening has expired and is no longer accepting approaches', 400);
     }
 
     // Check if already approached this opening

@@ -39,7 +39,11 @@ interface RecruiterOpening {
   minLevel: string | null;
   minScore: number | null;
   positions: number;
-  status: 'ACTIVE' | 'PAUSED' | 'CLOSED' | 'EXPIRED';
+  status: 'ACTIVE' | 'PAUSED' | 'CLOSED' | 'EXPIRED' | 'PENDING_REVIEW' | 'REJECTED';
+  rejectionReason?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  notifiedAt?: string | null;
   expiresAt: string;
   createdAt: string;
   skills: { id: string; skillCatalogId: string; name: string }[];
@@ -284,6 +288,53 @@ export const RecruiterOpeningsPage: React.FC = () => {
     }
   };
 
+  const renderStatusBadge = (status: string) => {
+    switch (status) {
+      case 'ACTIVE':
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200">
+            Active
+          </span>
+        );
+      case 'PENDING_REVIEW':
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-amber-50 text-amber-800 border-amber-300">
+            Waiting for admin approval
+          </span>
+        );
+      case 'REJECTED':
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-rose-50 text-rose-700 border-rose-200">
+            Rejected
+          </span>
+        );
+      case 'PAUSED':
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-amber-50 text-amber-700 border-amber-200">
+            Paused
+          </span>
+        );
+      case 'CLOSED':
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-slate-100 text-slate-600 border-slate-200">
+            Closed
+          </span>
+        );
+      case 'EXPIRED':
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-slate-100 text-slate-500 border-slate-200">
+            Expired
+          </span>
+        );
+      default:
+        return (
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 bg-slate-100 text-slate-600 border-slate-200">
+            {status}
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Unverified Recruiter Banner */}
@@ -340,7 +391,7 @@ export const RecruiterOpeningsPage: React.FC = () => {
           <Briefcase size={36} className="text-slate-400 mx-auto mb-3" />
           <h3 className="text-base font-bold text-[#0F172A]">No openings published yet</h3>
           <p className="text-xs text-[#64748B] max-w-md mx-auto mt-1">
-            Create an opening with required verified skills and minimum scores. Matching developers will be notified immediately.
+            Create an opening with required verified skills and minimum scores. Matching developers will be notified once reviewed by an admin.
           </p>
           {isVerifiedRecruiter && (
             <button
@@ -369,17 +420,7 @@ export const RecruiterOpeningsPage: React.FC = () => {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-sm font-bold text-[#0F172A]">{op.title}</h3>
-                    <span
-                      className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
-                        op.status === 'ACTIVE'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : op.status === 'PAUSED'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-slate-100 text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      {op.status}
-                    </span>
+                    {renderStatusBadge(op.status)}
                   </div>
 
                   <div className="flex flex-wrap gap-1 mt-2">
@@ -392,6 +433,12 @@ export const RecruiterOpeningsPage: React.FC = () => {
                       </span>
                     ))}
                   </div>
+
+                  {op.status === 'REJECTED' && op.rejectionReason && (
+                    <p className="text-[11px] text-rose-600 mt-2 italic truncate">
+                      Reason: {op.rejectionReason}
+                    </p>
+                  )}
 
                   <div className="flex items-center justify-between text-xs text-[#64748B] mt-3 pt-2.5 border-t border-slate-100">
                     <span className="flex items-center gap-1 font-semibold text-[#0F172A]">
@@ -421,17 +468,7 @@ export const RecruiterOpeningsPage: React.FC = () => {
                         <h2 className="text-lg font-extrabold text-[#0F172A]">
                           {selectedOpening.title}
                         </h2>
-                        <span
-                          className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border ${
-                            selectedOpening.status === 'ACTIVE'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : selectedOpening.status === 'PAUSED'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}
-                        >
-                          {selectedOpening.status}
-                        </span>
+                        {renderStatusBadge(selectedOpening.status)}
                       </div>
                       <p className="text-xs text-[#64748B] mt-1">
                         {selectedOpening.track?.title} • Min Score:{' '}
@@ -439,16 +476,40 @@ export const RecruiterOpeningsPage: React.FC = () => {
                         Level: {selectedOpening.minLevel || 'Any'} • Positions:{' '}
                         {selectedOpening.positions}
                       </p>
+                      {selectedOpening.status === 'REJECTED' && selectedOpening.rejectionReason && (
+                        <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                          <span className="font-bold">Rejection Reason:</span>{' '}
+                          {selectedOpening.rejectionReason}
+                        </div>
+                      )}
+                      {selectedOpening.status === 'PENDING_REVIEW' && (
+                        <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                          <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                          <span>
+                            This opening is currently awaiting administrator review. Matching developers will be notified once approved.
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => openEditModal(selectedOpening)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-[#0F172A] transition"
-                      >
-                        <Edit3 size={13} />
-                        Edit
-                      </button>
+                      {selectedOpening.status === 'REJECTED' ? (
+                        <button
+                          onClick={() => openEditModal(selectedOpening)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white transition shadow-xs"
+                        >
+                          <Edit3 size={13} />
+                          Edit and resubmit
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => openEditModal(selectedOpening)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-[#0F172A] transition"
+                        >
+                          <Edit3 size={13} />
+                          Edit
+                        </button>
+                      )}
                       {selectedOpening.status === 'ACTIVE' && (
                         <button
                           onClick={() => handleStatusChange(selectedOpening.id, 'PAUSED')}
@@ -467,7 +528,7 @@ export const RecruiterOpeningsPage: React.FC = () => {
                           Resume
                         </button>
                       )}
-                      {selectedOpening.status !== 'CLOSED' && (
+                      {selectedOpening.status !== 'CLOSED' && selectedOpening.status !== 'REJECTED' && (
                         <button
                           onClick={() => handleStatusChange(selectedOpening.id, 'CLOSED')}
                           data-testid="close-opening-btn"

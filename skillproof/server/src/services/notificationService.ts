@@ -16,6 +16,7 @@ export class NotificationService {
     const opening = await prisma.opening.findUnique({
       where: { id: openingId },
       include: {
+        track: true,
         recruiter: {
           select: {
             id: true,
@@ -47,6 +48,7 @@ export class NotificationService {
     const companyName =
       opening.recruiter.recruiterProfile?.companyName || opening.recruiter.name || 'A recruiter';
     const skillNames = opening.skills.map((s) => s.skillCatalog.name).join(', ');
+    const trackName = opening.track?.name || 'Technical Track';
 
     const startOfToday = new Date();
     startOfToday.setUTCHours(0, 0, 0, 0);
@@ -57,6 +59,25 @@ export class NotificationService {
       const batch = matchedDevelopers.slice(i, i + BATCH_SIZE);
 
       for (const dev of batch) {
+        // Deduplicate on (userId, entityId, type) so retries never duplicate
+        const existing = await prisma.notification.findFirst({
+          where: {
+            userId: dev.id,
+            entityId: opening.id,
+            type: 'OPENING_MATCH',
+          },
+        });
+        if (existing) {
+          continue;
+        }
+
+        const devMatchingScore = Math.round(
+          Math.max(
+            ...((dev as any).skills || []).map((s: any) => s.bestScore || 0),
+            opening.minScore || 0
+          )
+        );
+
         const todaysMatches = await prisma.notification.findMany({
           where: {
             userId: dev.id,
@@ -71,9 +92,9 @@ export class NotificationService {
             data: {
               userId: dev.id,
               type: 'OPENING_MATCH',
-              title: `New opening match: ${opening.title}`,
-              body: `${companyName} posted "${opening.title}" matching your verified skills (${skillNames}).`,
-              entityType: 'Opening',
+              title: `${companyName} is hiring: ${opening.title}`,
+              body: `${companyName} is hiring for ${trackName}. Required skills: ${skillNames}. Your matching verified score: ${devMatchingScore}%.`,
+              entityType: 'opening',
               entityId: opening.id,
             },
           });
@@ -83,11 +104,14 @@ export class NotificationService {
         } else {
           // Group extra openings into one digest notification (keeping total at 5 for the day)
           const digestTarget =
-            todaysMatches.find((n) => n.entityType === 'OpeningDigest') ||
+            todaysMatches.find((n) => n.entityType.toLowerCase() === 'openingdigest') ||
             todaysMatches[DAILY_OPENING_NOTIFICATION_CAP - 1];
 
           let groupedCount = 2;
-          if (digestTarget.entityType === 'OpeningDigest' && digestTarget.entityId.startsWith('digest:')) {
+          if (
+            digestTarget.entityType.toLowerCase() === 'openingdigest' &&
+            digestTarget.entityId.startsWith('digest:')
+          ) {
             const parts = digestTarget.entityId.split(':');
             const parsed = parseInt(parts[1] || '2', 10);
             groupedCount = Number.isNaN(parsed) ? 2 : parsed + 1;
@@ -98,8 +122,8 @@ export class NotificationService {
             data: {
               title: `New opening matches digest (${groupedCount} openings)`,
               body: `You matched ${groupedCount} additional openings today including "${opening.title}" at ${companyName}. View all matching openings.`,
-              entityType: 'OpeningDigest',
-              entityId: `digest:${groupedCount}:${opening.id}`,
+              entityType: 'opening',
+              entityId: opening.id,
               readAt: null,
             },
           });

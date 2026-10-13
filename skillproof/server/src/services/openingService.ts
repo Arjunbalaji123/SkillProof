@@ -28,7 +28,7 @@ export interface UpdateOpeningInput {
   minLevel?: string | null;
   minScore?: number | null;
   positions?: number;
-  status?: 'ACTIVE' | 'PAUSED' | 'CLOSED' | 'EXPIRED';
+  status?: 'ACTIVE' | 'PAUSED' | 'CLOSED' | 'EXPIRED' | 'PENDING_REVIEW' | 'REJECTED';
   skillCatalogIds?: string[];
 }
 
@@ -262,6 +262,20 @@ export class OpeningService {
         username: true,
         role: true,
         isDemo: true,
+        skills: {
+          where: {
+            status: 'VERIFIED',
+            OR: [
+              { skillCatalogId: { in: skillCatalogIds } },
+              ...(skillNames.length > 0 ? [{ language: { in: skillNames } }] : []),
+            ],
+          },
+          select: {
+            language: true,
+            bestScore: true,
+            claimedLevel: true,
+          },
+        },
         profile: {
           select: {
             bio: true,
@@ -304,8 +318,8 @@ export class OpeningService {
   }
 
   /**
-   * Creates a new opening (verified recruiters only, max 5 ACTIVE openings).
-   * Calls NotificationService.notifyMatches(opening.id) after saving.
+   * Creates a new opening (verified recruiters only, max 10 PENDING_REVIEW openings).
+   * Saved as PENDING_REVIEW. Notifications are NOT dispatched until admin approval.
    */
   static async createOpening(recruiterId: string, data: CreateOpeningInput) {
     const recruiter = await prisma.user.findUnique({
@@ -359,15 +373,16 @@ export class OpeningService {
       throw new OpeningError('All opening skills must exist in the skill catalog', 400);
     }
 
-    const activeCount = await prisma.opening.count({
+    // Pending openings do not count toward the 5-ACTIVE limit, but are capped at 10 pending per recruiter
+    const pendingCount = await prisma.opening.count({
       where: {
         recruiterId,
-        status: 'ACTIVE',
+        status: 'PENDING_REVIEW',
       },
     });
 
-    if (activeCount >= 5) {
-      throw new OpeningError('You can have at most 5 active openings at a time', 400);
+    if (pendingCount >= 10) {
+      throw new OpeningError('You can have at most 10 pending openings awaiting approval', 400);
     }
 
     const minScore =
@@ -394,7 +409,7 @@ export class OpeningService {
         minLevel,
         minScore,
         positions,
-        status: 'ACTIVE',
+        status: 'PENDING_REVIEW',
         expiresAt,
         skills: {
           create: uniqueSkillIds.map((skillCatalogId) => ({
@@ -437,17 +452,18 @@ export class OpeningService {
       minLevel: opening.minLevel,
       minScore: opening.minScore,
       positions: opening.positions,
+      status: 'PENDING_REVIEW',
     });
-
-    // Notify matched developers
-    await NotificationService.notifyMatches(opening.id);
 
     return this.formatOpening(opening);
   }
 
   /**
    * Updates an opening (edit, pause, close).
-   * Enforces max 5 active openings if reactivating.
+   * Material edits (skills, minScore, minLevel, track, description) on an ACTIVE opening
+   * set it back to PENDING_REVIEW.
+   * Editing a REJECTED opening resubmits it back to PENDING_REVIEW.
+   * Title and positions edits do not trigger review.
    */
   static async updateOpening(
     actorId: string,
@@ -468,18 +484,41 @@ export class OpeningService {
       throw new OpeningError('Access denied: you do not own this opening', 403);
     }
 
-    if (data.status === 'ACTIVE' && opening.status !== 'ACTIVE') {
-      const activeCount = await prisma.opening.count({
-        where: {
-          recruiterId: opening.recruiterId,
-          status: 'ACTIVE',
-          id: { not: openingId },
-        },
+    let uniqueSkillIds: string[] | undefined;
+    if (data.skillCatalogIds !== undefined) {
+      uniqueSkillIds = Array.from(
+        new Set(data.skillCatalogIds.map((id) => String(id).trim()).filter(Boolean))
+      );
+      if (uniqueSkillIds.length === 0) {
+        throw new OpeningError('At least one skill from the catalog is required', 400);
+      }
+      const existingSkills = await prisma.skillCatalog.findMany({
+        where: { id: { in: uniqueSkillIds } },
       });
-      if (activeCount >= 5) {
-        throw new OpeningError('You can have at most 5 active openings at a time', 400);
+      if (existingSkills.length !== uniqueSkillIds.length) {
+        throw new OpeningError('All opening skills must exist in the skill catalog', 400);
       }
     }
+
+    // Check if material fields changed
+    const currentSkillIds = opening.skills.map((s) => s.skillCatalogId).sort();
+    const newSkillIds = uniqueSkillIds ? [...uniqueSkillIds].sort() : undefined;
+    const skillsChanged =
+      newSkillIds !== undefined &&
+      (newSkillIds.length !== currentSkillIds.length ||
+        !newSkillIds.every((id, idx) => id === currentSkillIds[idx]));
+
+    const trackChanged = data.trackId !== undefined && data.trackId !== opening.trackId;
+    const descChanged =
+      data.description !== undefined && data.description.trim() !== opening.description.trim();
+    const scoreChanged =
+      data.minScore !== undefined &&
+      (data.minScore === null ? opening.minScore !== null : data.minScore !== opening.minScore);
+    const levelChanged =
+      data.minLevel !== undefined &&
+      (data.minLevel === null ? opening.minLevel !== null : data.minLevel !== opening.minLevel);
+
+    const isMaterialChange = skillsChanged || trackChanged || descChanged || scoreChanged || levelChanged;
 
     const updateData: any = {};
 
@@ -526,25 +565,51 @@ export class OpeningService {
     }
 
     if (data.status !== undefined) {
-      if (!['ACTIVE', 'PAUSED', 'CLOSED', 'EXPIRED'].includes(data.status)) {
+      if (!['ACTIVE', 'PAUSED', 'CLOSED', 'EXPIRED', 'PENDING_REVIEW', 'REJECTED'].includes(data.status)) {
         throw new OpeningError('Invalid opening status', 400);
       }
       updateData.status = data.status;
     }
 
-    let uniqueSkillIds: string[] | undefined;
-    if (data.skillCatalogIds !== undefined) {
-      uniqueSkillIds = Array.from(
-        new Set(data.skillCatalogIds.map((id) => String(id).trim()).filter(Boolean))
-      );
-      if (uniqueSkillIds.length === 0) {
-        throw new OpeningError('At least one skill from the catalog is required', 400);
+    // Role-based state transitions
+    if (!isAdmin) {
+      // Recruiter editing:
+      if (opening.status === 'ACTIVE' && isMaterialChange) {
+        // Material edit sends ACTIVE opening back to PENDING_REVIEW
+        updateData.status = 'PENDING_REVIEW';
+        updateData.reviewedBy = null;
+        updateData.reviewedAt = null;
+        updateData.rejectionReason = null;
+        updateData.notifiedAt = null;
+      } else if (opening.status === 'REJECTED') {
+        // Recruiter edit & resubmit
+        updateData.status = 'PENDING_REVIEW';
+        updateData.reviewedBy = null;
+        updateData.reviewedAt = null;
+        updateData.rejectionReason = null;
+        updateData.notifiedAt = null;
+      } else if (
+        data.status === 'ACTIVE' &&
+        (opening.status === 'PENDING_REVIEW' || opening.status === 'REJECTED')
+      ) {
+        throw new OpeningError(
+          'Openings awaiting review or rejected require administrator approval to become active.',
+          403
+        );
       }
-      const existingSkills = await prisma.skillCatalog.findMany({
-        where: { id: { in: uniqueSkillIds } },
+    }
+
+    // If opening becomes ACTIVE, enforce the 5-ACTIVE cap
+    if (updateData.status === 'ACTIVE' && opening.status !== 'ACTIVE') {
+      const activeCount = await prisma.opening.count({
+        where: {
+          recruiterId: opening.recruiterId,
+          status: 'ACTIVE',
+          id: { not: openingId },
+        },
       });
-      if (existingSkills.length !== uniqueSkillIds.length) {
-        throw new OpeningError('All opening skills must exist in the skill catalog', 400);
+      if (activeCount >= 5) {
+        throw new OpeningError('You can have at most 5 active openings at a time', 400);
       }
     }
 
@@ -783,6 +848,19 @@ export class OpeningService {
       throw new OpeningError('Opening not found', 404);
     }
 
+    const viewer = await prisma.user.findUnique({
+      where: { id: viewerId },
+      select: { role: true },
+    });
+
+    const isRecruiterOwner = opening.recruiterId === viewerId;
+    const isAdmin = viewer?.role === 'ADMIN';
+
+    // Hide PENDING_REVIEW and REJECTED openings from non-owner developers
+    if (!isRecruiterOwner && !isAdmin && opening.status !== 'ACTIVE') {
+      throw new OpeningError('Opening not found', 404);
+    }
+
     const pairConversation = await prisma.conversation.findUnique({
       where: {
         recruiterId_developerId: {
@@ -1008,6 +1086,10 @@ export class OpeningService {
       minScore: opening.minScore,
       positions: opening.positions,
       status: opening.status,
+      reviewedBy: opening.reviewedBy || null,
+      reviewedAt: opening.reviewedAt || null,
+      rejectionReason: opening.rejectionReason || null,
+      notifiedAt: opening.notifiedAt || null,
       expiresAt: opening.expiresAt,
       createdAt: opening.createdAt,
       updatedAt: opening.updatedAt,

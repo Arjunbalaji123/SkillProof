@@ -92,9 +92,13 @@ export const NotificationsPage: React.FC = () => {
     if (!n.readAt) {
       await markRead(n.id);
     }
-    if (n.entityType === 'Opening' && n.entityId) {
+    if (
+      (n.entityType?.toLowerCase() === 'opening' || n.type === 'OPENING_MATCH') &&
+      n.entityId &&
+      !n.entityId.startsWith('digest:')
+    ) {
       navigate(`/openings?openingId=${encodeURIComponent(n.entityId)}`);
-    } else if (n.entityType === 'OpeningDigest') {
+    } else if (n.entityType?.toLowerCase() === 'openingdigest' || n.entityId?.startsWith('digest:')) {
       navigate('/openings');
     } else if (n.entityType === 'Conversation' && n.entityId) {
       navigate(`/messages?conversationId=${encodeURIComponent(n.entityId)}`);

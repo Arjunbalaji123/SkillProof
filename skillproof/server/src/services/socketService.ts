@@ -22,22 +22,48 @@ export class SocketService {
   private static io: SocketIOServer | null = null;
 
   static init(httpServer: http.Server): SocketIOServer {
+    const configuredCorsOrigins = (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const defaultAllowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+      'http://10.180.49.19:5174',
+      'http://10.180.49.19:5173',
+    ];
+
+    if (process.env.CLIENT_URL) {
+      defaultAllowedOrigins.push(process.env.CLIENT_URL.trim());
+    }
+
+    const allAllowedOrigins = new Set([...defaultAllowedOrigins, ...configuredCorsOrigins]);
+
     const io = new SocketIOServer(httpServer, {
       cors: {
-        origin: [
-          process.env.CLIENT_URL || 'http://localhost:5173',
-          'http://localhost:5173',
-          'http://127.0.0.1:5173',
-        ],
+        origin: (origin, callback) => {
+          if (!origin) return callback(null, true);
+          if (
+            allAllowedOrigins.has(origin) ||
+            origin.endsWith('.cit.edu.in') ||
+            /^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$/.test(origin)
+          ) {
+            return callback(null, true);
+          }
+          return callback(null, false);
+        },
         credentials: true,
       },
     });
 
-    // Authenticate Socket.IO connections using the existing httpOnly token cookie
+    // Authenticate Socket.IO connections using httpOnly cookie or auth token
     io.use(async (socket: Socket, next) => {
       try {
         const cookies = parseCookieHeader(socket.handshake.headers.cookie);
-        let token = cookies.token;
+        let token = cookies.sp_session || cookies.token;
 
         if (!token && typeof socket.handshake.auth?.token === 'string') {
           token = socket.handshake.auth.token;
