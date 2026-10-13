@@ -10,6 +10,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx src/seed.ts",
+    "seed:recruiters": "tsx src/scripts/seedRecruiterEcosystem.ts",
     "db:generate": "prisma generate",
     "leaderboard:rebuild": "tsx src/scripts/rebuildLeaderboard.ts",
     "test": "NODE_ENV=test tsx src/tests/runTests.ts"

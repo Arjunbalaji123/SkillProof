@@ -341,6 +341,43 @@ export class MessageService {
       conversationId: result.conversation.id,
     });
 
+    // DEV-ONLY AUTO-RESPONDER for seeded recruiters (refused in production)
+    if (
+      process.env.SEED_RECRUITER_AUTOREPLY === 'true' &&
+      process.env.NODE_ENV !== 'production'
+    ) {
+      const recruiterUser = await prisma.user.findUnique({
+        where: { id: opening.recruiterId },
+        select: { id: true, isSeed: true },
+      });
+
+      if (recruiterUser?.isSeed) {
+        setTimeout(async () => {
+          try {
+            const currentApproach = await prisma.approach.findUnique({
+              where: { id: result.approach.id },
+            });
+            if (currentApproach && currentApproach.status === 'PENDING') {
+              const decision = await MessageService.decideApproach(
+                opening.recruiterId,
+                result.approach.id,
+                'ACCEPTED'
+              );
+              if (decision.conversationId) {
+                await MessageService.sendMessage(
+                  opening.recruiterId,
+                  decision.conversationId,
+                  "Thanks for reaching out! Let's talk."
+                );
+              }
+            }
+          } catch (autoErr) {
+            console.error('[AutoResponder] Failed to auto-reply to approach:', autoErr);
+          }
+        }, 10000).unref?.();
+      }
+    }
+
     return {
       approach: result.approach,
       conversationId: result.conversation.id,

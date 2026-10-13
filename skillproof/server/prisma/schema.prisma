@@ -16,6 +16,7 @@ model User {
   role             String            @default("DEVELOPER") // DEVELOPER, RECRUITER, ADMIN
   status           String            @default("ACTIVE")    // ACTIVE, SUSPENDED
   isDemo           Boolean           @default(false)
+  isSeed           Boolean           @default(false)
   failedLoginCount Int               @default(0)
   lockedUntil      DateTime?
   lastLoginAt      DateTime?
